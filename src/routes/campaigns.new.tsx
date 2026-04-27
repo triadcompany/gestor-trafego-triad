@@ -1,13 +1,14 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -15,13 +16,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ArrowLeft, Check, ExternalLink, AlertCircle } from "lucide-react";
+import { toast } from "sonner";
+import { fetchAllClients } from "@/lib/queries";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
-import { ChevronDown, Upload, Check } from "lucide-react";
-import { mockClients, brl } from "@/lib/mock-data";
+  fetchCampaigns,
+  getMetaToken,
+  duplicateCampaign,
+  createCampaignFromScratch,
+} from "@/lib/meta";
 
 interface Search {
   client?: string;
@@ -39,46 +42,130 @@ export const Route = createFileRoute("/campaigns/new")({
 
 function NewCampaign() {
   const search = Route.useSearch();
+  const navigate = useNavigate();
+
   const [clientId, setClientId] = useState(search.client ?? "");
-  const [mode, setMode] = useState<"duplicate" | "scratch">("scratch");
-  const [baseCampaign, setBaseCampaign] = useState("");
-
+  const [mode, setMode] = useState<"duplicate" | "scratch">("duplicate");
+  const [baseCampaignId, setBaseCampaignId] = useState("");
   const [name, setName] = useState("");
-  const [budget, setBudget] = useState<number>(80);
-
-  const [primaryText, setPrimaryText] = useState("");
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [creative, setCreative] = useState<File | null>(null);
-  const [waMessage, setWaMessage] = useState(
-    "Olá! Vi seu anúncio e quero saber mais."
-  );
-
-  const [objective, setObjective] = useState<"engagement" | "sales">("engagement");
+  const [budget, setBudget] = useState<number>(10);
+  const [pageId, setPageId] = useState("");
   const [igChecked, setIgChecked] = useState(true);
   const [fbChecked, setFbChecked] = useState(true);
 
-  const [reviewing, setReviewing] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
+  const [createdId, setCreatedId] = useState<string | null>(null);
 
-  const selectedClient = mockClients.find((c) => c.id === clientId);
+  // ── Real data ────────────────────────────────────────────────
+  const { data: clients = [], isLoading: clientsLoading } = useQuery({
+    queryKey: ["clients-all"],
+    queryFn: fetchAllClients,
+  });
 
-  if (submitted) {
+  const selectedClient = clients.find((c) => c.id === clientId);
+
+  const { data: clientCampaigns = [], isLoading: campaignsLoading } = useQuery({
+    queryKey: ["campaigns-for-new", clientId],
+    queryFn: async () => {
+      const token = await getMetaToken();
+      if (!token || !selectedClient) return [];
+      return fetchCampaigns(selectedClient.meta_ad_account_id, token, "maximum");
+    },
+    enabled: !!selectedClient && mode === "duplicate",
+  });
+
+  // When client changes, pre-fill page_id from stored value
+  const handleClientChange = (id: string) => {
+    setClientId(id);
+    setBaseCampaignId("");
+    setName("");
+    const c = clients.find((cl) => cl.id === id);
+    setPageId(c?.meta_page_id ?? "");
+  };
+
+  // When base campaign is selected, pre-fill name
+  const handleBaseCampaignChange = (id: string) => {
+    setBaseCampaignId(id);
+    const campaign = clientCampaigns.find((c) => c.id === id);
+    if (campaign) setName(`${campaign.name} — Cópia`);
+  };
+
+  // ── Submit ───────────────────────────────────────────────────
+  const mutation = useMutation({
+    mutationFn: async () => {
+      const token = await getMetaToken();
+      if (!token) throw new Error("Token Meta não encontrado. Acesse Configurações para renovar.");
+      if (!selectedClient) throw new Error("Selecione um cliente.");
+
+      if (mode === "duplicate") {
+        if (!baseCampaignId) throw new Error("Selecione a campanha base.");
+        const id = await duplicateCampaign(
+          baseCampaignId,
+          selectedClient.meta_ad_account_id,
+          name,
+          token
+        );
+        return id;
+      } else {
+        if (!pageId) throw new Error("Informe o ID da Página do Facebook.");
+        const { campaignId } = await createCampaignFromScratch({
+          name,
+          adAccountId: selectedClient.meta_ad_account_id,
+          pageId,
+          dailyBudget: budget,
+          placements: { facebook: fbChecked, instagram: igChecked },
+          token,
+        });
+        return campaignId;
+      }
+    },
+    onSuccess: (id) => {
+      setCreatedId(id);
+    },
+    onError: (e) => {
+      const msg = e instanceof Error ? e.message : "Erro ao criar campanha";
+      toast.error(msg, { duration: 10000 });
+    },
+  });
+
+  const canSubmit =
+    !!clientId &&
+    !!name &&
+    (mode === "duplicate" ? !!baseCampaignId : budget > 0);
+
+  // ── Success screen ───────────────────────────────────────────
+  if (createdId && selectedClient) {
+    const metaUrl = `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${selectedClient.meta_ad_account_id.replace("act_", "")}`;
     return (
       <AppShell>
         <div className="px-4 md:px-8 py-12 max-w-xl mx-auto text-center">
-          <div className="mx-auto h-14 w-14 rounded-full bg-status-on-target/20 flex items-center justify-center mb-4">
-            <Check className="h-7 w-7 text-status-on-target" />
+          <div className="mx-auto h-14 w-14 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
+            <Check className="h-7 w-7 text-green-500" />
           </div>
-          <h1 className="text-2xl font-semibold mb-2">Campanha enviada!</h1>
-          <p className="text-muted-foreground mb-6">
-            "{name}" foi adicionada à fila de criação no Meta Ads.
+          <h1 className="text-2xl font-semibold mb-2">Campanha criada!</h1>
+          <p className="text-muted-foreground mb-1">
+            "{name}" foi criada como <strong>pausada</strong> no Meta Ads.
           </p>
-          <div className="flex gap-3 justify-center">
-            <Button asChild variant="outline">
+          {mode === "scratch" && (
+            <p className="text-sm text-muted-foreground mb-6">
+              Adicione o criativo (imagem/vídeo e texto) no Gerenciador de Anúncios antes de ativar.
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground mb-6">ID: {createdId}</p>
+          <div className="flex gap-3 justify-center flex-wrap">
+            <Button variant="outline" asChild>
               <Link to="/">Voltar ao dashboard</Link>
             </Button>
-            <Button onClick={() => { setSubmitted(false); setReviewing(false); }}>
+            <Button variant="outline" asChild>
+              <a href={metaUrl} target="_blank" rel="noopener noreferrer" className="gap-2">
+                <ExternalLink className="h-4 w-4" />
+                Abrir no Meta
+              </a>
+            </Button>
+            <Button onClick={() => {
+              setCreatedId(null);
+              setName("");
+              setBaseCampaignId("");
+            }}>
               Criar outra
             </Button>
           </div>
@@ -89,233 +176,178 @@ function NewCampaign() {
 
   return (
     <AppShell>
-      <div className="px-4 md:px-8 py-6 max-w-3xl mx-auto">
+      <div className="px-4 md:px-8 py-6 max-w-2xl mx-auto">
+        <Link
+          to="/"
+          className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Voltar ao dashboard
+        </Link>
+
         <h1 className="text-2xl font-semibold tracking-tight mb-1">Nova Campanha</h1>
         <p className="text-sm text-muted-foreground mb-6">
-          Configure uma campanha do Meta Ads para um cliente.
+          A campanha será criada <strong>pausada</strong> para revisão antes de ativar.
         </p>
 
-        {!reviewing ? (
-          <div className="space-y-5">
-            {/* Step 1 */}
-            <Card className="p-5">
-              <StepHeader n={1} title="Cliente & Base" />
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Cliente</Label>
-                  <Select value={clientId} onValueChange={setClientId}>
+        <div className="space-y-5">
+          {/* Cliente & modo */}
+          <Card className="p-5 space-y-4">
+            <StepHeader n={1} title="Cliente & Base" />
+
+            <div className="space-y-2">
+              <Label>Cliente</Label>
+              {clientsLoading ? (
+                <Skeleton className="h-9 w-full" />
+              ) : (
+                <Select value={clientId} onValueChange={handleClientChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione um cliente" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {clients.filter((c) => c.active).map((c) => (
+                      <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>Modo</Label>
+              <RadioGroup value={mode} onValueChange={(v) => setMode(v as "duplicate" | "scratch")} className="flex gap-4">
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="duplicate" id="dup" />
+                  <Label htmlFor="dup" className="font-normal cursor-pointer">Duplicar campanha existente</Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem value="scratch" id="scr" />
+                  <Label htmlFor="scr" className="font-normal cursor-pointer">Criar do zero</Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            {mode === "duplicate" && clientId && (
+              <div className="space-y-2">
+                <Label>Campanha base</Label>
+                {campaignsLoading ? (
+                  <Skeleton className="h-9 w-full" />
+                ) : clientCampaigns.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhuma campanha encontrada para este cliente.</p>
+                ) : (
+                  <Select value={baseCampaignId} onValueChange={handleBaseCampaignChange}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Selecione um cliente" />
+                      <SelectValue placeholder="Selecione uma campanha" />
                     </SelectTrigger>
                     <SelectContent>
-                      {mockClients.map((c) => (
+                      {clientCampaigns.map((c) => (
                         <SelectItem key={c.id} value={c.id}>
-                          {c.name}
+                          <span className="flex items-center gap-2">
+                            <span className={`inline-block w-2 h-2 rounded-full ${c.status === "ACTIVE" ? "bg-green-500" : "bg-muted-foreground"}`} />
+                            {c.name}
+                          </span>
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Base</Label>
-                  <RadioGroup value={mode} onValueChange={(v) => setMode(v as "duplicate" | "scratch")}>
-                    <div className="flex items-center gap-2">
-                      <RadioGroupItem value="scratch" id="scratch" />
-                      <Label htmlFor="scratch" className="font-normal">Criar do zero</Label>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <RadioGroupItem value="duplicate" id="duplicate" />
-                      <Label htmlFor="duplicate" className="font-normal">Duplicar campanha existente</Label>
-                    </div>
-                  </RadioGroup>
-                </div>
-
-                {mode === "duplicate" && (
-                  <div className="space-y-2">
-                    <Label>Campanha base</Label>
-                    <Select value={baseCampaign} onValueChange={setBaseCampaign}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione uma campanha" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="c1">Honda Civic 2024 - Azul</SelectItem>
-                        <SelectItem value="c2">Toyota Corolla Promo</SelectItem>
-                        <SelectItem value="c4">Apartamentos Zona Sul</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
                 )}
               </div>
-            </Card>
+            )}
+          </Card>
 
-            {/* Step 2 */}
-            <Card className="p-5">
-              <StepHeader n={2} title="Detalhes da Campanha" />
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <Label>Nome da campanha</Label>
-                  <Input
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Ex: Honda Civic 2024 - Azul"
-                  />
-                </div>
+          {/* Configuração */}
+          <Card className="p-5 space-y-4">
+            <StepHeader n={2} title="Configuração" />
+
+            <div className="space-y-2">
+              <Label>Nome da campanha</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: [ENG-MSG] [CIVIC 2024]"}
+              />
+            </div>
+
+            {mode === "scratch" && (
+              <>
                 <div className="space-y-2">
                   <Label>Orçamento diário (R$)</Label>
                   <Input
                     type="number"
                     value={budget}
                     onChange={(e) => setBudget(Number(e.target.value))}
+                    min={1}
+                    step={1}
                   />
                 </div>
-              </div>
-            </Card>
 
-            {/* Step 3 */}
-            <Card className="p-5">
-              <StepHeader n={3} title="Conteúdo do Anúncio" />
-              <div className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Texto principal</Label>
-                  <Textarea
-                    value={primaryText}
-                    onChange={(e) => setPrimaryText(e.target.value)}
-                    placeholder="Texto que aparece acima da imagem"
-                    rows={3}
+                  <Label>
+                    ID da Página do Facebook
+                    <span className="text-muted-foreground font-normal ml-1">(obrigatório para WhatsApp)</span>
+                  </Label>
+                  <Input
+                    value={pageId}
+                    onChange={(e) => setPageId(e.target.value)}
+                    placeholder="Ex: 123456789012345"
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label>Título</Label>
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Descrição</Label>
-                  <Input value={description} onChange={(e) => setDescription(e.target.value)} />
-                </div>
-                <div className="space-y-2">
-                  <Label>Criativo (imagem ou vídeo)</Label>
-                  <label className="flex items-center justify-center gap-2 border border-dashed border-border rounded-md py-6 cursor-pointer hover:border-primary/50 transition-colors">
-                    <Upload className="h-4 w-4 text-muted-foreground" />
-                    <span className="text-sm text-muted-foreground">
-                      {creative ? creative.name : "Clique para enviar"}
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/*,video/*"
-                      className="hidden"
-                      onChange={(e) => setCreative(e.target.files?.[0] ?? null)}
-                    />
-                  </label>
-                </div>
-                <div className="space-y-2">
-                  <Label>Mensagem padrão WhatsApp</Label>
-                  <Textarea
-                    value={waMessage}
-                    onChange={(e) => setWaMessage(e.target.value)}
-                    rows={2}
-                  />
-                </div>
-              </div>
-            </Card>
-
-            {/* Advanced */}
-            <Collapsible>
-              <Card className="p-5">
-                <CollapsibleTrigger className="flex items-center justify-between w-full text-left group">
-                  <div>
-                    <h3 className="font-medium">Opções avançadas</h3>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Advantage+ desativado · Segmentação aberta
+                  {!selectedClient?.meta_page_id && pageId && (
+                    <p className="text-xs text-muted-foreground">
+                      Salve o Page ID no cadastro do cliente para não precisar informar toda vez.
                     </p>
-                  </div>
-                  <ChevronDown className="h-4 w-4 transition-transform group-data-[state=open]:rotate-180" />
-                </CollapsibleTrigger>
-                <CollapsibleContent className="pt-4 space-y-4">
-                  <div className="space-y-2">
-                    <Label>Objetivo</Label>
-                    <RadioGroup value={objective} onValueChange={(v) => setObjective(v as "engagement" | "sales")}>
-                      <div className="flex items-center gap-2">
-                        <RadioGroupItem value="engagement" id="eng" />
-                        <Label htmlFor="eng" className="font-normal">Engagement</Label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <RadioGroupItem value="sales" id="sales" />
-                        <Label htmlFor="sales" className="font-normal">Sales</Label>
-                      </div>
-                    </RadioGroup>
-                  </div>
-                  <div className="space-y-2">
-                    <Label>Posicionamentos</Label>
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          id="ig"
-                          checked={igChecked}
-                          onCheckedChange={(v) => setIgChecked(!!v)}
-                        />
-                        <Label htmlFor="ig" className="font-normal">Instagram</Label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <Checkbox
-                          id="fb"
-                          checked={fbChecked}
-                          onCheckedChange={(v) => setFbChecked(!!v)}
-                        />
-                        <Label htmlFor="fb" className="font-normal">Facebook</Label>
-                      </div>
-                      <div className="flex items-center gap-2 opacity-50">
-                        <Checkbox id="audn" checked={false} disabled />
-                        <Label htmlFor="audn" className="font-normal">Audience Network</Label>
-                      </div>
-                      <div className="flex items-center gap-2 opacity-50">
-                        <Checkbox id="msgr" checked={false} disabled />
-                        <Label htmlFor="msgr" className="font-normal">Messenger</Label>
-                      </div>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Posicionamentos</Label>
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2">
+                      <Checkbox id="ig" checked={igChecked} onCheckedChange={(v) => setIgChecked(!!v)} />
+                      <Label htmlFor="ig" className="font-normal cursor-pointer">Instagram</Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Checkbox id="fb" checked={fbChecked} onCheckedChange={(v) => setFbChecked(!!v)} />
+                      <Label htmlFor="fb" className="font-normal cursor-pointer">Facebook</Label>
                     </div>
                   </div>
-                </CollapsibleContent>
-              </Card>
-            </Collapsible>
+                </div>
 
-            <div className="flex justify-end gap-3">
+                <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/40 rounded-lg p-3">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>
+                    Serão criados a campanha e o conjunto de anúncios (objetivo: Mensagens / WhatsApp).
+                    O criativo (imagem/vídeo + texto) deve ser adicionado no Gerenciador de Anúncios.
+                  </span>
+                </div>
+              </>
+            )}
+          </Card>
+
+          <div className="flex flex-wrap justify-end gap-3">
+            <Button variant="outline" asChild>
+              <Link to="/">Cancelar</Link>
+            </Button>
+            {mode === "duplicate" && selectedClient && baseCampaignId && (
               <Button variant="outline" asChild>
-                <Link to="/">Cancelar</Link>
+                <a
+                  href={`https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${selectedClient.meta_ad_account_id.replace("act_", "")}&selected_campaign_ids=${baseCampaignId}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="gap-2"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Duplicar no Meta
+                </a>
               </Button>
-              <Button onClick={() => setReviewing(true)} disabled={!clientId || !name}>
-                Revisar
-              </Button>
-            </div>
+            )}
+            <Button
+              onClick={() => mutation.mutate()}
+              disabled={!canSubmit || mutation.isPending}
+            >
+              {mutation.isPending ? "Criando..." : mode === "duplicate" ? "Duplicar via API" : "Criar Campanha"}
+            </Button>
           </div>
-        ) : (
-          <div className="space-y-5">
-            <Card className="p-5">
-              <h2 className="font-semibold mb-4">Resumo da campanha</h2>
-              <dl className="space-y-3 text-sm">
-                <Row label="Cliente" value={selectedClient?.name ?? "—"} />
-                <Row label="Modo" value={mode === "scratch" ? "Criar do zero" : "Duplicada"} />
-                <Row label="Nome" value={name} />
-                <Row label="Orçamento diário" value={brl(budget)} />
-                <Row label="Título" value={title || "—"} />
-                <Row label="Descrição" value={description || "—"} />
-                <Row label="Texto principal" value={primaryText || "—"} />
-                <Row label="Criativo" value={creative?.name ?? "Nenhum"} />
-                <Row label="Objetivo" value={objective === "engagement" ? "Engagement" : "Sales"} />
-                <Row
-                  label="Posicionamentos"
-                  value={[igChecked && "Instagram", fbChecked && "Facebook"].filter(Boolean).join(", ") || "—"}
-                />
-                <Row label="Mensagem WhatsApp" value={waMessage} />
-              </dl>
-            </Card>
-            <div className="flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setReviewing(false)}>
-                Voltar e editar
-              </Button>
-              <Button onClick={() => setSubmitted(true)}>Confirmar e Subir Campanha</Button>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
     </AppShell>
   );
@@ -323,20 +355,11 @@ function NewCampaign() {
 
 function StepHeader({ n, title }: { n: number; title: string }) {
   return (
-    <div className="flex items-center gap-3 mb-4">
-      <div className="h-7 w-7 rounded-full bg-primary/15 text-primary text-sm font-semibold flex items-center justify-center">
+    <div className="flex items-center gap-3 mb-1">
+      <div className="h-7 w-7 rounded-full bg-primary/15 text-primary text-sm font-semibold flex items-center justify-center shrink-0">
         {n}
       </div>
       <h2 className="font-semibold">{title}</h2>
-    </div>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex justify-between gap-4 border-b border-border pb-2 last:border-0">
-      <dt className="text-muted-foreground shrink-0">{label}</dt>
-      <dd className="text-right break-words">{value}</dd>
     </div>
   );
 }

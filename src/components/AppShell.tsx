@@ -1,11 +1,12 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare } from "lucide-react";
+import { LayoutDashboard, Users, PlusSquare, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { to: "/clients", label: "Clientes", icon: Users, exact: false },
   { to: "/campaigns/new", label: "Nova Campanha", icon: PlusSquare, exact: false },
+  { to: "/settings", label: "Configurações", icon: Settings, exact: false },
 ] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {

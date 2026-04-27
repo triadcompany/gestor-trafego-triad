@@ -1,7 +1,13 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "tanstack-start-app",
+  "name": "gestor-trafego-triad",
   "compatibility_date": "2025-09-24",
   "compatibility_flags": ["nodejs_compat"],
   "main": "@tanstack/react-start/server-entry",
+  "triggers": {
+    "crons": ["0 * * * *"]
+  },
+  "vars": {
+    "VITE_SUPABASE_URL": "https://ysdmtkxhedezijhqlwuc.supabase.co"
+  }
 }
