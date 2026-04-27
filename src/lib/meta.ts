@@ -142,7 +142,7 @@ export async function syncAllClients(token: string): Promise<MetaSyncResult> {
       status: errors.length === 0 ? "success" : "error",
       message: errors.length > 0 ? errors.join("; ") : null,
     }),
-    supabase.from("app_config").upsert({ key: "last_synced_at", value: syncedAt }),
+    supabase.from("app_config").upsert({ key: "last_synced_at", value: syncedAt }, { onConflict: "key" }),
   ]);
 
   return { synced, errors, syncedAt };
