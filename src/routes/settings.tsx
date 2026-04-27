@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
@@ -17,6 +17,7 @@ import {
   ExternalLink,
   KeyRound,
   RefreshCw,
+  Stethoscope,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getTokenInfo, saveMetaToken } from "@/lib/meta";
@@ -91,11 +92,19 @@ function SettingsPage() {
     <AppShell>
       <div className="px-4 md:px-8 py-8 max-w-2xl mx-auto">
         {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
-          <p className="text-sm text-muted-foreground mt-1">
-            Gerencie o token de acesso ao Meta Ads e outras preferências do sistema.
-          </p>
+        <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Gerencie o token de acesso ao Meta Ads e outras preferências do sistema.
+            </p>
+          </div>
+          <Button variant="outline" asChild>
+            <Link to="/diagnostico-meta" className="gap-2">
+              <Stethoscope className="h-4 w-4" />
+              Ver diagnóstico Meta
+            </Link>
+          </Button>
         </div>
 
         {/* Token section */}

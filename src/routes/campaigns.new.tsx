@@ -123,7 +123,13 @@ function NewCampaign() {
     },
     onError: (e) => {
       const msg = e instanceof Error ? e.message : "Erro ao criar campanha";
-      toast.error(msg, { duration: 10000 });
+      toast.error(msg, {
+        duration: 12000,
+        action: {
+          label: "Ver diagnóstico",
+          onClick: () => navigate({ to: "/diagnostico-meta" }),
+        },
+      });
     },
   });
 

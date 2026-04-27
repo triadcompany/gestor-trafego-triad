@@ -341,6 +341,42 @@ export async function fetchCampaigns(
 
 // ── Campaign creation ──────────────────────────────────────────
 
+interface MetaApiError {
+  message: string;
+  type?: string;
+  code?: number;
+  error_subcode?: number;
+  error_user_title?: string;
+  error_user_msg?: string;
+  fbtrace_id?: string;
+}
+
+async function recordMetaApiError(endpoint: string, status: number, error: MetaApiError) {
+  try {
+    const safe = {
+      endpoint,
+      status,
+      message: error.message,
+      type: error.type,
+      code: error.code,
+      error_subcode: error.error_subcode,
+      error_user_title: error.error_user_title,
+      error_user_msg: error.error_user_msg,
+      fbtrace_id: error.fbtrace_id,
+    };
+    await supabase.from("app_config").upsert(
+      [
+        { key: "last_meta_api_error", value: JSON.stringify(safe) },
+        { key: "last_meta_api_error_at", value: new Date().toISOString() },
+        { key: "last_meta_api_endpoint", value: endpoint },
+      ],
+      { onConflict: "key" }
+    );
+  } catch {
+    // never let logging break the actual flow
+  }
+}
+
 async function postMeta(endpoint: string, params: Record<string, string>): Promise<unknown> {
   const body = new URLSearchParams(params);
   const res = await fetch(`${BASE_URL}/${endpoint}`, {
@@ -348,9 +384,226 @@ async function postMeta(endpoint: string, params: Record<string, string>): Promi
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body,
   });
-  const json = await res.json() as { error?: { message: string } };
-  if (json.error) throw new Error(json.error.message);
+  const json = (await res.json()) as { error?: MetaApiError };
+  if (json.error) {
+    await recordMetaApiError(endpoint, res.status, json.error);
+    throw new Error(json.error.message);
+  }
   return json;
+}
+
+// ── Diagnostics ───────────────────────────────────────────────
+
+export type PermissionStatus = "granted" | "declined" | "missing";
+
+export interface PermissionInfo {
+  permission: string;
+  status: PermissionStatus;
+  required: boolean;
+  description: string;
+}
+
+export interface AdAccountInfo {
+  id: string;
+  name: string;
+  account_status: number;
+}
+
+export interface LastMetaError {
+  endpoint: string;
+  status: number;
+  message: string;
+  type?: string;
+  code?: number;
+  error_subcode?: number;
+  error_user_title?: string;
+  error_user_msg?: string;
+  fbtrace_id?: string;
+  at: string;
+}
+
+export interface MetaDiagnostics {
+  hasToken: boolean;
+  maskedToken: string | null;
+  expiresAt: Date | null;
+  daysUntilExpiry: number | null;
+  user: { id: string; name: string } | null;
+  tokenError: string | null;
+  permissions: PermissionInfo[];
+  adAccounts: AdAccountInfo[];
+  adAccountsError: string | null;
+  lastError: LastMetaError | null;
+  hints: string[];
+}
+
+const REQUIRED_PERMISSIONS: Array<{
+  name: string;
+  required: boolean;
+  description: string;
+}> = [
+  { name: "ads_read", required: true, description: "Ler campanhas, conjuntos e métricas." },
+  { name: "ads_management", required: true, description: "Criar, duplicar e editar campanhas via API." },
+  { name: "business_management", required: false, description: "Necessária quando o app/conta usa Business Manager." },
+  { name: "pages_show_list", required: false, description: "Listar páginas do Facebook do usuário." },
+  { name: "pages_manage_ads", required: false, description: "Gerenciar anúncios vinculados à página." },
+  { name: "pages_read_engagement", required: false, description: "Ler informações da página vinculada." },
+];
+
+function maskToken(token: string): string {
+  if (token.length <= 16) return `${token.slice(0, 4)}${"•".repeat(8)}${token.slice(-4)}`;
+  return `${token.slice(0, 10)}${"•".repeat(16)}${token.slice(-6)}`;
+}
+
+export async function getLastMetaError(): Promise<LastMetaError | null> {
+  const { data } = await supabase
+    .from("app_config")
+    .select("key, value")
+    .in("key", ["last_meta_api_error", "last_meta_api_error_at", "last_meta_api_endpoint"]);
+
+  const errRow = data?.find((r) => r.key === "last_meta_api_error");
+  const atRow = data?.find((r) => r.key === "last_meta_api_error_at");
+  if (!errRow?.value) return null;
+
+  try {
+    const parsed = JSON.parse(errRow.value) as Omit<LastMetaError, "at">;
+    return { ...parsed, at: atRow?.value ?? new Date().toISOString() };
+  } catch {
+    return null;
+  }
+}
+
+export async function clearLastMetaError(): Promise<void> {
+  await supabase
+    .from("app_config")
+    .delete()
+    .in("key", ["last_meta_api_error", "last_meta_api_error_at", "last_meta_api_endpoint"]);
+}
+
+export async function runMetaDiagnostics(): Promise<MetaDiagnostics> {
+  const tokenInfo = await getTokenInfo();
+  const lastError = await getLastMetaError();
+
+  if (!tokenInfo.token) {
+    return {
+      hasToken: false,
+      maskedToken: null,
+      expiresAt: tokenInfo.expiresAt,
+      daysUntilExpiry: tokenInfo.daysUntilExpiry,
+      user: null,
+      tokenError: "Nenhum token configurado.",
+      permissions: REQUIRED_PERMISSIONS.map((p) => ({
+        permission: p.name,
+        status: "missing" as PermissionStatus,
+        required: p.required,
+        description: p.description,
+      })),
+      adAccounts: [],
+      adAccountsError: null,
+      lastError,
+      hints: ["Acesse Configurações e cole um token Meta válido para começar."],
+    };
+  }
+
+  const token = tokenInfo.token;
+  const masked = maskToken(token);
+
+  const [meRes, permRes, accountsRes] = await Promise.all([
+    fetch(`${BASE_URL}/me?access_token=${encodeURIComponent(token)}`),
+    fetch(`${BASE_URL}/me/permissions?access_token=${encodeURIComponent(token)}`),
+    fetch(
+      `${BASE_URL}/me/adaccounts?fields=id,account_id,name,account_status&limit=200&access_token=${encodeURIComponent(
+        token
+      )}`
+    ),
+  ]);
+
+  const meJson = (await meRes.json()) as {
+    id?: string;
+    name?: string;
+    error?: MetaApiError;
+  };
+  const permJson = (await permRes.json()) as {
+    data?: Array<{ permission: string; status: string }>;
+    error?: MetaApiError;
+  };
+  const accountsJson = (await accountsRes.json()) as {
+    data?: Array<{ id: string; name: string; account_status: number }>;
+    error?: MetaApiError;
+  };
+
+  const tokenError = meJson.error?.message ?? null;
+  const user = meJson.id && meJson.name ? { id: meJson.id, name: meJson.name } : null;
+
+  const grantedMap = new Map<string, PermissionStatus>();
+  (permJson.data ?? []).forEach((p) => {
+    grantedMap.set(
+      p.permission,
+      p.status === "granted" ? "granted" : p.status === "declined" ? "declined" : "missing"
+    );
+  });
+
+  const permissions: PermissionInfo[] = REQUIRED_PERMISSIONS.map((p) => ({
+    permission: p.name,
+    status: grantedMap.get(p.name) ?? "missing",
+    required: p.required,
+    description: p.description,
+  }));
+
+  const adAccounts: AdAccountInfo[] = (accountsJson.data ?? []).map((a) => ({
+    id: a.id,
+    name: a.name,
+    account_status: a.account_status,
+  }));
+
+  // Build hints
+  const hints: string[] = [];
+
+  const adsManagement = permissions.find((p) => p.permission === "ads_management");
+  if (adsManagement?.status !== "granted") {
+    hints.push(
+      "Permissão ads_management ausente ou recusada. Gere um novo token marcando ads_management no Graph API Explorer."
+    );
+  }
+
+  if (lastError && lastError.code === 3) {
+    hints.push(
+      "Erro Meta (#3) ‘Application does not have the capability to make this API call’: o token tem a permissão, mas o app Meta não tem capacidade aprovada para escrita na Marketing API. Revise no painel do app Meta: produto Marketing API adicionado, modo Live, App Review com Advanced Access para ads_management."
+    );
+  }
+
+  if (lastError && (lastError.code === 200 || lastError.code === 10)) {
+    hints.push(
+      "Erro de permissão na conta de anúncios. Confirme no Business Manager se o usuário/system user do token é admin/anunciante da conta act_..."
+    );
+  }
+
+  if (adAccounts.length === 0 && !accountsJson.error) {
+    hints.push(
+      "Nenhuma conta de anúncios visível para este token. Verifique acesso do usuário no Business Manager."
+    );
+  }
+
+  if (accountsJson.error) {
+    hints.push(`Erro ao listar contas de anúncios: ${accountsJson.error.message}`);
+  }
+
+  if (hints.length === 0 && !tokenError) {
+    hints.push("Token válido e permissões básicas concedidas. Se ainda houver erro, ele aparecerá em ‘Última resposta da API’.");
+  }
+
+  return {
+    hasToken: true,
+    maskedToken: masked,
+    expiresAt: tokenInfo.expiresAt,
+    daysUntilExpiry: tokenInfo.daysUntilExpiry,
+    user,
+    tokenError,
+    permissions,
+    adAccounts,
+    adAccountsError: accountsJson.error?.message ?? null,
+    lastError,
+    hints,
+  };
 }
 
 export async function duplicateCampaign(
