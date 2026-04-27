@@ -123,11 +123,11 @@ function Dashboard() {
 
         {/* Summary */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-          <SummaryCard label="Total" value={clients.length} loading={isLoading} />
-          <SummaryCard label="No alvo" value={counts["on-target"]} dotStatus="on-target" loading={isLoading} />
-          <SummaryCard label="Atenção" value={counts.attention} dotStatus="attention" loading={isLoading} />
-          <SummaryCard label="Crítico" value={counts.critical} dotStatus="critical" loading={isLoading} />
-          <SummaryCard label="Sem dados" value={counts["no-data"]} dotStatus="no-data" loading={isLoading} />
+          <SummaryCard label="Total" value={clients.length} loading={isLoading} active={filter === "all"} onClick={() => setFilter("all")} />
+          <SummaryCard label="No alvo" value={counts["on-target"]} dotStatus="on-target" loading={isLoading} active={filter === "on-target"} onClick={() => setFilter("on-target")} />
+          <SummaryCard label="Atenção" value={counts.attention} dotStatus="attention" loading={isLoading} active={filter === "attention"} onClick={() => setFilter("attention")} />
+          <SummaryCard label="Crítico" value={counts.critical} dotStatus="critical" loading={isLoading} active={filter === "critical"} onClick={() => setFilter("critical")} />
+          <SummaryCard label="Sem dados" value={counts["no-data"]} dotStatus="no-data" loading={isLoading} active={false} onClick={() => setFilter("all")} />
         </div>
 
         <Tabs value={filter} onValueChange={(v) => setFilter(v as "all" | ClientStatus)} className="mb-5">
@@ -173,16 +173,16 @@ function Dashboard() {
 
                   <div className="grid grid-cols-2 gap-2 mb-3">
                     <div>
-                      <div className="text-[11px] text-muted-foreground">Gasto</div>
+                      <div className="text-xs text-muted-foreground">Gasto</div>
                       <div className="text-sm font-medium tabular-nums">{brl(c.spendToday)}</div>
                     </div>
                     <div>
-                      <div className="text-[11px] text-muted-foreground">Leads</div>
+                      <div className="text-xs text-muted-foreground">Leads</div>
                       <div className="text-sm font-medium tabular-nums">{c.leadsToday}</div>
                     </div>
                   </div>
 
-                  <div className="text-[11px] text-muted-foreground pt-2 border-t border-border">
+                  <div className="text-xs text-muted-foreground pt-2 border-t border-border">
                     Meta: {brl(c.cpl_min)} – {brl(c.cpl_max)}
                   </div>
                 </Card>
@@ -200,14 +200,25 @@ function SummaryCard({
   value,
   dotStatus,
   loading,
+  active,
+  onClick,
 }: {
   label: string;
   value: number;
   dotStatus?: ClientStatus;
   loading?: boolean;
+  active?: boolean;
+  onClick?: () => void;
 }) {
   return (
-    <Card className="p-3">
+    <Card
+      className={`p-3 cursor-pointer transition-all select-none ${
+        active
+          ? "ring-2 ring-primary border-primary/50"
+          : "hover:border-primary/30 hover:shadow-sm"
+      }`}
+      onClick={onClick}
+    >
       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
         {dotStatus && <StatusDot status={dotStatus} />}
         {label}
@@ -215,7 +226,7 @@ function SummaryCard({
       {loading ? (
         <Skeleton className="h-8 w-10" />
       ) : (
-        <div className="text-2xl font-semibold tabular-nums">{value}</div>
+        <div className={`text-2xl font-semibold tabular-nums ${active ? "text-primary" : ""}`}>{value}</div>
       )}
     </Card>
   );

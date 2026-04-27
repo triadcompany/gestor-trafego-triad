@@ -22,14 +22,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon } from "lucide-react";
+import {
+  Tooltip as UITooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   LineChart,
   Line,
   XAxis,
   YAxis,
   CartesianGrid,
-  Tooltip,
+  Tooltip as ChartTooltip,
   ResponsiveContainer,
   ReferenceArea,
 } from "recharts";
@@ -121,6 +126,7 @@ function ClientDetail() {
   const [editingGoal, setEditingGoal] = useState(false);
   const [cplMin, setCplMin] = useState<number | null>(null);
   const [cplMax, setCplMax] = useState<number | null>(null);
+  const [chartMetric, setChartMetric] = useState<"cpl" | "spend" | "leads">("cpl");
 
   const [datePreset, setDatePreset] = useState<DatePreset | "custom">("today");
   const [customSince, setCustomSince] = useState("");
@@ -311,9 +317,14 @@ function ClientDetail() {
                   <span className="text-xl font-semibold tabular-nums">
                     {brl(client.cpl_min)} – {brl(client.cpl_max)}
                   </span>
-                  <Button size="icon" variant="ghost" onClick={() => setEditingGoal(true)}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
+                  <UITooltip>
+                    <TooltipTrigger asChild>
+                      <Button size="icon" variant="ghost" onClick={() => setEditingGoal(true)}>
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>Editar meta de CPL</TooltipContent>
+                  </UITooltip>
                 </div>
               )}
             </div>
@@ -328,9 +339,35 @@ function ClientDetail() {
           </div>
         </Card>
 
-        {/* Gráfico CPL */}
+        {/* Gráfico */}
         <Card className="p-4 mb-6">
-          <h2 className="text-sm font-medium mb-4">CPL — {periodLabel}</h2>
+          <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
+            <h2 className="text-sm font-medium">
+              {chartMetric === "cpl" ? "CPL" : chartMetric === "spend" ? "Gasto" : "Leads"} — {periodLabel}
+            </h2>
+            <div className="flex items-center gap-1 rounded-lg border border-border p-1 bg-muted/30">
+              {(
+                [
+                  { key: "cpl", icon: TrendingUp, label: "CPL" },
+                  { key: "spend", icon: DollarSign, label: "Gasto" },
+                  { key: "leads", icon: UsersIcon, label: "Leads" },
+                ] as const
+              ).map(({ key, icon: Icon, label }) => (
+                <button
+                  key={key}
+                  onClick={() => setChartMetric(key)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
+                    chartMetric === key
+                      ? "bg-background text-foreground shadow-sm"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                >
+                  <Icon className="h-3 w-3" />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           {insightsLoading ? (
             <Skeleton className="h-72 w-full" />
           ) : insights.length === 0 ? (
@@ -346,13 +383,23 @@ function ClientDetail() {
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="date" stroke="var(--muted-foreground)" fontSize={11} />
-                  <YAxis stroke="var(--muted-foreground)" fontSize={11} />
-                  <Tooltip
+                  <YAxis stroke="var(--muted-foreground)" fontSize={11} tickFormatter={chartMetric === "leads" ? undefined : (v) => `R$${v}`} />
+                  <ChartTooltip
                     contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-                    formatter={(v: number) => brl(v)}
+                    formatter={(v: number) => chartMetric === "leads" ? [v, "Leads"] : [brl(v), chartMetric === "cpl" ? "CPL" : "Gasto"]}
                   />
-                  <ReferenceArea y1={client.cpl_min} y2={client.cpl_max} fill="var(--primary)" fillOpacity={0.08} />
-                  <Line type="monotone" dataKey="cpl" stroke="var(--primary)" strokeWidth={2} dot={{ r: 2 }} activeDot={{ r: 5 }} />
+                  {chartMetric === "cpl" && (
+                    <ReferenceArea y1={client.cpl_min} y2={client.cpl_max} fill="var(--primary)" fillOpacity={0.08} />
+                  )}
+                  <Line
+                    type="monotone"
+                    dataKey={chartMetric}
+                    stroke={chartMetric === "cpl" ? "var(--primary)" : chartMetric === "spend" ? "hsl(var(--chart-2))" : "hsl(var(--chart-3))"}
+                    strokeWidth={2}
+                    dot={{ r: 2 }}
+                    activeDot={{ r: 5 }}
+                    connectNulls
+                  />
                 </LineChart>
               </ResponsiveContainer>
             </div>
@@ -363,14 +410,19 @@ function ClientDetail() {
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold">Campanhas</h2>
           <div className="flex items-center gap-2">
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={() => refetchCampaigns()}
-              disabled={campaignsRefetching}
-            >
-              <RefreshCw className={`h-4 w-4 ${campaignsRefetching ? "animate-spin" : ""}`} />
-            </Button>
+            <UITooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => refetchCampaigns()}
+                  disabled={campaignsRefetching}
+                >
+                  <RefreshCw className={`h-4 w-4 ${campaignsRefetching ? "animate-spin" : ""}`} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Atualizar campanhas</TooltipContent>
+            </UITooltip>
             <Button asChild size="sm" className="gap-2">
               <Link to="/campaigns/new" search={{ client: client.id }}>
                 <Plus className="h-4 w-4" />
@@ -474,7 +526,7 @@ function CampaignsTotals({ campaigns, cplMax }: { campaigns: MetaCampaign[]; cpl
 function TotalStat({ label, value, valueClass = "" }: { label: string; value: string; valueClass?: string }) {
   return (
     <div className="px-3 text-center shrink-0">
-      <div className="text-[10px] text-muted-foreground mb-0.5">{label}</div>
+      <div className="text-xs text-muted-foreground mb-0.5">{label}</div>
       <div className={`text-sm font-semibold tabular-nums ${valueClass}`}>{value}</div>
     </div>
   );

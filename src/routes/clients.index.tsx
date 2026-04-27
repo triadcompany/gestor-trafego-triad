@@ -33,6 +33,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Pencil, Power } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { fetchAllClients, upsertClient, toggleClientActive, type ClientRow } from "@/lib/queries";
 import { brl } from "@/lib/mock-data";
 
@@ -157,17 +162,27 @@ function ClientsList() {
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button size="icon" variant="ghost" onClick={() => openEdit(c)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            onClick={() => toggleMutation.mutate({ id: c.id, active: !c.active })}
-                            disabled={toggleMutation.isPending}
-                          >
-                            <Power className="h-4 w-4" />
-                          </Button>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button size="icon" variant="ghost" onClick={() => openEdit(c)}>
+                                <Pencil className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Editar cliente</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                onClick={() => toggleMutation.mutate({ id: c.id, active: !c.active })}
+                                disabled={toggleMutation.isPending}
+                              >
+                                <Power className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>{c.active ? "Desativar" : "Ativar"} cliente</TooltipContent>
+                          </Tooltip>
                         </div>
                       </TableCell>
                     </TableRow>

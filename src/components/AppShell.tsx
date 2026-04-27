@@ -3,11 +3,11 @@ import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope } from "lucid
 import { cn } from "@/lib/utils";
 
 const navItems = [
-  { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
-  { to: "/clients", label: "Clientes", icon: Users, exact: false },
-  { to: "/campaigns/new", label: "Nova Campanha", icon: PlusSquare, exact: false },
-  { to: "/diagnostico-meta", label: "Diagnóstico", icon: Stethoscope, exact: false },
-  { to: "/settings", label: "Configurações", icon: Settings, exact: false },
+  { to: "/", label: "Dashboard", shortLabel: "Início", icon: LayoutDashboard, exact: true },
+  { to: "/clients", label: "Clientes", shortLabel: "Clientes", icon: Users, exact: false },
+  { to: "/campaigns/new", label: "Nova Campanha", shortLabel: "Campanha", icon: PlusSquare, exact: false },
+  { to: "/diagnostico-meta", label: "Diagnóstico", shortLabel: "Diagnóst.", icon: Stethoscope, exact: false },
+  { to: "/settings", label: "Configurações", shortLabel: "Config.", icon: Settings, exact: false },
 ] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -70,12 +70,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               key={item.to}
               to={item.to}
               className={cn(
-                "flex-1 flex flex-col items-center gap-1 py-2.5 text-xs",
+                "flex-1 flex flex-col items-center gap-1 py-2.5 text-[10px] leading-tight",
                 active ? "text-primary" : "text-muted-foreground"
               )}
             >
               <Icon className="h-5 w-5" />
-              {item.label}
+              {item.shortLabel}
             </Link>
           );
         })}
