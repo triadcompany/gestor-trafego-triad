@@ -339,6 +339,72 @@ export async function fetchCampaigns(
   });
 }
 
+// ── Ad sets & Ads ──────────────────────────────────────────────
+
+export interface MetaAdSet {
+  id: string;
+  name: string;
+  status: string;
+  daily_budget: number | null;
+  optimization_goal: string;
+}
+
+export interface MetaAd {
+  id: string;
+  name: string;
+  status: string;
+  thumbnail_url?: string;
+}
+
+export async function fetchAdSets(campaignId: string, token: string): Promise<MetaAdSet[]> {
+  const params = new URLSearchParams({
+    fields: "id,name,status,daily_budget,optimization_goal",
+    limit: "50",
+    access_token: token,
+  });
+  const res = await fetch(`${BASE_URL}/${campaignId}/adsets?${params}`);
+  const json = await res.json() as {
+    data?: Array<{ id: string; name: string; status: string; daily_budget?: string; optimization_goal?: string }>;
+    error?: { message: string };
+  };
+  if (json.error) throw new Error(json.error.message);
+  return (json.data ?? []).map((a) => ({
+    id: a.id,
+    name: a.name,
+    status: a.status,
+    daily_budget: a.daily_budget ? parseFloat(a.daily_budget) / 100 : null,
+    optimization_goal: a.optimization_goal ?? "",
+  }));
+}
+
+export async function fetchAds(adSetId: string, token: string): Promise<MetaAd[]> {
+  const params = new URLSearchParams({
+    fields: "id,name,status,creative{thumbnail_url}",
+    limit: "50",
+    access_token: token,
+  });
+  const res = await fetch(`${BASE_URL}/${adSetId}/ads?${params}`);
+  const json = await res.json() as {
+    data?: Array<{ id: string; name: string; status: string; creative?: { thumbnail_url?: string } }>;
+    error?: { message: string };
+  };
+  if (json.error) throw new Error(json.error.message);
+  return (json.data ?? []).map((a) => ({
+    id: a.id,
+    name: a.name,
+    status: a.status,
+    thumbnail_url: a.creative?.thumbnail_url,
+  }));
+}
+
+export async function updateMetaObject(
+  id: string,
+  fields: Record<string, string>,
+  token: string
+): Promise<void> {
+  await postMeta(id, { ...fields, access_token: token });
+}
+
 // ── Campaign creation ──────────────────────────────────────────
 
 interface MetaApiError {

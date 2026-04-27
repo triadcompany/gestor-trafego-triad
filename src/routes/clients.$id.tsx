@@ -39,6 +39,7 @@ import {
   ReferenceArea,
 } from "recharts";
 import { fetchClientDetail, updateClientGoal } from "@/lib/queries";
+import { CampaignSheet } from "@/components/CampaignSheet";
 import {
   fetchCampaigns,
   fetchDailyInsights,
@@ -127,6 +128,8 @@ function ClientDetail() {
   const [cplMin, setCplMin] = useState<number | null>(null);
   const [cplMax, setCplMax] = useState<number | null>(null);
   const [chartMetric, setChartMetric] = useState<"cpl" | "spend" | "leads">("cpl");
+  const [selectedCampaign, setSelectedCampaign] = useState<MetaCampaign | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
 
   const [datePreset, setDatePreset] = useState<DatePreset | "custom">("today");
   const [customSince, setCustomSince] = useState("");
@@ -468,7 +471,12 @@ function ClientDetail() {
                   </TableRow>
                 ) : (
                   campaigns.map((c) => (
-                    <CampaignRow key={c.id} campaign={c} cplMax={client.cpl_max} />
+                    <CampaignRow
+                      key={c.id}
+                      campaign={c}
+                      cplMax={client.cpl_max}
+                      onClick={() => { setSelectedCampaign(c); setSheetOpen(true); }}
+                    />
                   ))
                 )}
               </TableBody>
@@ -476,6 +484,15 @@ function ClientDetail() {
           </div>
         </Card>
       </div>
+
+      <CampaignSheet
+        campaign={selectedCampaign}
+        clientId={id}
+        adAccountId={client.meta_ad_account_id}
+        cplMax={client.cpl_max}
+        open={sheetOpen}
+        onOpenChange={setSheetOpen}
+      />
     </AppShell>
   );
 }
@@ -536,7 +553,15 @@ function Divider() {
   return <div className="w-px h-8 bg-border shrink-0" />;
 }
 
-function CampaignRow({ campaign: c, cplMax }: { campaign: MetaCampaign; cplMax: number }) {
+function CampaignRow({
+  campaign: c,
+  cplMax,
+  onClick,
+}: {
+  campaign: MetaCampaign;
+  cplMax: number;
+  onClick: () => void;
+}) {
   const isActive = c.status === "ACTIVE";
 
   const cplColor =
@@ -549,7 +574,10 @@ function CampaignRow({ campaign: c, cplMax }: { campaign: MetaCampaign; cplMax: 
       : "text-red-500";
 
   return (
-    <TableRow className={isActive ? "" : "opacity-50"}>
+    <TableRow
+      className={`cursor-pointer hover:bg-muted/50 transition-colors ${isActive ? "" : "opacity-50"}`}
+      onClick={onClick}
+    >
       <TableCell className="font-medium max-w-[220px] truncate" title={c.name}>
         {c.name}
       </TableCell>
