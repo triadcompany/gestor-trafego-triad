@@ -341,6 +341,120 @@ export async function fetchCampaigns(
 
 // ── Ad sets & Ads ──────────────────────────────────────────────
 
+export interface MetaTargeting {
+  age_min?: number;
+  age_max?: number;
+  genders?: number[]; // 1 = male, 2 = female, [] = all
+  geo_locations?: {
+    countries?: string[];
+    cities?: Array<{ key: string; name?: string; country?: string; region?: string }>;
+  };
+  flexible_spec?: Array<{ interests?: Array<{ id: string; name: string }> }>;
+  publisher_platforms?: string[];
+  facebook_positions?: string[];
+  instagram_positions?: string[];
+}
+
+export interface MetaAdCreative {
+  id: string;
+  body?: string;
+  title?: string;
+  description?: string;
+  thumbnail_url?: string;
+  object_story_spec?: {
+    link_data?: {
+      message?: string;
+      name?: string;
+      description?: string;
+      call_to_action?: {
+        type: string;
+        value?: { app_destination?: string; whatsapp_number?: string; message?: string; link?: string };
+      };
+    };
+    video_data?: {
+      message?: string;
+      title?: string;
+      description?: string;
+      call_to_action?: {
+        type: string;
+        value?: { app_destination?: string; whatsapp_number?: string };
+      };
+    };
+  };
+}
+
+export interface MetaInterest {
+  id: string;
+  name: string;
+}
+
+export interface MetaLocationResult {
+  key: string;
+  name: string;
+  type: string;
+  country_code: string;
+  region?: string;
+}
+
+export async function fetchAdSetTargeting(adSetId: string, token: string): Promise<MetaTargeting> {
+  const params = new URLSearchParams({ fields: "targeting", access_token: token });
+  const res = await fetch(`${BASE_URL}/${adSetId}?${params}`);
+  const json = await res.json() as { targeting?: MetaTargeting; error?: { message: string } };
+  if (json.error) throw new Error(json.error.message);
+  return json.targeting ?? {};
+}
+
+export async function updateAdSetTargeting(adSetId: string, targeting: MetaTargeting, token: string): Promise<void> {
+  await updateMetaObject(adSetId, { targeting: JSON.stringify(targeting) }, token);
+}
+
+export async function fetchAdWithCreative(adId: string, token: string): Promise<MetaAdCreative> {
+  const params = new URLSearchParams({
+    fields: "creative{id,body,title,description,thumbnail_url,object_story_spec}",
+    access_token: token,
+  });
+  const res = await fetch(`${BASE_URL}/${adId}?${params}`);
+  const json = await res.json() as { creative?: MetaAdCreative; error?: { message: string } };
+  if (json.error) throw new Error(json.error.message);
+  return json.creative ?? { id: "" };
+}
+
+export async function updateAdCreative(
+  creativeId: string,
+  fields: { body?: string; title?: string; description?: string },
+  token: string
+): Promise<void> {
+  const params: Record<string, string> = {};
+  if (fields.body !== undefined) params.body = fields.body;
+  if (fields.title !== undefined) params.title = fields.title;
+  if (fields.description !== undefined) params.description = fields.description;
+  await updateMetaObject(creativeId, params, token);
+}
+
+export async function searchMetaInterests(query: string, token: string): Promise<MetaInterest[]> {
+  const params = new URLSearchParams({ type: "adinterest", q: query, limit: "10", access_token: token });
+  const res = await fetch(`${BASE_URL}/search?${params}`);
+  const json = await res.json() as { data?: Array<{ id: string; name: string }>; error?: { message: string } };
+  if (json.error) throw new Error(json.error.message);
+  return (json.data ?? []).map((i) => ({ id: String(i.id), name: i.name }));
+}
+
+export async function searchMetaLocations(query: string, token: string): Promise<MetaLocationResult[]> {
+  const params = new URLSearchParams({
+    type: "adgeolocation",
+    q: query,
+    "location_types[0]": "city",
+    "location_types[1]": "region",
+    country_code: "BR",
+    limit: "10",
+    access_token: token,
+  });
+  const res = await fetch(`${BASE_URL}/search?${params}`);
+  const json = await res.json() as { data?: MetaLocationResult[]; error?: { message: string } };
+  if (json.error) throw new Error(json.error.message);
+  return json.data ?? [];
+}
+
 export interface MetaAdSet {
   id: string;
   name: string;
