@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
@@ -17,6 +17,7 @@ import {
   ExternalLink,
   KeyRound,
   RefreshCw,
+  Stethoscope,
 } from "lucide-react";
 import { toast } from "sonner";
 import { getTokenInfo, saveMetaToken } from "@/lib/meta";
