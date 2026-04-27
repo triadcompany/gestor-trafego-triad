@@ -69,7 +69,7 @@ export async function fetchClients(): Promise<ClientWithToday[]> {
     (metrics ?? []).map((m) => [m.client_id, m])
   );
 
-  return clients.map((c) => {
+  return (clients as ClientRow[]).map((c) => {
     const m = metricsMap.get(c.id);
     const spend = m?.spend ?? 0;
     const leads = m?.leads ?? 0;
