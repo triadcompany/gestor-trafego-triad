@@ -6,10 +6,14 @@ const BASE_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
 // ── Token storage ──────────────────────────────────────────────
 
 export async function saveMetaToken(token: string, expiresAt: Date) {
-  await supabase.from("app_config").upsert([
-    { key: "meta_access_token", value: token },
-    { key: "meta_token_expires_at", value: expiresAt.toISOString() },
-  ]);
+  const { error } = await supabase.from("app_config").upsert(
+    [
+      { key: "meta_access_token", value: token },
+      { key: "meta_token_expires_at", value: expiresAt.toISOString() },
+    ],
+    { onConflict: "key" }
+  );
+  if (error) throw error;
 }
 
 export interface TokenInfo {
@@ -138,7 +142,7 @@ export async function syncAllClients(token: string): Promise<MetaSyncResult> {
       status: errors.length === 0 ? "success" : "error",
       message: errors.length > 0 ? errors.join("; ") : null,
     }),
-    supabase.from("app_config").upsert({ key: "last_synced_at", value: syncedAt }),
+    supabase.from("app_config").upsert({ key: "last_synced_at", value: syncedAt }, { onConflict: "key" }),
   ]);
 
   return { synced, errors, syncedAt };
