@@ -606,24 +606,93 @@ export async function runMetaDiagnostics(): Promise<MetaDiagnostics> {
   };
 }
 
+/**
+ * Duplica uma campanha usando o modo assíncrono da API da Meta.
+ * O modo síncrono falha quando a campanha tem mais de 3 objetos (campanha + ad sets + ads).
+ * Ref: https://developers.facebook.com/docs/marketing-api/reference/ad-campaign-group/copies/
+ */
 export async function duplicateCampaign(
   campaignId: string,
   adAccountId: string,
   newName: string,
-  token: string
+  token: string,
+  onProgress?: (msg: string) => void
 ): Promise<string> {
+  onProgress?.("Iniciando cópia assíncrona...");
+
+  // 1. Dispara cópia assíncrona — retorna ad_copy_id imediatamente
   const copy = await postMeta(`${campaignId}/copies`, {
     ad_account_id: adAccountId,
-    deep_copy: "1",
+    deep_copy: "true",
     status_option: "PAUSED",
+    async: "true",
     access_token: token,
-  }) as { copied_campaign_id: string };
+  }) as { ad_copy_id?: string; copied_campaign_id?: string };
 
-  const newId = copy.copied_campaign_id;
+  // Em alguns casos a Meta ainda devolve o id direto (campanha pequena) — usa atalho
+  if (copy.copied_campaign_id && !copy.ad_copy_id) {
+    await postMeta(copy.copied_campaign_id, { name: newName, access_token: token });
+    return copy.copied_campaign_id;
+  }
 
+  if (!copy.ad_copy_id) {
+    throw new Error("Meta não retornou ad_copy_id nem copied_campaign_id.");
+  }
+
+  const adCopyId = copy.ad_copy_id;
+  onProgress?.("Aguardando a Meta finalizar a cópia...");
+
+  // 2. Polling do status do job assíncrono
+  const newId = await pollCopyJob(adCopyId, token, onProgress);
+
+  // 3. Renomeia a campanha copiada
   await postMeta(newId, { name: newName, access_token: token });
 
   return newId;
+}
+
+async function pollCopyJob(
+  adCopyId: string,
+  token: string,
+  onProgress?: (msg: string) => void
+): Promise<string> {
+  const maxAttempts = 60; // ~3 minutos com 3s entre tentativas
+  const intervalMs = 3000;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await new Promise((r) => setTimeout(r, intervalMs));
+
+    const url = `${BASE_URL}/${adCopyId}?fields=async_status,copied_campaign_id,ad_object_copy_entries&access_token=${encodeURIComponent(token)}`;
+    const res = await fetch(url);
+    const json = (await res.json()) as {
+      error?: MetaApiError;
+      async_status?: string;
+      copied_campaign_id?: string;
+    };
+
+    if (json.error) {
+      await recordMetaApiError(`${adCopyId} (poll)`, res.status, json.error);
+      throw new Error(json.error.message);
+    }
+
+    const status = json.async_status ?? "";
+    onProgress?.(`Status: ${status} (tentativa ${attempt}/${maxAttempts})`);
+
+    // Estados terminais conhecidos: "Completed", "Completed with Errors"
+    if (status.startsWith("Completed")) {
+      if (!json.copied_campaign_id) {
+        throw new Error(`Cópia finalizou (${status}) mas a Meta não retornou copied_campaign_id.`);
+      }
+      return json.copied_campaign_id;
+    }
+
+    if (status === "Failed" || status === "Error" || status === "Canceled") {
+      throw new Error(`Cópia assíncrona falhou na Meta (status: ${status}).`);
+    }
+    // Demais estados ("Initial", "Pending", "Running", "Processing"…) → continua esperando
+  }
+
+  throw new Error("Timeout aguardando a Meta finalizar a cópia da campanha.");
 }
 
 export interface CreateFromScratchOptions {
