@@ -6,10 +6,14 @@ const BASE_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
 // ── Token storage ──────────────────────────────────────────────
 
 export async function saveMetaToken(token: string, expiresAt: Date) {
-  await supabase.from("app_config").upsert([
-    { key: "meta_access_token", value: token },
-    { key: "meta_token_expires_at", value: expiresAt.toISOString() },
-  ]);
+  const { error } = await supabase.from("app_config").upsert(
+    [
+      { key: "meta_access_token", value: token },
+      { key: "meta_token_expires_at", value: expiresAt.toISOString() },
+    ],
+    { onConflict: "key" }
+  );
+  if (error) throw error;
 }
 
 export interface TokenInfo {
