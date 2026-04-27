@@ -355,16 +355,37 @@ export async function duplicateCampaign(
   newName: string,
   token: string
 ): Promise<string> {
+  // Step 1: copy campaign shell only (deep_copy at campaign level exceeds the 3-object limit)
   const copy = await postMeta(`${campaignId}/copies`, {
     ad_account_id: adAccountId,
-    deep_copy: "1",
     status_option: "PAUSED",
     access_token: token,
   }) as { copied_campaign_id: string };
 
   const newId = copy.copied_campaign_id;
 
+  // Step 2: rename the new campaign
   await postMeta(newId, { name: newName, access_token: token });
+
+  // Step 3: fetch original ad sets and copy each one individually
+  // Each adset copy with deep_copy = adset + ad = 2 objects (within the < 3 limit)
+  const adsetsRes = await fetch(
+    `${BASE_URL}/${campaignId}/adsets?fields=id&access_token=${encodeURIComponent(token)}`
+  );
+  const adsetsJson = await adsetsRes.json() as {
+    data?: Array<{ id: string }>;
+    error?: { message: string };
+  };
+  if (adsetsJson.error) throw new Error(adsetsJson.error.message);
+
+  for (const adset of adsetsJson.data ?? []) {
+    await postMeta(`${adset.id}/copies`, {
+      campaign_id: newId,
+      deep_copy: "1",
+      status_option: "PAUSED",
+      access_token: token,
+    });
+  }
 
   return newId;
 }
