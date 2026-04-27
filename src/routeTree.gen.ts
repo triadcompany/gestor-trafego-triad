@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as DiagnosticoMetaRouteImport } from './routes/diagnostico-meta'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ClientsIndexRouteImport } from './routes/clients.index'
 import { Route as ClientsIdRouteImport } from './routes/clients.$id'
@@ -25,6 +26,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DiagnosticoMetaRoute = DiagnosticoMetaRouteImport.update({
+  id: '/diagnostico-meta',
+  path: '/diagnostico-meta',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -55,6 +61,7 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -64,6 +71,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -74,6 +82,7 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
   '/settings': typeof SettingsRoute
   '/auth/callback': typeof AuthCallbackRoute
@@ -85,6 +94,7 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/diagnostico-meta'
     | '/login'
     | '/settings'
     | '/auth/callback'
@@ -94,6 +104,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/diagnostico-meta'
     | '/login'
     | '/settings'
     | '/auth/callback'
@@ -103,6 +114,7 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/diagnostico-meta'
     | '/login'
     | '/settings'
     | '/auth/callback'
@@ -113,6 +125,7 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DiagnosticoMetaRoute: typeof DiagnosticoMetaRoute
   LoginRoute: typeof LoginRoute
   SettingsRoute: typeof SettingsRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
@@ -135,6 +148,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/diagnostico-meta': {
+      id: '/diagnostico-meta'
+      path: '/diagnostico-meta'
+      fullPath: '/diagnostico-meta'
+      preLoaderRoute: typeof DiagnosticoMetaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -177,6 +197,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DiagnosticoMetaRoute: DiagnosticoMetaRoute,
   LoginRoute: LoginRoute,
   SettingsRoute: SettingsRoute,
   AuthCallbackRoute: AuthCallbackRoute,

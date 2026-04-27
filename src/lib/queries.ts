@@ -69,7 +69,7 @@ export async function fetchClients(): Promise<ClientWithToday[]> {
     (metrics ?? []).map((m) => [m.client_id, m])
   );
 
-  return clients.map((c) => {
+  return (clients as ClientRow[]).map((c) => {
     const m = metricsMap.get(c.id);
     const spend = m?.spend ?? 0;
     const leads = m?.leads ?? 0;
@@ -90,7 +90,7 @@ export async function fetchAllClients(): Promise<ClientRow[]> {
     .select("*")
     .order("name");
   if (error) throw error;
-  return data;
+  return data as ClientRow[];
 }
 
 export async function fetchClientDetail(id: string): Promise<ClientDetail> {
@@ -117,7 +117,7 @@ export async function fetchClientDetail(id: string): Promise<ClientDetail> {
   const cpl = todayMetric?.cpl ?? null;
 
   return {
-    ...client,
+    ...(client as ClientRow),
     spendToday: spend,
     leadsToday: leads,
     cplToday: cpl,
