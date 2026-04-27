@@ -31,6 +31,14 @@ export const Route = createRootRoute({
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { title: "Gestor de Tráfego" },
       { name: "description", content: "Painel interno de gestão de campanhas Meta Ads." },
+      { property: "og:title", content: "Gestor de Tráfego" },
+      { name: "twitter:title", content: "Gestor de Tráfego" },
+      { property: "og:description", content: "Painel interno de gestão de campanhas Meta Ads." },
+      { name: "twitter:description", content: "Painel interno de gestão de campanhas Meta Ads." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/cc62b545-2ba5-462d-8611-93670a0d1823/id-preview-7d5f1170--bad4faf0-13c3-47e9-b49a-f3a95afaa368.lovable.app-1777300458753.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/cc62b545-2ba5-462d-8611-93670a0d1823/id-preview-7d5f1170--bad4faf0-13c3-47e9-b49a-f3a95afaa368.lovable.app-1777300458753.png" },
+      { name: "twitter:card", content: "summary_large_image" },
+      { property: "og:type", content: "website" },
     ],
     links: [
       {
