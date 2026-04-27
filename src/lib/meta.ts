@@ -809,14 +809,18 @@ export async function duplicateCampaign(
     access_token: token,
   }) as { ad_copy_id?: string; copied_campaign_id?: string };
 
-  // Em alguns casos a Meta ainda devolve o id direto (campanha pequena) — usa atalho
+  // Em alguns casos a Meta devolve o id direto (campanha pequena / resposta síncrona)
   if (copy.copied_campaign_id && !copy.ad_copy_id) {
     await postMeta(copy.copied_campaign_id, { name: newName, access_token: token });
     return copy.copied_campaign_id;
   }
 
   if (!copy.ad_copy_id) {
-    throw new Error("Meta não retornou ad_copy_id nem copied_campaign_id.");
+    const raw = JSON.stringify(copy);
+    throw new Error(
+      `Meta não retornou ad_copy_id. Resposta: ${raw}. ` +
+      `Verifique se o app tem "Advanced Access" para ads_management no painel de apps Meta.`
+    );
   }
 
   const adCopyId = copy.ad_copy_id;
@@ -889,9 +893,9 @@ export async function createCampaignFromScratch(
 ): Promise<{ campaignId: string; adSetId: string }> {
   const campaign = await postMeta(`${opts.adAccountId}/campaigns`, {
     name: opts.name,
-    objective: "MESSAGES",
+    objective: "OUTCOME_ENGAGEMENT",
     status: "PAUSED",
-    "special_ad_categories[0]": "NONE",
+    special_ad_categories: "[]",
     access_token: opts.token,
   }) as { id: string };
 

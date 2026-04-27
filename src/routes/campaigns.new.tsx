@@ -330,7 +330,7 @@ function NewCampaign() {
                 <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/40 rounded-lg p-3">
                   <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
                   <span>
-                    Serão criados a campanha e o conjunto de anúncios (objetivo: Mensagens / WhatsApp).
+                    Serão criados a campanha e o conjunto de anúncios (objetivo: Engajamento / WhatsApp).
                     O criativo (imagem/vídeo + texto) deve ser adicionado no Gerenciador de Anúncios.
                   </span>
                 </div>
