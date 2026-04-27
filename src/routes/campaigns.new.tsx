@@ -98,13 +98,22 @@ function NewCampaign() {
 
       if (mode === "duplicate") {
         if (!baseCampaignId) throw new Error("Selecione a campanha base.");
-        const id = await duplicateCampaign(
-          baseCampaignId,
-          selectedClient.meta_ad_account_id,
-          name,
-          token
-        );
-        return id;
+        const progressToastId = "duplicate-progress";
+        toast.loading("Duplicando campanha na Meta...", { id: progressToastId });
+        try {
+          const id = await duplicateCampaign(
+            baseCampaignId,
+            selectedClient.meta_ad_account_id,
+            name,
+            token,
+            (msg) => toast.loading(msg, { id: progressToastId })
+          );
+          toast.dismiss(progressToastId);
+          return id;
+        } catch (err) {
+          toast.dismiss(progressToastId);
+          throw err;
+        }
       } else {
         if (!pageId) throw new Error("Informe o ID da Página do Facebook.");
         const { campaignId } = await createCampaignFromScratch({
