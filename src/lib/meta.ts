@@ -976,24 +976,18 @@ export async function duplicateCampaign(
     }
 
     // ── Compatibilidade objetivo × meta de desempenho ──────────
-    // Preserva destination_type/promoted_object do conjunto original (ex.: WHATSAPP/MESSENGER),
-    // que habilitam metas como CONVERSATIONS para OUTCOME_ENGAGEMENT.
-    const objective = srcJson.objective ?? "OUTCOME_ENGAGEMENT";
-    const srcGoal = adSet.optimization_goal ?? "";
-    const destinationType = adSet.destination_type ?? "";
-    const promotedObject = adSet.promoted_object ?? null;
-    // OFFSITE_CONVERSIONS exige promoted_object com pixel_id OU (application_id + event_type)
-    const hasOffsiteConversionsObject = !!promotedObject && (
-      "pixel_id" in promotedObject ||
-      ("application_id" in promotedObject && "event_type" in promotedObject)
-    );
-    const isMessagingDestination = ["WHATSAPP", "MESSENGER", "INSTAGRAM_DIRECT"].includes(destinationType);
-    // Regra do projeto: sempre forçar CONVERSATIONS como meta de desempenho.
-    // Mantém o destination_type/promoted_object originais (ex.: WHATSAPP) para que
-    // a Meta aceite CONVERSATIONS independentemente do objetivo da campanha.
+    const srcDestinationType = adSet.destination_type ?? "";
+
+    // destination_type=WHATSAPP exige WhatsApp Business na Página.
+    // Se o cliente não tem número WA Business configurado, cai para MESSENGER
+    // (mesmo objetivo CONVERSATIONS, sem exigência de WABA).
+    const effectiveDestinationType =
+      srcDestinationType === "WHATSAPP" && !whatsappNumber
+        ? "MESSENGER"
+        : srcDestinationType;
+
     const optimizationGoal = "CONVERSATIONS";
     const billingEvent = "IMPRESSIONS";
-    void srcGoal; void hasOffsiteConversionsObject; void isMessagingDestination; void objective;
 
     const adSetParams: Record<string, string> = {
       name: adSet.name,
@@ -1006,16 +1000,18 @@ export async function duplicateCampaign(
       access_token: token,
     };
 
-    if (destinationType) adSetParams.destination_type = destinationType;
+    if (effectiveDestinationType) adSetParams.destination_type = effectiveDestinationType;
 
-    // Garante que promoted_object inclui whatsapp_phone_number para destinos WHATSAPP.
-    // Sem esse campo, a Meta busca o número vinculado à Página e rejeita contas pessoais.
-    if (adSet.promoted_object || destinationType === "WHATSAPP") {
+    // Constrói promoted_object: injeta whatsapp_phone_number para destino WHATSAPP,
+    // remove-o se mudou para MESSENGER (campo inválido lá).
+    if (adSet.promoted_object || effectiveDestinationType) {
       const po: Record<string, string> = { ...(adSet.promoted_object ?? {}) };
-      if (destinationType === "WHATSAPP" && !po.whatsapp_phone_number && whatsappNumber) {
-        po.whatsapp_phone_number = whatsappNumber;
+      if (effectiveDestinationType === "WHATSAPP") {
+        if (!po.whatsapp_phone_number && whatsappNumber) po.whatsapp_phone_number = whatsappNumber;
+      } else {
+        delete po.whatsapp_phone_number;
       }
-      adSetParams.promoted_object = JSON.stringify(po);
+      if (Object.keys(po).length > 0) adSetParams.promoted_object = JSON.stringify(po);
     }
 
     // ── Validação obrigatória antes de enviar à Meta ───────────
@@ -1031,7 +1027,7 @@ export async function duplicateCampaign(
     } catch (err) {
       const baseMsg = err instanceof Error ? err.message : String(err);
       throw new Error(
-        `Falha ao duplicar o conjunto "${adSet.name}" (meta=CONVERSATIONS, destino=${destinationType || "—"}): ${baseMsg}`
+        `Falha ao duplicar o conjunto "${adSet.name}" (meta=CONVERSATIONS, destino=${effectiveDestinationType || "—"}): ${baseMsg}`
       );
     }
     const newAdSetId = newAdSetRes.id;
