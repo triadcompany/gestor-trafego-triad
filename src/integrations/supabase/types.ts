@@ -40,8 +40,10 @@ export type Database = {
           created_at: string
           id: string
           meta_ad_account_id: string
+          meta_balance: number | null
           meta_page_id: string | null
           name: string
+          payment_method: string
           segment: string
         }
         Insert: {
@@ -51,8 +53,10 @@ export type Database = {
           created_at?: string
           id?: string
           meta_ad_account_id: string
+          meta_balance?: number | null
           meta_page_id?: string | null
           name: string
+          payment_method?: string
           segment?: string
         }
         Update: {
@@ -62,8 +66,10 @@ export type Database = {
           created_at?: string
           id?: string
           meta_ad_account_id?: string
+          meta_balance?: number | null
           meta_page_id?: string | null
           name?: string
+          payment_method?: string
           segment?: string
         }
         Relationships: []

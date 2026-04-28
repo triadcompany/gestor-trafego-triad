@@ -63,30 +63,63 @@ export async function getLastSyncedAt(): Promise<Date | null> {
 
 // ── Account info (balance + payment method) ───────────────────
 
-export interface AdAccountInfo {
+export interface AdAccountBalanceInfo {
   balance: number | null;
   payment_method: "pix" | "cartao" | null; // null = could not detect
 }
 
-export async function fetchAdAccountInfo(adAccountId: string, token: string): Promise<AdAccountInfo> {
+export async function fetchAdAccountInfo(adAccountId: string, token: string): Promise<AdAccountBalanceInfo> {
   try {
     const res = await fetch(
-      `${BASE_URL}/${adAccountId}?fields=balance&access_token=${encodeURIComponent(token)}`
+      `${BASE_URL}/${adAccountId}?fields=balance,funding_source_details&access_token=${encodeURIComponent(token)}`
     );
     const json = await res.json() as {
       balance?: string;
+      funding_source_details?: { amount?: string; type?: number; display_string?: string };
       error?: MetaApiError;
     };
     if (json.error) return { balance: null, payment_method: null };
 
-    const balance = json.balance !== undefined ? parseInt(json.balance, 10) : null;
-    // Se há saldo positivo, é definitivamente pré-pago (PIX).
-    // Não assumimos "cartão" automaticamente — deixamos o campo manual como fonte de verdade.
+    // Prefer funding_source_details.amount when available — it represents the full prepaid credit
+    // balance represents only uncommitted credit (can be much lower than the real account balance)
+    const fsdAmount = json.funding_source_details?.amount !== undefined
+      ? parseInt(json.funding_source_details.amount, 10)
+      : null;
+    const rawBalance = json.balance !== undefined ? parseInt(json.balance, 10) : null;
+    const balance = fsdAmount !== null && fsdAmount > 0 ? fsdAmount : rawBalance;
+
     const payment_method = balance !== null && balance > 0 ? "pix" : null;
 
     return { balance, payment_method };
   } catch {
     return { balance: null, payment_method: null };
+  }
+}
+
+export interface RawAccountBalance {
+  balance: string | null;
+  funding_source_details: { amount?: string; type?: number; display_string?: string } | null;
+  error: string | null;
+}
+
+export async function fetchRawAccountBalance(adAccountId: string, token: string): Promise<RawAccountBalance> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/${adAccountId}?fields=balance,funding_source_details&access_token=${encodeURIComponent(token)}`
+    );
+    const json = await res.json() as {
+      balance?: string;
+      funding_source_details?: { amount?: string; type?: number; display_string?: string };
+      error?: { message: string };
+    };
+    if (json.error) return { balance: null, funding_source_details: null, error: json.error.message };
+    return {
+      balance: json.balance ?? null,
+      funding_source_details: json.funding_source_details ?? null,
+      error: null,
+    };
+  } catch (e) {
+    return { balance: null, funding_source_details: null, error: String(e) };
   }
 }
 
@@ -141,11 +174,12 @@ export async function syncClientMetrics(
 
   // Fetch balance + detect payment method (silent on failure — doesn't block metrics)
   const { balance, payment_method } = await fetchAdAccountInfo(adAccountId, token);
-  const clientUpdate: Record<string, unknown> = {};
-  if (balance !== null) clientUpdate.meta_balance = balance;
-  if (payment_method !== null) clientUpdate.payment_method = payment_method;
-  if (Object.keys(clientUpdate).length > 0) {
-    await supabase.from("clients").update(clientUpdate).eq("id", clientId);
+  if (balance !== null && payment_method !== null) {
+    await supabase.from("clients").update({ meta_balance: balance, payment_method }).eq("id", clientId);
+  } else if (balance !== null) {
+    await supabase.from("clients").update({ meta_balance: balance }).eq("id", clientId);
+  } else if (payment_method !== null) {
+    await supabase.from("clients").update({ payment_method }).eq("id", clientId);
   }
 
   return { spend, leads };
@@ -635,7 +669,7 @@ export interface PermissionInfo {
   description: string;
 }
 
-export interface AdAccountInfo {
+export interface DiagAdAccount {
   id: string;
   name: string;
   account_status: number;
@@ -662,7 +696,7 @@ export interface MetaDiagnostics {
   user: { id: string; name: string } | null;
   tokenError: string | null;
   permissions: PermissionInfo[];
-  adAccounts: AdAccountInfo[];
+  adAccounts: DiagAdAccount[];
   adAccountsError: string | null;
   lastError: LastMetaError | null;
   hints: string[];
@@ -781,7 +815,7 @@ export async function runMetaDiagnostics(): Promise<MetaDiagnostics> {
     description: p.description,
   }));
 
-  const adAccounts: AdAccountInfo[] = (accountsJson.data ?? []).map((a) => ({
+  const adAccounts: DiagAdAccount[] = (accountsJson.data ?? []).map((a) => ({
     id: a.id,
     name: a.name,
     account_status: a.account_status,
