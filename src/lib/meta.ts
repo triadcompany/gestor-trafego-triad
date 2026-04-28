@@ -898,40 +898,56 @@ export async function duplicateCampaign(
     const objective = srcJson.objective ?? "OUTCOME_ENGAGEMENT";
     const srcGoal = adSet.optimization_goal ?? "";
     const destinationType = adSet.destination_type ?? "";
+    const promotedObject = adSet.promoted_object ?? null;
+    // OFFSITE_CONVERSIONS exige promoted_object com pixel_id OU (application_id + event_type)
+    const hasOffsiteConversionsObject = !!promotedObject && (
+      "pixel_id" in promotedObject ||
+      ("application_id" in promotedObject && "event_type" in promotedObject)
+    );
+    const isMessagingDestination = ["WHATSAPP", "MESSENGER", "INSTAGRAM_DIRECT"].includes(destinationType);
     let optimizationGoal = srcGoal;
     let billingEvent = adSet.billing_event ?? "IMPRESSIONS";
 
+    // Se a meta original é OFFSITE_CONVERSIONS mas não há pixel/app, troca para algo seguro
+    if (srcGoal === "OFFSITE_CONVERSIONS" && !hasOffsiteConversionsObject) {
+      optimizationGoal = isMessagingDestination ? "CONVERSATIONS" : "LINK_CLICKS";
+      billingEvent = "IMPRESSIONS";
+    }
+
     if (objective === "OUTCOME_ENGAGEMENT") {
-      // Se a campanha for de mensagens (WhatsApp/Messenger/Instagram Direct),
-      // CONVERSATIONS é a meta correta. Caso contrário, restringe a metas válidas.
-      const isMessagingDestination = ["WHATSAPP", "MESSENGER", "INSTAGRAM_DIRECT"].includes(destinationType);
       if (isMessagingDestination) {
         optimizationGoal = "CONVERSATIONS";
         billingEvent = "IMPRESSIONS";
       } else {
         const validEngagementGoals = ["IMPRESSIONS", "REACH", "LINK_CLICKS", "ENGAGED_USERS", "VIDEO_VIEWS", "POST_ENGAGEMENT", "THRUPLAY"];
-        if (!validEngagementGoals.includes(srcGoal)) {
+        if (!validEngagementGoals.includes(optimizationGoal)) {
           optimizationGoal = "POST_ENGAGEMENT";
           billingEvent = "IMPRESSIONS";
         }
       }
     } else if (objective === "OUTCOME_LEADS") {
-      if (!["LEAD_GENERATION", "QUALITY_LEAD", "CONVERSATIONS", "LINK_CLICKS", "OFFSITE_CONVERSIONS"].includes(srcGoal)) {
-        optimizationGoal = destinationType === "WHATSAPP" || destinationType === "MESSENGER"
-          ? "CONVERSATIONS"
-          : "LEAD_GENERATION";
+      const validLeadGoals = ["LEAD_GENERATION", "QUALITY_LEAD", "CONVERSATIONS", "LINK_CLICKS"];
+      if (hasOffsiteConversionsObject) validLeadGoals.push("OFFSITE_CONVERSIONS");
+      if (!validLeadGoals.includes(optimizationGoal)) {
+        optimizationGoal = isMessagingDestination ? "CONVERSATIONS" : "LEAD_GENERATION";
       }
     } else if (objective === "OUTCOME_SALES") {
-      if (!["OFFSITE_CONVERSIONS", "LINK_CLICKS", "LANDING_PAGE_VIEWS", "VALUE"].includes(srcGoal)) {
-        optimizationGoal = "OFFSITE_CONVERSIONS";
+      // Sem pixel/app, evita OFFSITE_CONVERSIONS e VALUE
+      const validSalesGoals = ["LINK_CLICKS", "LANDING_PAGE_VIEWS"];
+      if (hasOffsiteConversionsObject) {
+        validSalesGoals.push("OFFSITE_CONVERSIONS", "VALUE");
+      }
+      if (!validSalesGoals.includes(optimizationGoal)) {
+        optimizationGoal = hasOffsiteConversionsObject ? "OFFSITE_CONVERSIONS" : "LANDING_PAGE_VIEWS";
+        billingEvent = "IMPRESSIONS";
       }
     } else if (objective === "OUTCOME_TRAFFIC") {
-      if (!["LINK_CLICKS", "LANDING_PAGE_VIEWS", "REACH", "IMPRESSIONS"].includes(srcGoal)) {
+      if (!["LINK_CLICKS", "LANDING_PAGE_VIEWS", "REACH", "IMPRESSIONS"].includes(optimizationGoal)) {
         optimizationGoal = "LINK_CLICKS";
         billingEvent = "IMPRESSIONS";
       }
     } else if (objective === "OUTCOME_AWARENESS") {
-      if (!["REACH", "IMPRESSIONS", "AD_RECALL_LIFT", "THRUPLAY"].includes(srcGoal)) {
+      if (!["REACH", "IMPRESSIONS", "AD_RECALL_LIFT", "THRUPLAY"].includes(optimizationGoal)) {
         optimizationGoal = "REACH";
         billingEvent = "IMPRESSIONS";
       }
