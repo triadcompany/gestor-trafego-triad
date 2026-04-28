@@ -175,11 +175,11 @@ export interface ClientBalance {
 }
 
 export async function fetchClientBalances(): Promise<ClientBalance[]> {
-  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
   const [{ data: clients }, { data: metrics }] = await Promise.all([
     supabase.from("clients").select("id, name, segment, payment_method, meta_balance").eq("active", true).order("name"),
-    supabase.from("metrics_daily").select("client_id, spend").eq("date", today),
+    supabase.from("metrics_daily").select("client_id, spend").eq("date", yesterday),
   ]);
 
   const metricsMap = new Map((metrics ?? []).map((m) => [m.client_id, m.spend as number]));
