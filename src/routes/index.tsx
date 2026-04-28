@@ -21,6 +21,7 @@ export const Route = createFileRoute("/")({
   head: () => ({
     meta: [{ title: "Dashboard — Gestor de Tráfego" }],
   }),
+  ssr: false,
   component: Dashboard,
 });
 
