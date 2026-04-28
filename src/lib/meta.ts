@@ -908,8 +908,8 @@ export async function duplicateCampaign(
     // Regra do projeto: sempre forçar CONVERSATIONS como meta de desempenho.
     // Mantém o destination_type/promoted_object originais (ex.: WHATSAPP) para que
     // a Meta aceite CONVERSATIONS independentemente do objetivo da campanha.
-    let optimizationGoal = "CONVERSATIONS";
-    let billingEvent = "IMPRESSIONS";
+    const optimizationGoal = "CONVERSATIONS";
+    const billingEvent = "IMPRESSIONS";
     void srcGoal; void hasOffsiteConversionsObject; void isMessagingDestination; void objective;
 
     const adSetParams: Record<string, string> = {
@@ -926,7 +926,22 @@ export async function duplicateCampaign(
     if (destinationType) adSetParams.destination_type = destinationType;
     if (adSet.promoted_object) adSetParams.promoted_object = JSON.stringify(adSet.promoted_object);
 
-    const newAdSetRes = (await postMeta(`${adAccountId}/adsets`, adSetParams)) as { id: string };
+    // ── Validação obrigatória antes de enviar à Meta ───────────
+    if (adSetParams.optimization_goal !== "CONVERSATIONS") {
+      throw new Error(
+        `Validação falhou: optimization_goal do conjunto "${adSet.name}" deveria ser CONVERSATIONS, mas é "${adSetParams.optimization_goal}".`
+      );
+    }
+
+    let newAdSetRes: { id: string };
+    try {
+      newAdSetRes = (await postMeta(`${adAccountId}/adsets`, adSetParams)) as { id: string };
+    } catch (err) {
+      const baseMsg = err instanceof Error ? err.message : String(err);
+      throw new Error(
+        `Falha ao duplicar o conjunto "${adSet.name}" (meta=CONVERSATIONS, destino=${destinationType || "—"}): ${baseMsg}`
+      );
+    }
     const newAdSetId = newAdSetRes.id;
 
     // Busca anúncios do conjunto original
