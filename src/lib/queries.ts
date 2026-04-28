@@ -136,6 +136,7 @@ export async function upsertClient(data: {
   segment: "popular" | "premium";
   cpl_min: number;
   cpl_max: number;
+  payment_method?: "pix" | "cartao";
 }) {
   const { error } = await supabase.from("clients").upsert({
     ...data,

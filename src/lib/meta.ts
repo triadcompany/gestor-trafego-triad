@@ -71,20 +71,18 @@ export interface AdAccountInfo {
 export async function fetchAdAccountInfo(adAccountId: string, token: string): Promise<AdAccountInfo> {
   try {
     const res = await fetch(
-      `${BASE_URL}/${adAccountId}?fields=balance,funding_source_details&access_token=${encodeURIComponent(token)}`
+      `${BASE_URL}/${adAccountId}?fields=balance&access_token=${encodeURIComponent(token)}`
     );
     const json = await res.json() as {
       balance?: string;
-      funding_source_details?: { type?: number };
       error?: MetaApiError;
     };
     if (json.error) return { balance: null, payment_method: null };
 
     const balance = json.balance !== undefined ? parseInt(json.balance, 10) : null;
-    // funding_source_details.type === 2 means prepaid (PIX/crédito)
-    // types 1 (card), 4 (PayPal), 5 (invoice), 7 (direct debit) = postpaid
-    const type = json.funding_source_details?.type;
-    const payment_method = type === undefined ? null : type === 2 ? "pix" : "cartao";
+    // Se há saldo positivo, é definitivamente pré-pago (PIX).
+    // Não assumimos "cartão" automaticamente — deixamos o campo manual como fonte de verdade.
+    const payment_method = balance !== null && balance > 0 ? "pix" : null;
 
     return { balance, payment_method };
   } catch {
