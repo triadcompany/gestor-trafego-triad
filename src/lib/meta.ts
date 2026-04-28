@@ -557,6 +557,20 @@ async function recordMetaApiError(endpoint: string, status: number, error: MetaA
   }
 }
 
+async function postMetaJson(endpoint: string, params: Record<string, unknown>): Promise<unknown> {
+  const res = await fetch(`${BASE_URL}/${endpoint}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+  const json = (await res.json()) as { error?: MetaApiError };
+  if (json.error) {
+    await recordMetaApiError(endpoint, res.status, json.error);
+    throw new Error(json.error.message);
+  }
+  return json;
+}
+
 async function postMeta(endpoint: string, params: Record<string, string>): Promise<unknown> {
   const body = new URLSearchParams(params);
   const res = await fetch(`${BASE_URL}/${endpoint}`, {
@@ -787,9 +801,8 @@ export async function runMetaDiagnostics(): Promise<MetaDiagnostics> {
 }
 
 /**
- * Duplica uma campanha usando o modo assíncrono da API da Meta.
- * O modo síncrono falha quando a campanha tem mais de 3 objetos (campanha + ad sets + ads).
- * Ref: https://developers.facebook.com/docs/marketing-api/reference/ad-campaign-group/copies/
+ * Duplica uma campanha via cópia manual: cria nova campanha + copia cada ad set + copia cada ad.
+ * Cada operação toca exatamente 1 objeto, evitando o limite de 3 objetos por chamada da Meta API.
  */
 export async function duplicateCampaign(
   campaignId: string,
@@ -798,85 +811,161 @@ export async function duplicateCampaign(
   token: string,
   onProgress?: (msg: string) => void
 ): Promise<string> {
-  onProgress?.("Iniciando cópia assíncrona...");
+  onProgress?.("Buscando estrutura da campanha...");
 
-  // 1. Dispara cópia assíncrona — retorna ad_copy_id imediatamente
-  const copy = await postMeta(`${campaignId}/copies`, {
-    ad_account_id: adAccountId,
-    deep_copy: "1",
-    status_option: "PAUSED",
-    async: "true",
+  // 1. Busca campos da campanha original incluindo orçamento (para detectar CBO)
+  const srcRes = await fetch(
+    `${BASE_URL}/${campaignId}?fields=objective,special_ad_categories,daily_budget&access_token=${encodeURIComponent(token)}`
+  );
+  const srcJson = (await srcRes.json()) as {
+    objective?: string;
+    special_ad_categories?: string[];
+    daily_budget?: string;
+    error?: MetaApiError;
+  };
+  if (srcJson.error) throw new Error(srcJson.error.message);
+
+  // 2. Busca conjuntos com seus orçamentos (para calcular budget total se não for CBO)
+  const adSetsRes = await fetch(
+    `${BASE_URL}/${campaignId}/adsets?fields=id,name,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,targeting,destination_type,promoted_object&limit=50&access_token=${encodeURIComponent(token)}`
+  );
+  const adSetsJson = (await adSetsRes.json()) as {
+    data?: Array<{
+      id: string;
+      name: string;
+      daily_budget?: string;
+      lifetime_budget?: string;
+      billing_event?: string;
+      optimization_goal?: string;
+      bid_strategy?: string;
+      bid_amount?: string;
+      targeting?: MetaTargeting;
+      destination_type?: string;
+      promoted_object?: Record<string, string>;
+    }>;
+    error?: MetaApiError;
+  };
+  if (adSetsJson.error) throw new Error(adSetsJson.error.message);
+  const adSets = adSetsJson.data ?? [];
+
+  // 3. Determina o orçamento da nova campanha (CBO elimina is_adset_budget_sharing_enabled nos conjuntos)
+  //    Fonte: orçamento da campanha original (se CBO) ou soma dos conjuntos
+  let campaignDailyBudget = srcJson.daily_budget
+    ? parseInt(srcJson.daily_budget, 10)
+    : adSets.reduce((sum, s) => sum + (s.daily_budget ? parseInt(s.daily_budget, 10) : 0), 0);
+
+  if (!campaignDailyBudget || campaignDailyBudget < 100) campaignDailyBudget = 5000; // mínimo R$ 50
+
+  onProgress?.(`${adSets.length} conjunto(s) encontrado(s). Criando nova campanha com orçamento de campanha...`);
+
+  // 4. Cria a nova campanha com daily_budget (CBO) — conjuntos não precisam de orçamento próprio
+  // Campanha CBO sem bid_strategy explícita — ad sets herdam budget sem exigir is_adset_budget_sharing_enabled
+  const newCampaign = (await postMeta(`${adAccountId}/campaigns`, {
+    name: newName,
+    objective: srcJson.objective ?? "OUTCOME_ENGAGEMENT",
+    status: "PAUSED",
+    special_ad_categories: "[]",
+    daily_budget: String(campaignDailyBudget),
     access_token: token,
-  }) as { ad_copy_id?: string; copied_campaign_id?: string };
+  })) as { id: string };
 
-  // Em alguns casos a Meta devolve o id direto (campanha pequena / resposta síncrona)
-  if (copy.copied_campaign_id && !copy.ad_copy_id) {
-    await postMeta(copy.copied_campaign_id, { name: newName, access_token: token });
-    return copy.copied_campaign_id;
-  }
+  const newCampaignId = newCampaign.id;
 
-  if (!copy.ad_copy_id) {
-    const raw = JSON.stringify(copy);
-    throw new Error(
-      `Meta não retornou ad_copy_id. Resposta: ${raw}. ` +
-      `Verifique se o app tem "Advanced Access" para ads_management no painel de apps Meta.`
-    );
-  }
+  // 5. Cria cada conjunto do zero no modo CBO:
+  //    - Sem daily_budget próprio (herda da campanha)
+  //    - Sem is_adset_budget_sharing_enabled (não exigido em CBO)
+  //    - Com bid_amount padrão de R$15 para satisfazer qualquer exigência de lance
+  for (let i = 0; i < adSets.length; i++) {
+    const adSet = adSets[i];
+    onProgress?.(`Criando conjunto ${i + 1}/${adSets.length}: ${adSet.name}...`);
 
-  const adCopyId = copy.ad_copy_id;
-  onProgress?.("Aguardando a Meta finalizar a cópia...");
+    // ── Corrige targeting ──────────────────────────────────────
+    const targeting = adSet.targeting ?? { geo_locations: { countries: ["BR"] } };
+    // explore_home exige explore junto (regra Meta)
+    if (targeting.instagram_positions?.includes("explore_home") && !targeting.instagram_positions.includes("explore")) {
+      targeting.instagram_positions = [...targeting.instagram_positions, "explore"];
+    }
+    // Remove posicionamentos de search que causam conflito com outros
+    if (targeting.instagram_positions) {
+      targeting.instagram_positions = targeting.instagram_positions.filter(
+        (p) => !["ig_search"].includes(p)
+      );
+    }
 
-  // 2. Polling do status do job assíncrono
-  const newId = await pollCopyJob(adCopyId, token, onProgress);
+    // ── Compatibilidade objetivo × meta de desempenho ──────────
+    // Sem destination_type=WHATSAPP, "CONVERSATIONS" é inválido para OUTCOME_ENGAGEMENT.
+    // Mapeamento seguro para cada objetivo da Meta API v21:
+    const objective = srcJson.objective ?? "OUTCOME_ENGAGEMENT";
+    const srcGoal = adSet.optimization_goal ?? "";
+    let optimizationGoal = srcGoal;
+    let billingEvent = adSet.billing_event ?? "IMPRESSIONS";
 
-  // 3. Renomeia a campanha copiada
-  await postMeta(newId, { name: newName, access_token: token });
+    if (objective === "OUTCOME_ENGAGEMENT") {
+      // Sem destination_type, apenas IMPRESSIONS, REACH, LINK_CLICKS e ENGAGED_USERS são válidos
+      const validEngagementGoals = ["IMPRESSIONS", "REACH", "LINK_CLICKS", "ENGAGED_USERS", "VIDEO_VIEWS"];
+      if (!validEngagementGoals.includes(srcGoal)) {
+        optimizationGoal = "IMPRESSIONS";
+        billingEvent = "IMPRESSIONS";
+      }
+    } else if (objective === "OUTCOME_LEADS") {
+      if (!["LEAD_GENERATION", "QUALITY_LEAD", "CONVERSATIONS", "LINK_CLICKS"].includes(srcGoal)) {
+        optimizationGoal = "LEAD_GENERATION";
+      }
+    } else if (objective === "OUTCOME_SALES") {
+      if (!["OFFSITE_CONVERSIONS", "LINK_CLICKS", "LANDING_PAGE_VIEWS", "VALUE"].includes(srcGoal)) {
+        optimizationGoal = "OFFSITE_CONVERSIONS";
+      }
+    } else if (objective === "OUTCOME_TRAFFIC") {
+      if (!["LINK_CLICKS", "LANDING_PAGE_VIEWS", "REACH", "IMPRESSIONS"].includes(srcGoal)) {
+        optimizationGoal = "LINK_CLICKS";
+        billingEvent = "IMPRESSIONS";
+      }
+    } else if (objective === "OUTCOME_AWARENESS") {
+      if (!["REACH", "IMPRESSIONS", "AD_RECALL_LIFT"].includes(srcGoal)) {
+        optimizationGoal = "REACH";
+        billingEvent = "IMPRESSIONS";
+      }
+    }
 
-  return newId;
-}
-
-async function pollCopyJob(
-  adCopyId: string,
-  token: string,
-  onProgress?: (msg: string) => void
-): Promise<string> {
-  const maxAttempts = 60; // ~3 minutos com 3s entre tentativas
-  const intervalMs = 3000;
-
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    await new Promise((r) => setTimeout(r, intervalMs));
-
-    const url = `${BASE_URL}/${adCopyId}?fields=async_status,copied_campaign_id,ad_object_copy_entries&access_token=${encodeURIComponent(token)}`;
-    const res = await fetch(url);
-    const json = (await res.json()) as {
-      error?: MetaApiError;
-      async_status?: string;
-      copied_campaign_id?: string;
+    const adSetParams: Record<string, string> = {
+      name: adSet.name,
+      campaign_id: newCampaignId,
+      billing_event: billingEvent,
+      optimization_goal: optimizationGoal,
+      targeting: JSON.stringify(targeting),
+      bid_amount: "1500",
+      status: "PAUSED",
+      access_token: token,
     };
 
-    if (json.error) {
-      await recordMetaApiError(`${adCopyId} (poll)`, res.status, json.error);
-      throw new Error(json.error.message);
-    }
+    if (adSet.promoted_object) adSetParams.promoted_object = JSON.stringify(adSet.promoted_object);
 
-    const status = json.async_status ?? "";
-    onProgress?.(`Status: ${status} (tentativa ${attempt}/${maxAttempts})`);
+    const newAdSetRes = (await postMeta(`${adAccountId}/adsets`, adSetParams)) as { id: string };
+    const newAdSetId = newAdSetRes.id;
 
-    // Estados terminais conhecidos: "Completed", "Completed with Errors"
-    if (status.startsWith("Completed")) {
-      if (!json.copied_campaign_id) {
-        throw new Error(`Cópia finalizou (${status}) mas a Meta não retornou copied_campaign_id.`);
-      }
-      return json.copied_campaign_id;
-    }
+    // Busca anúncios do conjunto original
+    const adsRes = await fetch(
+      `${BASE_URL}/${adSet.id}/ads?fields=id,name&limit=50&access_token=${encodeURIComponent(token)}`
+    );
+    const adsJson = (await adsRes.json()) as {
+      data?: Array<{ id: string; name: string }>;
+      error?: MetaApiError;
+    };
+    if (adsJson.error) throw new Error(adsJson.error.message);
+    const ads = adsJson.data ?? [];
 
-    if (status === "Failed" || status === "Error" || status === "Canceled") {
-      throw new Error(`Cópia assíncrona falhou na Meta (status: ${status}).`);
+    for (let j = 0; j < ads.length; j++) {
+      const ad = ads[j];
+      onProgress?.(`Copiando anúncio ${j + 1}/${ads.length} (conjunto ${i + 1})...`);
+      await postMeta(`${ad.id}/copies`, {
+        adset_id: newAdSetId,
+        status_option: "PAUSED",
+        access_token: token,
+      });
     }
-    // Demais estados ("Initial", "Pending", "Running", "Processing"…) → continua esperando
   }
 
-  throw new Error("Timeout aguardando a Meta finalizar a cópia da campanha.");
+  return newCampaignId;
 }
 
 export interface CreateFromScratchOptions {
@@ -886,14 +975,17 @@ export interface CreateFromScratchOptions {
   dailyBudget: number; // BRL
   placements: { facebook: boolean; instagram: boolean };
   token: string;
+  campaignType?: "engagement" | "sales";
 }
 
 export async function createCampaignFromScratch(
   opts: CreateFromScratchOptions
 ): Promise<{ campaignId: string; adSetId: string }> {
+  const objective = opts.campaignType === "sales" ? "OUTCOME_SALES" : "OUTCOME_ENGAGEMENT";
+
   const campaign = await postMeta(`${opts.adAccountId}/campaigns`, {
     name: opts.name,
-    objective: "OUTCOME_ENGAGEMENT",
+    objective,
     status: "PAUSED",
     special_ad_categories: "[]",
     access_token: opts.token,

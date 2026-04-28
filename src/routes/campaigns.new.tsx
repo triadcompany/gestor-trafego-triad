@@ -52,6 +52,7 @@ function NewCampaign() {
   const [pageId, setPageId] = useState("");
   const [igChecked, setIgChecked] = useState(true);
   const [fbChecked, setFbChecked] = useState(true);
+  const [campaignType, setCampaignType] = useState<"engagement" | "sales">("engagement");
 
   const [createdId, setCreatedId] = useState<string | null>(null);
 
@@ -123,6 +124,7 @@ function NewCampaign() {
           dailyBudget: budget,
           placements: { facebook: fbChecked, instagram: igChecked },
           token,
+          campaignType,
         });
         return campaignId;
       }
@@ -285,6 +287,20 @@ function NewCampaign() {
 
             {mode === "scratch" && (
               <>
+                <div className="space-y-2">
+                  <Label>Tipo de campanha</Label>
+                  <RadioGroup value={campaignType} onValueChange={(v) => setCampaignType(v as "engagement" | "sales")} className="flex gap-4">
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value="engagement" id="ct-eng" />
+                      <Label htmlFor="ct-eng" className="font-normal cursor-pointer">Engajamento → WhatsApp</Label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <RadioGroupItem value="sales" id="ct-sales" />
+                      <Label htmlFor="ct-sales" className="font-normal cursor-pointer">Vendas → WhatsApp</Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+
                 <div className="space-y-2">
                   <Label>Orçamento diário (R$)</Label>
                   <Input
