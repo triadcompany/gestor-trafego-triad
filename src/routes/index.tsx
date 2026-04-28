@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { StatusDot } from "@/components/StatusDot";
@@ -76,11 +76,16 @@ function Dashboard() {
     [filter, clients]
   );
 
-  const today = new Date().toLocaleDateString("pt-BR", {
-    weekday: "long",
-    day: "2-digit",
-    month: "long",
-  });
+  const [today, setToday] = useState<string>("");
+  useEffect(() => {
+    setToday(
+      new Date().toLocaleDateString("pt-BR", {
+        weekday: "long",
+        day: "2-digit",
+        month: "long",
+      })
+    );
+  }, []);
 
   const handleRefresh = () => {
     queryClient.invalidateQueries({ queryKey: ["clients-dashboard"] });
