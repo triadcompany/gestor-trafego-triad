@@ -639,6 +639,13 @@ async function recordMetaApiError(endpoint: string, status: number, error: MetaA
   }
 }
 
+function formatMetaError(e: MetaApiError): string {
+  const parts = [e.message];
+  if (e.code) parts.push(`[code ${e.code}${e.error_subcode ? `.${e.error_subcode}` : ""}]`);
+  if (e.fbtrace_id) parts.push(`(trace: ${e.fbtrace_id})`);
+  return parts.join(" ");
+}
+
 async function postMetaJson(endpoint: string, params: Record<string, unknown>): Promise<unknown> {
   const res = await fetch(`${BASE_URL}/${endpoint}`, {
     method: "POST",
@@ -648,7 +655,7 @@ async function postMetaJson(endpoint: string, params: Record<string, unknown>): 
   const json = (await res.json()) as { error?: MetaApiError };
   if (json.error) {
     await recordMetaApiError(endpoint, res.status, json.error);
-    throw new Error(json.error.message);
+    throw new Error(formatMetaError(json.error));
   }
   return json;
 }
@@ -663,7 +670,7 @@ async function postMeta(endpoint: string, params: Record<string, string>): Promi
   const json = (await res.json()) as { error?: MetaApiError };
   if (json.error) {
     await recordMetaApiError(endpoint, res.status, json.error);
-    throw new Error(json.error.message);
+    throw new Error(formatMetaError(json.error));
   }
   return json;
 }
@@ -977,14 +984,7 @@ export async function duplicateCampaign(
 
     // ── Compatibilidade objetivo × meta de desempenho ──────────
     const srcDestinationType = adSet.destination_type ?? "";
-
-    // destination_type=WHATSAPP exige WhatsApp Business na Página.
-    // Se o cliente não tem número WA Business configurado, cai para MESSENGER
-    // (mesmo objetivo CONVERSATIONS, sem exigência de WABA).
-    const effectiveDestinationType =
-      srcDestinationType === "WHATSAPP" && !whatsappNumber
-        ? "MESSENGER"
-        : srcDestinationType;
+    const effectiveDestinationType = srcDestinationType;
 
     const optimizationGoal = "CONVERSATIONS";
     const billingEvent = "IMPRESSIONS";
@@ -1101,10 +1101,11 @@ export async function createCampaignFromScratch(
   if (facebook_positions.length) targeting.facebook_positions = facebook_positions;
   if (instagram_positions.length) targeting.instagram_positions = instagram_positions;
 
-  // Se houver número WhatsApp Business → WHATSAPP; caso contrário → MESSENGER (não exige WABA)
-  const destinationType = opts.whatsappNumber ? "WHATSAPP" : "MESSENGER";
+  // promoted_object: page_id sempre; whatsapp_phone_number apenas quando configurado no cliente.
+  // Sem whatsapp_phone_number, a Meta busca o número vinculado à Página (funciona com WABA conectada).
   const promotedObject: Record<string, string> = { page_id: opts.pageId };
   if (opts.whatsappNumber) promotedObject.whatsapp_phone_number = opts.whatsappNumber;
+  const destinationType = "WHATSAPP";
 
   const adSet = await postMeta(`${opts.adAccountId}/adsets`, {
     name: opts.name,

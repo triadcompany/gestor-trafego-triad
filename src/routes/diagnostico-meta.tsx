@@ -232,7 +232,7 @@ function DiagnosticoMetaPage() {
                         label="Código Meta"
                         value={
                           data.lastError.code !== undefined
-                            ? String(data.lastError.code)
+                            ? `${data.lastError.code}${data.lastError.error_subcode ? `.${data.lastError.error_subcode}` : ""}`
                             : "—"
                         }
                       />
