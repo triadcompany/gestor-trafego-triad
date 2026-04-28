@@ -38,7 +38,9 @@ import {
   ResponsiveContainer,
   ReferenceArea,
 } from "recharts";
-import { fetchClientDetail, updateClientGoal } from "@/lib/queries";
+import { fetchClientDetail, updateClientGoal, fetchNotes, createNote, updateNote, deleteNote } from "@/lib/queries";
+import { NoteCard } from "@/components/NoteCard";
+import { NoteComposer } from "@/components/NoteComposer";
 import { CampaignSheet } from "@/components/CampaignSheet";
 import {
   fetchCampaigns,
@@ -493,7 +495,92 @@ function ClientDetail() {
         open={sheetOpen}
         onOpenChange={setSheetOpen}
       />
+
+      <ClientNotes clientId={id} clientName={client.name} />
     </AppShell>
+  );
+}
+
+function ClientNotes({ clientId, clientName }: { clientId: string; clientName: string }) {
+  const [showComposer, setShowComposer] = useState(false);
+  const qc = useQueryClient();
+
+  const { data: notes = [], isLoading } = useQuery({
+    queryKey: ["notes", clientId],
+    queryFn: () => fetchNotes(clientId),
+  });
+
+  const createNoteMutation = useMutation({
+    mutationFn: createNote,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notes", clientId] });
+      qc.invalidateQueries({ queryKey: ["notes"] });
+      setShowComposer(false);
+    },
+  });
+
+  const updateNoteMutation = useMutation({
+    mutationFn: ({ id, content }: { id: string; content: string }) => updateNote(id, content),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notes", clientId] });
+      qc.invalidateQueries({ queryKey: ["notes"] });
+    },
+  });
+
+  const deleteNoteMutation = useMutation({
+    mutationFn: deleteNote,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["notes", clientId] });
+      qc.invalidateQueries({ queryKey: ["notes"] });
+    },
+  });
+
+  const fakeClient = [{ id: clientId, name: clientName } as any];
+
+  return (
+    <div className="px-4 md:px-8 pb-8 max-w-4xl mx-auto">
+      <div className="border-t border-border pt-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Anotações</h2>
+          <Button size="sm" variant="outline" onClick={() => setShowComposer((v) => !v)} className="gap-2">
+            <Plus className="h-3.5 w-3.5" />
+            Nova anotação
+          </Button>
+        </div>
+
+        {showComposer && (
+          <div className="mb-4">
+            <NoteComposer
+              clients={fakeClient}
+              fixedClientId={clientId}
+              onSave={async (payload) => { await createNoteMutation.mutateAsync(payload); }}
+              onCancel={() => setShowComposer(false)}
+            />
+          </div>
+        )}
+
+        {isLoading ? (
+          <div className="flex flex-col gap-3">
+            {Array.from({ length: 2 }).map((_, i) => (
+              <div key={i} className="rounded-xl border border-border bg-card h-20 animate-pulse" />
+            ))}
+          </div>
+        ) : notes.length === 0 && !showComposer ? (
+          <p className="text-sm text-muted-foreground py-4">Nenhuma anotação para este cliente.</p>
+        ) : (
+          <div className="flex flex-col gap-3">
+            {notes.map((note) => (
+              <NoteCard
+                key={note.id}
+                note={note}
+                onUpdate={async (id, content) => { await updateNoteMutation.mutateAsync({ id, content }); }}
+                onDelete={(id) => deleteNoteMutation.mutate(id)}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

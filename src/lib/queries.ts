@@ -1,7 +1,7 @@
 import { supabase } from "./supabase";
-import type { ClientStatus } from "./database.types";
+import type { ClientStatus, PeriodType, ReportStatus } from "./database.types";
 
-export type { ClientStatus };
+export type { ClientStatus, PeriodType, ReportStatus };
 
 export interface ClientRow {
   id: string;
@@ -192,4 +192,129 @@ export async function fetchClientBalances(): Promise<ClientBalance[]> {
     meta_balance: c.meta_balance ?? null,
     spendToday: metricsMap.get(c.id) ?? 0,
   }));
+}
+
+// ─── Notas ───────────────────────────────────────────────────────────────────
+
+export interface NoteWithClient {
+  id: string;
+  client_id: string;
+  client_name: string;
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchNotes(clientId?: string): Promise<NoteWithClient[]> {
+  let query = supabase
+    .from("client_notes")
+    .select("id, client_id, content, created_at, updated_at, clients(name)")
+    .order("created_at", { ascending: false });
+
+  if (clientId) query = query.eq("client_id", clientId);
+
+  const { data, error } = await query;
+  if (error) throw error;
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    client_id: row.client_id,
+    client_name: row.clients?.name ?? "",
+    content: row.content,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  }));
+}
+
+export async function createNote(payload: {
+  client_id: string;
+  content: string;
+}): Promise<NoteWithClient> {
+  const { data, error } = await supabase
+    .from("client_notes")
+    .insert(payload)
+    .select("id, client_id, content, created_at, updated_at, clients(name)")
+    .single();
+  if (error) throw error;
+  return {
+    id: (data as any).id,
+    client_id: (data as any).client_id,
+    client_name: (data as any).clients?.name ?? "",
+    content: (data as any).content,
+    created_at: (data as any).created_at,
+    updated_at: (data as any).updated_at,
+  };
+}
+
+export async function updateNote(id: string, content: string): Promise<void> {
+  const { error } = await supabase
+    .from("client_notes")
+    .update({ content, updated_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteNote(id: string): Promise<void> {
+  const { error } = await supabase.from("client_notes").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ─── Relatórios ──────────────────────────────────────────────────────────────
+
+export interface ReportWithClient {
+  id: string;
+  client_id: string;
+  client_name: string;
+  period_type: PeriodType;
+  period_start: string;
+  status: ReportStatus;
+  sent_at: string | null;
+  created_at: string;
+}
+
+export async function fetchReports(): Promise<ReportWithClient[]> {
+  const { data, error } = await supabase
+    .from("report_log")
+    .select("id, client_id, period_type, period_start, status, sent_at, created_at, clients(name)")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  return (data ?? []).map((row: any) => ({
+    id: row.id,
+    client_id: row.client_id,
+    client_name: row.clients?.name ?? "",
+    period_type: row.period_type as PeriodType,
+    period_start: row.period_start,
+    status: row.status as ReportStatus,
+    sent_at: row.sent_at,
+    created_at: row.created_at,
+  }));
+}
+
+export async function createReport(payload: {
+  client_id: string;
+  period_type: PeriodType;
+  period_start: string;
+}): Promise<void> {
+  const { error } = await supabase.from("report_log").insert({
+    ...payload,
+    status: "pendente",
+  });
+  if (error) throw error;
+}
+
+export async function markReportSent(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("report_log")
+    .update({ status: "enviado", sent_at: new Date().toISOString() })
+    .eq("id", id);
+  if (error) throw error;
+}
+
+export async function markReportPending(id: string): Promise<void> {
+  const { error } = await supabase
+    .from("report_log")
+    .update({ status: "pendente", sent_at: null })
+    .eq("id", id);
+  if (error) throw error;
 }

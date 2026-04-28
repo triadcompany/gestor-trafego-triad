@@ -1,6 +1,8 @@
 export type ClientSegment = "popular" | "premium";
 export type ClientStatus = "on-target" | "attention" | "critical" | "no-data";
 export type SyncStatus = "success" | "error";
+export type PeriodType = "semanal" | "mensal";
+export type ReportStatus = "pendente" | "enviado";
 
 export interface Database {
   public: {
@@ -63,6 +65,50 @@ export interface Database {
         };
         Insert: Omit<Database["public"]["Tables"]["app_config"]["Row"], "id"> & { id?: string };
         Update: Partial<Database["public"]["Tables"]["app_config"]["Insert"]>;
+      };
+      client_notes: {
+        Row: {
+          id: string;
+          client_id: string;
+          content: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          client_id: string;
+          content: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          content?: string;
+          updated_at?: string;
+        };
+      };
+      report_log: {
+        Row: {
+          id: string;
+          client_id: string;
+          period_type: PeriodType;
+          period_start: string;
+          status: ReportStatus;
+          sent_at: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          client_id: string;
+          period_type: PeriodType;
+          period_start: string;
+          status?: ReportStatus;
+          sent_at?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          status?: ReportStatus;
+          sent_at?: string | null;
+        };
       };
     };
   };

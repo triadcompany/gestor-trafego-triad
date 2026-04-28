@@ -32,6 +32,68 @@ export type Database = {
         }
         Relationships: []
       }
+      client_notes: {
+        Row: {
+          id: string
+          client_id: string
+          content: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          client_id: string
+          content: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          content?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_notes_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      report_log: {
+        Row: {
+          id: string
+          client_id: string
+          period_type: string
+          period_start: string
+          status: string
+          sent_at: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          client_id: string
+          period_type: string
+          period_start: string
+          status?: string
+          sent_at?: string | null
+          created_at?: string
+        }
+        Update: {
+          status?: string
+          sent_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       clients: {
         Row: {
           active: boolean
