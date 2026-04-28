@@ -893,23 +893,33 @@ export async function duplicateCampaign(
     }
 
     // ── Compatibilidade objetivo × meta de desempenho ──────────
-    // Sem destination_type=WHATSAPP, "CONVERSATIONS" é inválido para OUTCOME_ENGAGEMENT.
-    // Mapeamento seguro para cada objetivo da Meta API v21:
+    // Preserva destination_type/promoted_object do conjunto original (ex.: WHATSAPP/MESSENGER),
+    // que habilitam metas como CONVERSATIONS para OUTCOME_ENGAGEMENT.
     const objective = srcJson.objective ?? "OUTCOME_ENGAGEMENT";
     const srcGoal = adSet.optimization_goal ?? "";
+    const destinationType = adSet.destination_type ?? "";
     let optimizationGoal = srcGoal;
     let billingEvent = adSet.billing_event ?? "IMPRESSIONS";
 
     if (objective === "OUTCOME_ENGAGEMENT") {
-      // Sem destination_type, apenas IMPRESSIONS, REACH, LINK_CLICKS e ENGAGED_USERS são válidos
-      const validEngagementGoals = ["IMPRESSIONS", "REACH", "LINK_CLICKS", "ENGAGED_USERS", "VIDEO_VIEWS"];
-      if (!validEngagementGoals.includes(srcGoal)) {
-        optimizationGoal = "IMPRESSIONS";
+      // Se a campanha for de mensagens (WhatsApp/Messenger/Instagram Direct),
+      // CONVERSATIONS é a meta correta. Caso contrário, restringe a metas válidas.
+      const isMessagingDestination = ["WHATSAPP", "MESSENGER", "INSTAGRAM_DIRECT"].includes(destinationType);
+      if (isMessagingDestination) {
+        optimizationGoal = "CONVERSATIONS";
         billingEvent = "IMPRESSIONS";
+      } else {
+        const validEngagementGoals = ["IMPRESSIONS", "REACH", "LINK_CLICKS", "ENGAGED_USERS", "VIDEO_VIEWS", "POST_ENGAGEMENT", "THRUPLAY"];
+        if (!validEngagementGoals.includes(srcGoal)) {
+          optimizationGoal = "POST_ENGAGEMENT";
+          billingEvent = "IMPRESSIONS";
+        }
       }
     } else if (objective === "OUTCOME_LEADS") {
-      if (!["LEAD_GENERATION", "QUALITY_LEAD", "CONVERSATIONS", "LINK_CLICKS"].includes(srcGoal)) {
-        optimizationGoal = "LEAD_GENERATION";
+      if (!["LEAD_GENERATION", "QUALITY_LEAD", "CONVERSATIONS", "LINK_CLICKS", "OFFSITE_CONVERSIONS"].includes(srcGoal)) {
+        optimizationGoal = destinationType === "WHATSAPP" || destinationType === "MESSENGER"
+          ? "CONVERSATIONS"
+          : "LEAD_GENERATION";
       }
     } else if (objective === "OUTCOME_SALES") {
       if (!["OFFSITE_CONVERSIONS", "LINK_CLICKS", "LANDING_PAGE_VIEWS", "VALUE"].includes(srcGoal)) {
@@ -921,7 +931,7 @@ export async function duplicateCampaign(
         billingEvent = "IMPRESSIONS";
       }
     } else if (objective === "OUTCOME_AWARENESS") {
-      if (!["REACH", "IMPRESSIONS", "AD_RECALL_LIFT"].includes(srcGoal)) {
+      if (!["REACH", "IMPRESSIONS", "AD_RECALL_LIFT", "THRUPLAY"].includes(srcGoal)) {
         optimizationGoal = "REACH";
         billingEvent = "IMPRESSIONS";
       }
@@ -938,6 +948,7 @@ export async function duplicateCampaign(
       access_token: token,
     };
 
+    if (destinationType) adSetParams.destination_type = destinationType;
     if (adSet.promoted_object) adSetParams.promoted_object = JSON.stringify(adSet.promoted_object);
 
     const newAdSetRes = (await postMeta(`${adAccountId}/adsets`, adSetParams)) as { id: string };
