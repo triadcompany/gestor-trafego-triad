@@ -26,6 +26,8 @@ import {
   createReport,
   markReportSent,
   markReportPending,
+  updateReport,
+  deleteReport,
   fetchAllClients,
 } from "@/lib/queries";
 
@@ -117,6 +119,25 @@ function TarefasPage() {
       toast.success("Relatório revertido para pendente.");
     },
     onError: () => toast.error("Erro ao atualizar relatório."),
+  });
+
+  const updateReportMutation = useMutation({
+    mutationFn: ({ id, fields }: { id: string; fields: Parameters<typeof updateReport>[1] }) =>
+      updateReport(id, fields),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["reports"] });
+      toast.success("Relatório atualizado.");
+    },
+    onError: () => toast.error("Erro ao atualizar relatório."),
+  });
+
+  const deleteReportMutation = useMutation({
+    mutationFn: deleteReport,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["reports"] });
+      toast.success("Relatório excluído.");
+    },
+    onError: () => toast.error("Erro ao excluir relatório."),
   });
 
   const filteredNotes = useMemo(() => {
@@ -238,6 +259,8 @@ function TarefasPage() {
               isLoading={reportsLoading}
               onMarkSent={(id) => markSentMutation.mutate(id)}
               onMarkPending={(id) => markPendingMutation.mutate(id)}
+              onUpdate={(id, fields) => updateReportMutation.mutate({ id, fields })}
+              onDelete={(id) => deleteReportMutation.mutate(id)}
             />
           </div>
         )}

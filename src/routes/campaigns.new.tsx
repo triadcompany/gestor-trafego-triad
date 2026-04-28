@@ -107,7 +107,8 @@ function NewCampaign() {
             selectedClient.meta_ad_account_id,
             name,
             token,
-            (msg) => toast.loading(msg, { id: progressToastId })
+            (msg) => toast.loading(msg, { id: progressToastId }),
+            selectedClient.meta_whatsapp_number ?? undefined
           );
           toast.dismiss(progressToastId);
           return id;
@@ -121,6 +122,7 @@ function NewCampaign() {
           name,
           adAccountId: selectedClient.meta_ad_account_id,
           pageId,
+          whatsappNumber: selectedClient.meta_whatsapp_number ?? undefined,
           dailyBudget: budget,
           placements: { facebook: fbChecked, instagram: igChecked },
           token,

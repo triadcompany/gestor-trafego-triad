@@ -8,6 +8,7 @@ export interface ClientRow {
   name: string;
   meta_ad_account_id: string;
   meta_page_id: string | null;
+  meta_whatsapp_number: string | null;
   segment: "popular" | "premium";
   cpl_min: number;
   cpl_max: number;
@@ -133,6 +134,7 @@ export async function upsertClient(data: {
   name: string;
   meta_ad_account_id: string;
   meta_page_id?: string;
+  meta_whatsapp_number?: string;
   segment: "popular" | "premium";
   cpl_min: number;
   cpl_max: number;
@@ -316,5 +318,18 @@ export async function markReportPending(id: string): Promise<void> {
     .from("report_log")
     .update({ status: "pendente", sent_at: null })
     .eq("id", id);
+  if (error) throw error;
+}
+
+export async function updateReport(
+  id: string,
+  fields: { period_type?: PeriodType; period_start?: string; sent_at?: string | null }
+): Promise<void> {
+  const { error } = await supabase.from("report_log").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteReport(id: string): Promise<void> {
+  const { error } = await supabase.from("report_log").delete().eq("id", id);
   if (error) throw error;
 }

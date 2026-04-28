@@ -891,7 +891,8 @@ export async function duplicateCampaign(
   adAccountId: string,
   newName: string,
   token: string,
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  whatsappNumber?: string // número WhatsApp Business do cliente, injeta no promoted_object se estiver faltando
 ): Promise<string> {
   onProgress?.("Buscando estrutura da campanha...");
 
@@ -1006,7 +1007,16 @@ export async function duplicateCampaign(
     };
 
     if (destinationType) adSetParams.destination_type = destinationType;
-    if (adSet.promoted_object) adSetParams.promoted_object = JSON.stringify(adSet.promoted_object);
+
+    // Garante que promoted_object inclui whatsapp_phone_number para destinos WHATSAPP.
+    // Sem esse campo, a Meta busca o número vinculado à Página e rejeita contas pessoais.
+    if (adSet.promoted_object || destinationType === "WHATSAPP") {
+      const po: Record<string, string> = { ...(adSet.promoted_object ?? {}) };
+      if (destinationType === "WHATSAPP" && !po.whatsapp_phone_number && whatsappNumber) {
+        po.whatsapp_phone_number = whatsappNumber;
+      }
+      adSetParams.promoted_object = JSON.stringify(po);
+    }
 
     // ── Validação obrigatória antes de enviar à Meta ───────────
     if (adSetParams.optimization_goal !== "CONVERSATIONS") {
@@ -1055,6 +1065,7 @@ export interface CreateFromScratchOptions {
   name: string;
   adAccountId: string;
   pageId: string;
+  whatsappNumber?: string; // E.164, ex: +5511999999999 — obrigatório para destination WHATSAPP
   dailyBudget: number; // BRL
   placements: { facebook: boolean; instagram: boolean };
   token: string;
@@ -1094,14 +1105,19 @@ export async function createCampaignFromScratch(
   if (facebook_positions.length) targeting.facebook_positions = facebook_positions;
   if (instagram_positions.length) targeting.instagram_positions = instagram_positions;
 
+  // Se houver número WhatsApp Business → WHATSAPP; caso contrário → MESSENGER (não exige WABA)
+  const destinationType = opts.whatsappNumber ? "WHATSAPP" : "MESSENGER";
+  const promotedObject: Record<string, string> = { page_id: opts.pageId };
+  if (opts.whatsappNumber) promotedObject.whatsapp_phone_number = opts.whatsappNumber;
+
   const adSet = await postMeta(`${opts.adAccountId}/adsets`, {
     name: opts.name,
     campaign_id: campaignId,
     daily_budget: String(Math.round(opts.dailyBudget * 100)),
     billing_event: "IMPRESSIONS",
     optimization_goal: "CONVERSATIONS",
-    destination_type: "WHATSAPP",
-    promoted_object: JSON.stringify({ page_id: opts.pageId }),
+    destination_type: destinationType,
+    promoted_object: JSON.stringify(promotedObject),
     targeting: JSON.stringify(targeting),
     status: "PAUSED",
     access_token: opts.token,

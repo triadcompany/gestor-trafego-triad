@@ -81,6 +81,8 @@ export type Database = {
           created_at?: string
         }
         Update: {
+          period_type?: string
+          period_start?: string
           status?: string
           sent_at?: string | null
         }
@@ -104,6 +106,7 @@ export type Database = {
           meta_ad_account_id: string
           meta_balance: number | null
           meta_page_id: string | null
+          meta_whatsapp_number: string | null
           name: string
           payment_method: string
           segment: string
@@ -117,6 +120,7 @@ export type Database = {
           meta_ad_account_id: string
           meta_balance?: number | null
           meta_page_id?: string | null
+          meta_whatsapp_number?: string | null
           name: string
           payment_method?: string
           segment?: string
@@ -130,6 +134,7 @@ export type Database = {
           meta_ad_account_id?: string
           meta_balance?: number | null
           meta_page_id?: string | null
+          meta_whatsapp_number?: string | null
           name?: string
           payment_method?: string
           segment?: string

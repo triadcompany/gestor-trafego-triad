@@ -206,6 +206,8 @@ function ClientFormDialog({
 }) {
   const [name, setName] = useState(client?.name ?? "");
   const [adAccountId, setAdAccountId] = useState(client?.meta_ad_account_id ?? "");
+  const [pageId, setPageId] = useState(client?.meta_page_id ?? "");
+  const [whatsappNumber, setWhatsappNumber] = useState(client?.meta_whatsapp_number ?? "");
   const [segment, setSegment] = useState<"popular" | "premium">(client?.segment ?? "popular");
   const [cplMin, setCplMin] = useState(client?.cpl_min ?? 6);
   const [cplMax, setCplMax] = useState(client?.cpl_max ?? 12);
@@ -223,6 +225,8 @@ function ClientFormDialog({
       ...(client?.id ? { id: client.id } : {}),
       name,
       meta_ad_account_id: adAccountId,
+      ...(pageId ? { meta_page_id: pageId } : {}),
+      ...(whatsappNumber ? { meta_whatsapp_number: whatsappNumber } : {}),
       segment,
       cpl_min: cplMin,
       cpl_max: cplMax,
@@ -253,6 +257,24 @@ function ClientFormDialog({
             placeholder="act_1234567890"
             required
           />
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <Label>ID da Página do Facebook</Label>
+            <Input
+              value={pageId}
+              onChange={(e) => setPageId(e.target.value)}
+              placeholder="123456789012345"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label>WhatsApp Business (+55...)</Label>
+            <Input
+              value={whatsappNumber}
+              onChange={(e) => setWhatsappNumber(e.target.value)}
+              placeholder="+5511999999999"
+            />
+          </div>
         </div>
         <div className="space-y-1">
           <Label>Segmento</Label>
