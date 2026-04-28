@@ -439,6 +439,18 @@ function RawBalanceRow({
       ) : (
         <>
           <div>
+            <span className="text-muted-foreground">display_string → parseado: </span>
+            <span className="text-green-400 font-semibold">
+              {raw.displayBalanceCents !== null
+                ? `R$${(raw.displayBalanceCents / 100).toFixed(2)}`
+                : "—"}
+            </span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">display_string (raw): </span>
+            <span className="text-foreground">{raw.funding_source_details?.display_string ?? "—"}</span>
+          </div>
+          <div>
             <span className="text-muted-foreground">balance: </span>
             <span className="text-foreground">{brl(raw.balance ?? undefined)}</span>
           </div>
@@ -450,12 +462,6 @@ function RawBalanceRow({
             <span className="text-muted-foreground">funding_source_details.type: </span>
             <span className="text-foreground">{raw.funding_source_details?.type ?? "—"}</span>
           </div>
-          {raw.funding_source_details?.display_string && (
-            <div>
-              <span className="text-muted-foreground">display_string: </span>
-              <span className="text-foreground">{raw.funding_source_details.display_string}</span>
-            </div>
-          )}
         </>
       )}
     </div>

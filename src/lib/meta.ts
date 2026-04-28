@@ -68,6 +68,16 @@ export interface AdAccountBalanceInfo {
   payment_method: "pix" | "cartao" | null; // null = could not detect
 }
 
+function parseDisplayStringBalance(displayString: string | undefined): number | null {
+  if (!displayString) return null;
+  // Matches "R$1.816,15 BRL" or "R$ 1.816,15" (Brazilian format)
+  const match = displayString.match(/R\$\s*([\d.,]+)/);
+  if (!match) return null;
+  const numStr = match[1].replace(/\./g, "").replace(",", ".");
+  const brl = parseFloat(numStr);
+  return isNaN(brl) ? null : Math.round(brl * 100);
+}
+
 export async function fetchAdAccountInfo(adAccountId: string, token: string): Promise<AdAccountBalanceInfo> {
   try {
     const res = await fetch(
@@ -80,13 +90,18 @@ export async function fetchAdAccountInfo(adAccountId: string, token: string): Pr
     };
     if (json.error) return { balance: null, payment_method: null };
 
-    // Prefer funding_source_details.amount when available — it represents the full prepaid credit
-    // balance represents only uncommitted credit (can be much lower than the real account balance)
-    const fsdAmount = json.funding_source_details?.amount !== undefined
+    // Priority: fsd.amount → fsd.display_string (parsed) → balance
+    // display_string e.g. "Saldo disponível (R$1.816,15 BRL)" is the most reliable for BR accounts
+    const fsdAmount = json.funding_source_details?.amount
       ? parseInt(json.funding_source_details.amount, 10)
       : null;
+    const displayBalance = parseDisplayStringBalance(json.funding_source_details?.display_string);
     const rawBalance = json.balance !== undefined ? parseInt(json.balance, 10) : null;
-    const balance = fsdAmount !== null && fsdAmount > 0 ? fsdAmount : rawBalance;
+
+    const balance =
+      fsdAmount !== null && fsdAmount > 0 ? fsdAmount :
+      displayBalance !== null && displayBalance > 0 ? displayBalance :
+      rawBalance;
 
     const payment_method = balance !== null && balance > 0 ? "pix" : null;
 
@@ -99,6 +114,7 @@ export async function fetchAdAccountInfo(adAccountId: string, token: string): Pr
 export interface RawAccountBalance {
   balance: string | null;
   funding_source_details: { amount?: string; type?: number; display_string?: string } | null;
+  displayBalanceCents: number | null; // parsed from display_string
   error: string | null;
 }
 
@@ -112,14 +128,15 @@ export async function fetchRawAccountBalance(adAccountId: string, token: string)
       funding_source_details?: { amount?: string; type?: number; display_string?: string };
       error?: { message: string };
     };
-    if (json.error) return { balance: null, funding_source_details: null, error: json.error.message };
+    if (json.error) return { balance: null, funding_source_details: null, displayBalanceCents: null, error: json.error.message };
     return {
       balance: json.balance ?? null,
       funding_source_details: json.funding_source_details ?? null,
+      displayBalanceCents: parseDisplayStringBalance(json.funding_source_details?.display_string),
       error: null,
     };
   } catch (e) {
-    return { balance: null, funding_source_details: null, error: String(e) };
+    return { balance: null, funding_source_details: null, displayBalanceCents: null, error: String(e) };
   }
 }
 
