@@ -79,11 +79,17 @@ function SaldosPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao sincronizar"),
   });
 
-  const sorted = [...balances].sort(sortByStatus);
-  const maxBalance = Math.max(...balances.map((b) => b.meta_balance ?? 0), 1);
-  const totalBalance = balances.reduce((s, b) => s + (b.meta_balance ?? 0), 0);
-  const criticalCount = balances.filter((b) => balanceStatus(b.meta_balance) === "critical").length;
-  const attentionCount = balances.filter((b) => balanceStatus(b.meta_balance) === "attention").length;
+  const pixClients = balances.filter((b) => b.payment_method === "pix");
+  const sorted = [...balances].sort((a, b) => {
+    // cartao always last; among pix, sort by criticality
+    if (a.payment_method === "cartao" && b.payment_method !== "cartao") return 1;
+    if (a.payment_method !== "cartao" && b.payment_method === "cartao") return -1;
+    return sortByStatus(a, b);
+  });
+  const maxBalance = Math.max(...pixClients.map((b) => b.meta_balance ?? 0), 1);
+  const totalBalance = pixClients.reduce((s, b) => s + (b.meta_balance ?? 0), 0);
+  const criticalCount = pixClients.filter((b) => balanceStatus(b.meta_balance) === "critical").length;
+  const attentionCount = pixClients.filter((b) => balanceStatus(b.meta_balance) === "attention").length;
 
   const syncedLabel = lastSyncedAt
     ? lastSyncedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
@@ -221,9 +227,10 @@ function SummaryCard({
 }
 
 function BalanceRow({ client, maxBalance }: { client: ClientBalance; maxBalance: number }) {
-  const status = balanceStatus(client.meta_balance);
+  const isCard = client.payment_method === "cartao";
+  const status = isCard ? "unknown" : balanceStatus(client.meta_balance);
   const colors = STATUS_COLORS[status];
-  const barPct = client.meta_balance !== null ? Math.max((client.meta_balance / maxBalance) * 100, 2) : 0;
+  const barPct = !isCard && client.meta_balance !== null ? Math.max((client.meta_balance / maxBalance) * 100, 2) : 0;
 
   const statusLabel = { ok: "Ok", attention: "Atenção", critical: "Crítico", unknown: "—" }[status];
   const StatusIcon = { ok: CheckCircle2, attention: AlertCircle, critical: AlertTriangle, unknown: null }[status];
@@ -243,12 +250,20 @@ function BalanceRow({ client, maxBalance }: { client: ClientBalance; maxBalance:
 
       {/* Saldo */}
       <div className="flex flex-col items-end justify-center gap-1">
-        <span className={`text-sm font-mono font-bold ${colors.text}`}>
-          {client.meta_balance !== null ? brl(client.meta_balance) : "—"}
-        </span>
-        <div className="w-24 h-1 bg-muted rounded-full overflow-hidden">
-          <div className={`h-full rounded-full ${colors.bar} transition-all`} style={{ width: `${barPct}%` }} />
-        </div>
+        {isCard ? (
+          <span className="text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full bg-muted/40 text-muted-foreground border border-border">
+            Cartão
+          </span>
+        ) : (
+          <>
+            <span className={`text-sm font-mono font-bold ${colors.text}`}>
+              {client.meta_balance !== null ? brl(client.meta_balance) : "—"}
+            </span>
+            <div className="w-24 h-1 bg-muted rounded-full overflow-hidden">
+              <div className={`h-full rounded-full ${colors.bar} transition-all`} style={{ width: `${barPct}%` }} />
+            </div>
+          </>
+        )}
       </div>
 
       {/* Gasto hoje */}
@@ -261,13 +276,13 @@ function BalanceRow({ client, maxBalance }: { client: ClientBalance; maxBalance:
       {/* Estimativa */}
       <div className="flex items-center justify-end">
         <span className={`text-sm font-mono ${status === "critical" ? "text-red-500" : status === "attention" ? "text-yellow-500" : "text-muted-foreground"}`}>
-          {estimatedDays(client.meta_balance, client.spendToday)}
+          {isCard ? "—" : estimatedDays(client.meta_balance, client.spendToday)}
         </span>
       </div>
 
       {/* Status */}
       <div className="flex items-center justify-end">
-        {StatusIcon ? (
+        {!isCard && StatusIcon ? (
           <span className={`inline-flex items-center gap-1 text-[11px] font-mono font-semibold px-2 py-0.5 rounded-full ${colors.bg} ${colors.text} border ${colors.border}`}>
             <StatusIcon className="h-3 w-3" />
             {statusLabel}

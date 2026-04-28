@@ -209,6 +209,7 @@ function ClientFormDialog({
   const [segment, setSegment] = useState<"popular" | "premium">(client?.segment ?? "popular");
   const [cplMin, setCplMin] = useState(client?.cpl_min ?? 6);
   const [cplMax, setCplMax] = useState(client?.cpl_max ?? 12);
+  const [paymentMethod, setPaymentMethod] = useState<"pix" | "cartao">(client?.payment_method ?? "pix");
 
   const handleSegmentChange = (val: "popular" | "premium") => {
     setSegment(val);
@@ -225,6 +226,7 @@ function ClientFormDialog({
       segment,
       cpl_min: cplMin,
       cpl_max: cplMax,
+      payment_method: paymentMethod,
     });
   };
 
@@ -261,6 +263,18 @@ function ClientFormDialog({
             <SelectContent>
               <SelectItem value="popular">Popular (R$6 – R$12)</SelectItem>
               <SelectItem value="premium">Premium (R$12 – R$25)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="space-y-1">
+          <Label>Forma de pagamento Meta</Label>
+          <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as "pix" | "cartao")}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pix">Pré-pago (PIX / crédito)</SelectItem>
+              <SelectItem value="cartao">Pós-pago (Cartão)</SelectItem>
             </SelectContent>
           </Select>
         </div>

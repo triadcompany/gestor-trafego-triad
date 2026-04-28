@@ -17,6 +17,7 @@ export interface Database {
           active: boolean;
           created_at: string;
           meta_balance: number | null;
+          payment_method: "pix" | "cartao";
         };
         Insert: Omit<Database["public"]["Tables"]["clients"]["Row"], "id" | "created_at"> & {
           id?: string;

@@ -14,6 +14,7 @@ export interface ClientRow {
   active: boolean;
   created_at: string;
   meta_balance: number | null;
+  payment_method: "pix" | "cartao";
 }
 
 export interface MetricRow {
@@ -135,6 +136,7 @@ export async function upsertClient(data: {
   segment: "popular" | "premium";
   cpl_min: number;
   cpl_max: number;
+  payment_method?: "pix" | "cartao";
 }) {
   const { error } = await supabase.from("clients").upsert({
     ...data,
@@ -167,6 +169,7 @@ export interface ClientBalance {
   id: string;
   name: string;
   segment: "popular" | "premium";
+  payment_method: "pix" | "cartao";
   meta_balance: number | null;
   spendToday: number;
 }
@@ -175,7 +178,7 @@ export async function fetchClientBalances(): Promise<ClientBalance[]> {
   const today = new Date().toISOString().slice(0, 10);
 
   const [{ data: clients }, { data: metrics }] = await Promise.all([
-    supabase.from("clients").select("id, name, segment, meta_balance").eq("active", true).order("name"),
+    supabase.from("clients").select("id, name, segment, payment_method, meta_balance").eq("active", true).order("name"),
     supabase.from("metrics_daily").select("client_id, spend").eq("date", today),
   ]);
 
@@ -185,6 +188,7 @@ export async function fetchClientBalances(): Promise<ClientBalance[]> {
     id: c.id,
     name: c.name,
     segment: c.segment as "popular" | "premium",
+    payment_method: (c.payment_method ?? "pix") as "pix" | "cartao",
     meta_balance: c.meta_balance ?? null,
     spendToday: metricsMap.get(c.id) ?? 0,
   }));
