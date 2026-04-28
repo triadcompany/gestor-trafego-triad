@@ -905,53 +905,12 @@ export async function duplicateCampaign(
       ("application_id" in promotedObject && "event_type" in promotedObject)
     );
     const isMessagingDestination = ["WHATSAPP", "MESSENGER", "INSTAGRAM_DIRECT"].includes(destinationType);
-    let optimizationGoal = srcGoal;
-    let billingEvent = adSet.billing_event ?? "IMPRESSIONS";
-
-    // Se a meta original é OFFSITE_CONVERSIONS mas não há pixel/app, troca para algo seguro
-    if (srcGoal === "OFFSITE_CONVERSIONS" && !hasOffsiteConversionsObject) {
-      optimizationGoal = isMessagingDestination ? "CONVERSATIONS" : "LINK_CLICKS";
-      billingEvent = "IMPRESSIONS";
-    }
-
-    if (objective === "OUTCOME_ENGAGEMENT") {
-      if (isMessagingDestination) {
-        optimizationGoal = "CONVERSATIONS";
-        billingEvent = "IMPRESSIONS";
-      } else {
-        const validEngagementGoals = ["IMPRESSIONS", "REACH", "LINK_CLICKS", "ENGAGED_USERS", "VIDEO_VIEWS", "POST_ENGAGEMENT", "THRUPLAY"];
-        if (!validEngagementGoals.includes(optimizationGoal)) {
-          optimizationGoal = "POST_ENGAGEMENT";
-          billingEvent = "IMPRESSIONS";
-        }
-      }
-    } else if (objective === "OUTCOME_LEADS") {
-      const validLeadGoals = ["LEAD_GENERATION", "QUALITY_LEAD", "CONVERSATIONS", "LINK_CLICKS"];
-      if (hasOffsiteConversionsObject) validLeadGoals.push("OFFSITE_CONVERSIONS");
-      if (!validLeadGoals.includes(optimizationGoal)) {
-        optimizationGoal = isMessagingDestination ? "CONVERSATIONS" : "LEAD_GENERATION";
-      }
-    } else if (objective === "OUTCOME_SALES") {
-      // Sem pixel/app, evita OFFSITE_CONVERSIONS e VALUE
-      const validSalesGoals = ["LINK_CLICKS", "LANDING_PAGE_VIEWS"];
-      if (hasOffsiteConversionsObject) {
-        validSalesGoals.push("OFFSITE_CONVERSIONS", "VALUE");
-      }
-      if (!validSalesGoals.includes(optimizationGoal)) {
-        optimizationGoal = hasOffsiteConversionsObject ? "OFFSITE_CONVERSIONS" : "LANDING_PAGE_VIEWS";
-        billingEvent = "IMPRESSIONS";
-      }
-    } else if (objective === "OUTCOME_TRAFFIC") {
-      if (!["LINK_CLICKS", "LANDING_PAGE_VIEWS", "REACH", "IMPRESSIONS"].includes(optimizationGoal)) {
-        optimizationGoal = "LINK_CLICKS";
-        billingEvent = "IMPRESSIONS";
-      }
-    } else if (objective === "OUTCOME_AWARENESS") {
-      if (!["REACH", "IMPRESSIONS", "AD_RECALL_LIFT", "THRUPLAY"].includes(optimizationGoal)) {
-        optimizationGoal = "REACH";
-        billingEvent = "IMPRESSIONS";
-      }
-    }
+    // Regra do projeto: sempre forçar CONVERSATIONS como meta de desempenho.
+    // Mantém o destination_type/promoted_object originais (ex.: WHATSAPP) para que
+    // a Meta aceite CONVERSATIONS independentemente do objetivo da campanha.
+    let optimizationGoal = "CONVERSATIONS";
+    let billingEvent = "IMPRESSIONS";
+    void srcGoal; void hasOffsiteConversionsObject; void isMessagingDestination; void objective;
 
     const adSetParams: Record<string, string> = {
       name: adSet.name,
