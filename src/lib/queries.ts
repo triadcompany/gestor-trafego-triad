@@ -13,6 +13,7 @@ export interface ClientRow {
   cpl_max: number;
   active: boolean;
   created_at: string;
+  meta_balance: number | null;
 }
 
 export interface MetricRow {
@@ -160,4 +161,31 @@ export async function updateClientGoal(
     .update({ cpl_min, cpl_max })
     .eq("id", id);
   if (error) throw error;
+}
+
+export interface ClientBalance {
+  id: string;
+  name: string;
+  segment: "popular" | "premium";
+  meta_balance: number | null;
+  spendToday: number;
+}
+
+export async function fetchClientBalances(): Promise<ClientBalance[]> {
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [{ data: clients }, { data: metrics }] = await Promise.all([
+    supabase.from("clients").select("id, name, segment, meta_balance").eq("active", true).order("name"),
+    supabase.from("metrics_daily").select("client_id, spend").eq("date", today),
+  ]);
+
+  const metricsMap = new Map((metrics ?? []).map((m) => [m.client_id, m.spend as number]));
+
+  return (clients ?? []).map((c) => ({
+    id: c.id,
+    name: c.name,
+    segment: c.segment as "popular" | "premium",
+    meta_balance: c.meta_balance ?? null,
+    spendToday: metricsMap.get(c.id) ?? 0,
+  }));
 }

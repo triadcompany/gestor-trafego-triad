@@ -16,6 +16,7 @@ export interface Database {
           cpl_max: number;
           active: boolean;
           created_at: string;
+          meta_balance: number | null;
         };
         Insert: Omit<Database["public"]["Tables"]["clients"]["Row"], "id" | "created_at"> & {
           id?: string;

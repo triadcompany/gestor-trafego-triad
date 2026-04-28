@@ -61,6 +61,19 @@ export async function getLastSyncedAt(): Promise<Date | null> {
   return data?.value ? new Date(data.value) : null;
 }
 
+// ── Account balance ───────────────────────────────────────────
+
+export async function fetchAdAccountBalance(adAccountId: string, token: string): Promise<number | null> {
+  try {
+    const res = await fetch(`${BASE_URL}/${adAccountId}?fields=balance&access_token=${encodeURIComponent(token)}`);
+    const json = await res.json() as { balance?: string; error?: MetaApiError };
+    if (json.error || json.balance === undefined) return null;
+    return parseInt(json.balance, 10);
+  } catch {
+    return null;
+  }
+}
+
 // ── Metrics sync ──────────────────────────────────────────────
 
 export interface MetaSyncResult {
@@ -109,6 +122,12 @@ export async function syncClientMetrics(
     { client_id: clientId, date: today, spend, leads },
     { onConflict: "client_id,date" }
   );
+
+  // Fetch and store account balance (silent on failure — doesn't block metrics)
+  const balance = await fetchAdAccountBalance(adAccountId, token);
+  if (balance !== null) {
+    await supabase.from("clients").update({ meta_balance: balance }).eq("id", clientId);
+  }
 
   return { spend, leads };
 }
