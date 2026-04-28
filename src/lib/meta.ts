@@ -65,7 +65,6 @@ export async function getLastSyncedAt(): Promise<Date | null> {
 
 export interface AdAccountBalanceInfo {
   balance: number | null;
-  payment_method: "pix" | "cartao" | null; // null = could not detect
 }
 
 function parseDisplayStringBalance(displayString: string | undefined): number | null {
@@ -88,7 +87,7 @@ export async function fetchAdAccountInfo(adAccountId: string, token: string): Pr
       funding_source_details?: { amount?: string; type?: number; display_string?: string };
       error?: MetaApiError;
     };
-    if (json.error) return { balance: null, payment_method: null };
+    if (json.error) return { balance: null };
 
     // Priority: fsd.amount → fsd.display_string (parsed) → balance
     // display_string e.g. "Saldo disponível (R$1.816,15 BRL)" is the most reliable for BR accounts
@@ -103,11 +102,9 @@ export async function fetchAdAccountInfo(adAccountId: string, token: string): Pr
       displayBalance !== null && displayBalance > 0 ? displayBalance :
       rawBalance;
 
-    const payment_method = balance !== null && balance > 0 ? "pix" : null;
-
-    return { balance, payment_method };
+    return { balance };
   } catch {
-    return { balance: null, payment_method: null };
+    return { balance: null };
   }
 }
 
@@ -189,14 +186,10 @@ export async function syncClientMetrics(
     { onConflict: "client_id,date" }
   );
 
-  // Fetch balance + detect payment method (silent on failure — doesn't block metrics)
-  const { balance, payment_method } = await fetchAdAccountInfo(adAccountId, token);
-  if (balance !== null && payment_method !== null) {
-    await supabase.from("clients").update({ meta_balance: balance, payment_method }).eq("id", clientId);
-  } else if (balance !== null) {
+  // Fetch balance only — payment_method is manually set in the client form and must never be overwritten by sync
+  const { balance } = await fetchAdAccountInfo(adAccountId, token);
+  if (balance !== null) {
     await supabase.from("clients").update({ meta_balance: balance }).eq("id", clientId);
-  } else if (payment_method !== null) {
-    await supabase.from("clients").update({ payment_method }).eq("id", clientId);
   }
 
   return { spend, leads };
