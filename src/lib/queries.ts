@@ -16,6 +16,10 @@ export interface ClientRow {
   created_at: string;
   meta_balance: number | null;
   payment_method: "pix" | "cartao";
+  monthly_budget: number | null;
+  pix_cycle: "semanal" | "quinzenal" | "mensal" | null;
+  pix_reference_day: number | null;
+  pix_active: boolean;
 }
 
 export interface MetricRow {
@@ -331,5 +335,86 @@ export async function updateReport(
 
 export async function deleteReport(id: string): Promise<void> {
   const { error } = await supabase.from("report_log").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ── Conversation templates ─────────────────────────────────────
+
+export interface ConversationTemplate {
+  id: string;
+  name: string;
+  greeting: string | null;
+  pre_message: string | null;
+  created_at: string;
+}
+
+export async function fetchConversationTemplates(): Promise<ConversationTemplate[]> {
+  const { data, error } = await supabase
+    .from("conversation_templates")
+    .select("*")
+    .order("name");
+  if (error) throw error;
+  return data ?? [];
+}
+
+export async function upsertConversationTemplate(template: {
+  id?: string;
+  name: string;
+  greeting?: string | null;
+  pre_message?: string | null;
+}): Promise<ConversationTemplate> {
+  const payload = {
+    ...(template.id ? { id: template.id } : {}),
+    name: template.name,
+    greeting: template.greeting ?? null,
+    pre_message: template.pre_message ?? null,
+  };
+  const { data, error } = await supabase
+    .from("conversation_templates")
+    .upsert(payload, { onConflict: "id" })
+    .select()
+    .single();
+  if (error) throw error;
+  return data;
+}
+
+export async function deleteConversationTemplate(id: string): Promise<void> {
+  const { error } = await supabase.from("conversation_templates").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ── PIX ────────────────────────────────────────────────────────
+
+export interface PixClient {
+  id: string;
+  name: string;
+  monthly_budget: number;
+  pix_cycle: "semanal" | "quinzenal" | "mensal";
+  pix_reference_day: number;
+}
+
+export async function fetchPixClients(): Promise<PixClient[]> {
+  const { data, error } = await supabase
+    .from("clients")
+    .select("id, name, monthly_budget, pix_cycle, pix_reference_day")
+    .eq("pix_active", true)
+    .eq("active", true)
+    .order("name");
+  if (error) throw error;
+  return (data ?? []).filter(
+    (c) => c.monthly_budget !== null && c.pix_cycle !== null && c.pix_reference_day !== null
+  ) as PixClient[];
+}
+
+export async function updateClientPix(
+  id: string,
+  fields: {
+    pix_active: boolean;
+    monthly_budget: number | null;
+    pix_cycle: "semanal" | "quinzenal" | "mensal" | null;
+    pix_reference_day: number | null;
+  }
+): Promise<void> {
+  const { error } = await supabase.from("clients").update(fields).eq("id", id);
   if (error) throw error;
 }

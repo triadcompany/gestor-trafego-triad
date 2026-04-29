@@ -1,0 +1,199 @@
+<h2>Layout da página /tarefas</h2>
+<p class="subtitle">Duas abas — Anotações e Relatórios. Clique em "Gostei desse layout" se estiver ok.</p>
+
+<div class="mockup">
+  <div class="mockup-header">
+    /tarefas — Aba: Anotações
+    <span style="margin-left: auto; font-size: 11px; opacity: 0.6;">dark theme · sidebar esquerda</span>
+  </div>
+  <div class="mockup-body" style="padding: 0; font-family: 'JetBrains Mono', monospace, sans-serif; background: #0f1117; color: #e2e8f0;">
+
+    <!-- Page header -->
+    <div style="padding: 20px 24px 0; border-bottom: 1px solid #1e2330;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+        <div>
+          <div style="font-size: 20px; font-weight: 600; color: #f1f5f9;">Tarefas</div>
+          <div style="font-size: 12px; color: #64748b; margin-top: 2px; font-family: monospace;">anotações e controle de relatórios</div>
+        </div>
+        <button style="background: #3b82f6; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500;">+ Nova anotação</button>
+      </div>
+      <!-- Tabs -->
+      <div style="display: flex; gap: 0;">
+        <div style="padding: 8px 16px; font-size: 13px; font-weight: 600; color: #f1f5f9; border-bottom: 2px solid #3b82f6; cursor: pointer;">Anotações</div>
+        <div style="padding: 8px 16px; font-size: 13px; color: #64748b; border-bottom: 2px solid transparent; cursor: pointer;">Relatórios</div>
+      </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div style="padding: 12px 24px; display: flex; gap: 8px; align-items: center; border-bottom: 1px solid #1e2330;">
+      <input placeholder="Buscar nas anotações..." style="background: #1a1f2e; border: 1px solid #2d3548; color: #94a3b8; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-family: monospace; width: 220px;" readonly />
+      <select style="background: #1a1f2e; border: 1px solid #2d3548; color: #94a3b8; padding: 5px 10px; border-radius: 6px; font-size: 12px; font-family: monospace;">
+        <option>Todos os clientes</option>
+        <option>Carhaus Alphaville</option>
+        <option>Imobiliária XYZ</option>
+      </select>
+    </div>
+
+    <!-- Notes list -->
+    <div style="padding: 16px 24px; display: flex; flex-direction: column; gap: 10px;">
+
+      <!-- Note card 1 -->
+      <div style="background: #151b28; border: 1px solid #1e2a3a; border-radius: 10px; padding: 14px 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="background: #1e3a5f; color: #60a5fa; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-family: monospace; font-weight: 600;">CARHAUS ALPHAVILLE</span>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="font-size: 10px; color: #475569; font-family: monospace;">há 2 horas</span>
+            <span style="font-size: 11px; color: #475569; cursor: pointer;">✎</span>
+            <span style="font-size: 11px; color: #475569; cursor: pointer;">✕</span>
+          </div>
+        </div>
+        <div style="font-size: 13px; color: #cbd5e1; line-height: 1.5;">Reunião com cliente: solicitou pausa nas campanhas de retargeting até 10/05. Criativos novos chegam na próxima semana — aguardar aprovação antes de subir.</div>
+      </div>
+
+      <!-- Note card 2 -->
+      <div style="background: #151b28; border: 1px solid #1e2a3a; border-radius: 10px; padding: 14px 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="background: #2d1f4e; color: #a78bfa; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-family: monospace; font-weight: 600;">IMOBILIÁRIA XYZ</span>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="font-size: 10px; color: #475569; font-family: monospace;">ontem</span>
+            <span style="font-size: 11px; color: #475569; cursor: pointer;">✎</span>
+            <span style="font-size: 11px; color: #475569; cursor: pointer;">✕</span>
+          </div>
+        </div>
+        <div style="font-size: 13px; color: #cbd5e1; line-height: 1.5;">Lead quality caiu semana passada — feedback do cliente: leads não estão atendendo. Testar segmentação por renda + interesse em imóveis de alto padrão. CPL pode subir, mas qualidade compensa.</div>
+      </div>
+
+      <!-- Note card 3 -->
+      <div style="background: #151b28; border: 1px solid #1e2a3a; border-radius: 10px; padding: 14px 16px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="background: #1f3a2d; color: #4ade80; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-family: monospace; font-weight: 600;">CONSTRUTORA ABC</span>
+          </div>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="font-size: 10px; color: #475569; font-family: monospace;">28 abr</span>
+            <span style="font-size: 11px; color: #475569; cursor: pointer;">✎</span>
+            <span style="font-size: 11px; color: #475569; cursor: pointer;">✕</span>
+          </div>
+        </div>
+        <div style="font-size: 13px; color: #cbd5e1; line-height: 1.5;">Budget aprovado: R$ 8.000/mês a partir de maio. Focar em campanha de lançamento do empreendimento Jardins. Público: 35–55 anos, raio 15km.</div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<div class="mockup" style="margin-top: 16px;">
+  <div class="mockup-header">/tarefas — Aba: Relatórios</div>
+  <div class="mockup-body" style="padding: 0; font-family: monospace; background: #0f1117; color: #e2e8f0;">
+
+    <!-- Page header (compacto) -->
+    <div style="padding: 16px 24px 0; border-bottom: 1px solid #1e2330;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+        <div style="font-size: 20px; font-weight: 600; color: #f1f5f9;">Tarefas</div>
+        <button style="background: #3b82f6; color: white; border: none; padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500;">+ Registrar relatório</button>
+      </div>
+      <div style="display: flex; gap: 0;">
+        <div style="padding: 8px 16px; font-size: 13px; color: #64748b; border-bottom: 2px solid transparent; cursor: pointer;">Anotações</div>
+        <div style="padding: 8px 16px; font-size: 13px; font-weight: 600; color: #f1f5f9; border-bottom: 2px solid #3b82f6; cursor: pointer;">Relatórios</div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <div style="padding: 16px 24px;">
+      <!-- Summary chips -->
+      <div style="display: flex; gap: 8px; margin-bottom: 14px;">
+        <span style="background: #2d1a00; color: #fb923c; border: 1px solid #431f00; padding: 3px 10px; border-radius: 20px; font-size: 11px;">3 pendentes</span>
+        <span style="background: #0f291a; color: #4ade80; border: 1px solid #14532d; padding: 3px 10px; border-radius: 20px; font-size: 11px;">5 enviados este mês</span>
+      </div>
+
+      <!-- Header -->
+      <div style="display: grid; grid-template-columns: 1fr 110px 100px 110px 90px; gap: 0; padding: 6px 12px; background: #1a1f2e; border-radius: 6px 6px 0 0; border: 1px solid #2d3548; border-bottom: none;">
+        <div style="font-size: 10px; font-family: monospace; text-transform: uppercase; color: #475569; letter-spacing: 0.08em;">Cliente</div>
+        <div style="font-size: 10px; font-family: monospace; text-transform: uppercase; color: #475569; letter-spacing: 0.08em; text-align: center;">Período</div>
+        <div style="font-size: 10px; font-family: monospace; text-transform: uppercase; color: #475569; letter-spacing: 0.08em; text-align: center;">Tipo</div>
+        <div style="font-size: 10px; font-family: monospace; text-transform: uppercase; color: #475569; letter-spacing: 0.08em; text-align: center;">Data envio</div>
+        <div style="font-size: 10px; font-family: monospace; text-transform: uppercase; color: #475569; letter-spacing: 0.08em; text-align: center;">Status</div>
+      </div>
+
+      <!-- Rows -->
+      <div style="border: 1px solid #2d3548; border-radius: 0 0 6px 6px; overflow: hidden;">
+
+        <!-- Pendente -->
+        <div style="display: grid; grid-template-columns: 1fr 110px 100px 110px 90px; gap: 0; padding: 10px 12px; border-bottom: 1px solid #1e2330; background: #0f1117;">
+          <div style="font-size: 13px; color: #f1f5f9;">Carhaus Alphaville</div>
+          <div style="font-size: 12px; color: #94a3b8; text-align: center; font-family: monospace;">Abr/2025</div>
+          <div style="font-size: 11px; color: #94a3b8; text-align: center;">
+            <span style="background: #1e2330; padding: 2px 6px; border-radius: 4px;">Mensal</span>
+          </div>
+          <div style="font-size: 12px; color: #475569; text-align: center; font-family: monospace;">—</div>
+          <div style="text-align: center;">
+            <span style="background: #2d1a00; color: #fb923c; border: 1px solid #431f00; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-family: monospace; cursor: pointer;">Pendente</span>
+          </div>
+        </div>
+
+        <!-- Pendente 2 -->
+        <div style="display: grid; grid-template-columns: 1fr 110px 100px 110px 90px; gap: 0; padding: 10px 12px; border-bottom: 1px solid #1e2330; background: #0f1117;">
+          <div style="font-size: 13px; color: #f1f5f9;">Imobiliária XYZ</div>
+          <div style="font-size: 12px; color: #94a3b8; text-align: center; font-family: monospace;">21–27 abr</div>
+          <div style="font-size: 11px; color: #94a3b8; text-align: center;">
+            <span style="background: #1e2330; padding: 2px 6px; border-radius: 4px;">Semanal</span>
+          </div>
+          <div style="font-size: 12px; color: #475569; text-align: center; font-family: monospace;">—</div>
+          <div style="text-align: center;">
+            <span style="background: #2d1a00; color: #fb923c; border: 1px solid #431f00; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-family: monospace; cursor: pointer;">Pendente</span>
+          </div>
+        </div>
+
+        <!-- Enviado -->
+        <div style="display: grid; grid-template-columns: 1fr 110px 100px 110px 90px; gap: 0; padding: 10px 12px; border-bottom: 1px solid #1e2330; background: #0f1117; opacity: 0.65;">
+          <div style="font-size: 13px; color: #f1f5f9;">Construtora ABC</div>
+          <div style="font-size: 12px; color: #94a3b8; text-align: center; font-family: monospace;">Mar/2025</div>
+          <div style="font-size: 11px; color: #94a3b8; text-align: center;">
+            <span style="background: #1e2330; padding: 2px 6px; border-radius: 4px;">Mensal</span>
+          </div>
+          <div style="font-size: 12px; color: #94a3b8; text-align: center; font-family: monospace;">05 abr</div>
+          <div style="text-align: center;">
+            <span style="background: #0f291a; color: #4ade80; border: 1px solid #14532d; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-family: monospace;">Enviado ✓</span>
+          </div>
+        </div>
+
+        <!-- Enviado 2 -->
+        <div style="display: grid; grid-template-columns: 1fr 110px 100px 110px 90px; gap: 0; padding: 10px 12px; background: #0f1117; opacity: 0.65;">
+          <div style="font-size: 13px; color: #f1f5f9;">Imobiliária XYZ</div>
+          <div style="font-size: 12px; color: #94a3b8; text-align: center; font-family: monospace;">14–20 abr</div>
+          <div style="font-size: 11px; color: #94a3b8; text-align: center;">
+            <span style="background: #1e2330; padding: 2px 6px; border-radius: 4px;">Semanal</span>
+          </div>
+          <div style="font-size: 12px; color: #94a3b8; text-align: center; font-family: monospace;">22 abr</div>
+          <div style="text-align: center;">
+            <span style="background: #0f291a; color: #4ade80; border: 1px solid #14532d; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-family: monospace;">Enviado ✓</span>
+          </div>
+        </div>
+
+      </div>
+      <p style="font-size: 11px; color: #475569; margin-top: 10px; font-family: monospace;">Clicar em "Pendente" marca como enviado com a data/hora atual.</p>
+    </div>
+
+  </div>
+</div>
+
+<div class="options" style="margin-top: 16px;">
+  <div class="option" data-choice="ok" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>Gostei — layout aprovado</h3>
+      <p>Seguir para o design do tab Anotações dentro do perfil do cliente</p>
+    </div>
+  </div>
+  <div class="option" data-choice="ajustar" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content">
+      <h3>Quero ajustar algo</h3>
+      <p>Me diga o que mudar no terminal</p>
+    </div>
+  </div>
+</div>

@@ -38,7 +38,7 @@ import {
   ResponsiveContainer,
   ReferenceArea,
 } from "recharts";
-import { fetchClientDetail, updateClientGoal, fetchNotes, createNote, updateNote, deleteNote } from "@/lib/queries";
+import { fetchClientDetail, updateClientGoal, updateClientPix, fetchNotes, createNote, updateNote, deleteNote } from "@/lib/queries";
 import { NoteCard } from "@/components/NoteCard";
 import { NoteComposer } from "@/components/NoteComposer";
 import { CampaignSheet } from "@/components/CampaignSheet";
@@ -496,8 +496,146 @@ function ClientDetail() {
         onOpenChange={setSheetOpen}
       />
 
+      <ClientPixSettings client={client} />
       <ClientNotes clientId={id} clientName={client.name} />
     </AppShell>
+  );
+}
+
+function ClientPixSettings({ client }: { client: import("@/lib/queries").ClientDetail }) {
+  const qc = useQueryClient();
+  const [active, setActive] = useState(client.pix_active);
+  const [budget, setBudget] = useState<string>(client.monthly_budget != null ? String(client.monthly_budget) : "");
+  const [cycle, setCycle] = useState<"semanal" | "quinzenal" | "mensal">(client.pix_cycle ?? "mensal");
+  const [refDay, setRefDay] = useState<string>(client.pix_reference_day != null ? String(client.pix_reference_day) : "1");
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      updateClientPix(client.id, {
+        pix_active: active,
+        monthly_budget: budget !== "" ? Number(budget) : null,
+        pix_cycle: active ? cycle : null,
+        pix_reference_day: active ? Number(refDay) : null,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["client", client.id] });
+      qc.invalidateQueries({ queryKey: ["pix-clients"] });
+    },
+  });
+
+  const weekDays = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"];
+  const maxRefDay = cycle === "semanal" ? 7 : cycle === "quinzenal" ? 16 : 28;
+
+  return (
+    <div className="px-4 md:px-8 pb-0 max-w-4xl mx-auto">
+      <div className="border-t border-border pt-6 pb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Cobrança PIX</h2>
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">{active ? "Ativo" : "Inativo"}</span>
+            <button
+              type="button"
+              onClick={() => setActive((v) => !v)}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none ${active ? "bg-primary" : "bg-muted"}`}
+            >
+              <span
+                className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${active ? "translate-x-4" : "translate-x-0"}`}
+              />
+            </button>
+          </div>
+        </div>
+
+        {active && (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-muted-foreground font-medium">Investimento mensal (R$)</label>
+              <Input
+                type="number"
+                min={0}
+                step={50}
+                value={budget}
+                onChange={(e) => setBudget(e.target.value)}
+                placeholder="Ex: 2000"
+                className="h-9"
+              />
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-muted-foreground font-medium">Ciclo</label>
+              <Select value={cycle} onValueChange={(v) => { setCycle(v as typeof cycle); setRefDay("1"); }}>
+                <SelectTrigger className="h-9">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="mensal">Mensal</SelectItem>
+                  <SelectItem value="quinzenal">Quinzenal</SelectItem>
+                  <SelectItem value="semanal">Semanal</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-muted-foreground font-medium">
+                {cycle === "semanal" ? "Dia da semana" : cycle === "quinzenal" ? "Dia de referência (e +15)" : "Dia do mês"}
+              </label>
+              {cycle === "semanal" ? (
+                <Select value={refDay} onValueChange={setRefDay}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {weekDays.map((d, i) => (
+                      <SelectItem key={i + 1} value={String(i + 1)}>{d}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Select value={refDay} onValueChange={setRefDay}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: maxRefDay }, (_, i) => i + 1).map((d) => (
+                      <SelectItem key={d} value={String(d)}>
+                        {cycle === "quinzenal" ? `${d} e ${d + 15}` : `Dia ${d}`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+          </div>
+        )}
+
+        {active && budget && (
+          <div className="mb-4 p-3 rounded-lg bg-muted/30 border border-border text-sm flex flex-wrap gap-4">
+            <span className="text-muted-foreground">
+              Parcela:{" "}
+              <strong className="text-foreground">
+                {(Number(budget) / (cycle === "semanal" ? 4 : cycle === "quinzenal" ? 2 : 1)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+              </strong>
+            </span>
+            <span className="text-muted-foreground">
+              {cycle === "semanal" ? "Todo(a)" : cycle === "quinzenal" ? "Dias" : "Dia"}{" "}
+              <strong className="text-foreground">
+                {cycle === "semanal"
+                  ? ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"][Number(refDay) - 1]
+                  : cycle === "quinzenal"
+                  ? `${refDay} e ${Number(refDay) + 15}`
+                  : refDay}
+              </strong>
+            </span>
+          </div>
+        )}
+
+        <Button size="sm" onClick={() => mutation.mutate()} disabled={mutation.isPending}>
+          {mutation.isPending ? "Salvando…" : "Salvar PIX"}
+        </Button>
+        {mutation.isSuccess && (
+          <span className="ml-3 text-xs text-green-500">Salvo!</span>
+        )}
+      </div>
+    </div>
   );
 }
 

@@ -435,6 +435,7 @@ export interface MetaTargeting {
   publisher_platforms?: string[];
   facebook_positions?: string[];
   instagram_positions?: string[];
+  targeting_automation?: { advantage_audience?: number };
 }
 
 export interface MetaAdCreative {
@@ -476,6 +477,14 @@ export interface MetaLocationResult {
   type: string;
   country_code: string;
   region?: string;
+}
+
+export interface SelectedLocation {
+  key: string;
+  name: string;
+  type: string; // "city" | "region"
+  region?: string; // nome do estado, para cidades
+  radius?: number; // km — apenas para cidades; omitido = só a cidade
 }
 
 export async function fetchAdSetTargeting(adSetId: string, token: string): Promise<MetaTargeting> {
@@ -528,7 +537,7 @@ export async function searchMetaLocations(query: string, token: string): Promise
     "location_types[0]": "city",
     "location_types[1]": "region",
     country_code: "BR",
-    limit: "10",
+    limit: "20",
     access_token: token,
   });
   const res = await fetch(`${BASE_URL}/search?${params}`);
@@ -891,7 +900,7 @@ export async function runMetaDiagnostics(): Promise<MetaDiagnostics> {
 
   if (lastError && lastError.code === 3) {
     hints.push(
-      "Erro Meta (#3) ‘Application does not have the capability to make this API call’: o token tem a permissão, mas o app Meta não tem capacidade aprovada para escrita na Marketing API. Revise no painel do app Meta: produto Marketing API adicionado, modo Live, App Review com Advanced Access para ads_management."
+      "Erro Meta (#3) ‘Application does not have the capability’: o token salvo pode ser de um app diferente do configurado no sistema. Gere um novo token no Graph API Explorer com o app correto (gestor-trafego-triad) e salve em Configurações."
     );
   }
 
@@ -997,6 +1006,7 @@ export async function duplicateCampaign(
     status: "PAUSED",
     special_ad_categories: "[]",
     daily_budget: String(campaignDailyBudget),
+    bid_strategy: "LOWEST_COST_WITHOUT_CAP",
     access_token: token,
   })) as { id: string };
 
@@ -1022,6 +1032,8 @@ export async function duplicateCampaign(
         (p) => !["ig_search"].includes(p)
       );
     }
+    // Público Advantage sempre desabilitado
+    targeting.targeting_automation = { advantage_audience: 0 };
 
     // ── Compatibilidade objetivo × meta de desempenho ──────────
     const effectiveDestinationType = adSet.destination_type ?? "";
@@ -1035,7 +1047,6 @@ export async function duplicateCampaign(
       billing_event: billingEvent,
       optimization_goal: optimizationGoal,
       targeting: JSON.stringify(targeting),
-      bid_amount: "1500",
       status: "PAUSED",
       access_token: token,
     };
@@ -1104,11 +1115,20 @@ export interface CreateFromScratchOptions {
   name: string;
   adAccountId: string;
   pageId: string;
-  whatsappNumber?: string; // E.164, ex: +5511999999999 — obrigatório para destination WHATSAPP
+  whatsappNumber?: string;
   dailyBudget: number; // BRL
   placements: { facebook: boolean; instagram: boolean };
+  fbPositions?: string[];
+  igPositions?: string[];
   token: string;
   campaignType?: "engagement" | "sales";
+  targeting?: {
+    ageMin?: number;
+    ageMax?: number;
+    genderMode?: "all" | "male" | "female";
+    locations?: SelectedLocation[];
+    interests?: MetaInterest[];
+  };
 }
 
 export async function createCampaignFromScratch(
@@ -1121,6 +1141,8 @@ export async function createCampaignFromScratch(
     objective,
     status: "PAUSED",
     special_ad_categories: "[]",
+    daily_budget: String(Math.round(opts.dailyBudget * 100)),
+    bid_strategy: "LOWEST_COST_WITHOUT_CAP",
     access_token: opts.token,
   }) as { id: string };
 
@@ -1132,17 +1154,49 @@ export async function createCampaignFromScratch(
 
   if (opts.placements.facebook) {
     publisher_platforms.push("facebook");
-    facebook_positions.push("feed", "story");
+    facebook_positions.push(...(opts.fbPositions?.length ? opts.fbPositions : ["feed", "story"]));
   }
   if (opts.placements.instagram) {
     publisher_platforms.push("instagram");
-    instagram_positions.push("stream", "story");
+    instagram_positions.push(...(opts.igPositions?.length ? opts.igPositions : ["stream", "story"]));
+    // explore_home requires explore (Meta rule)
+    if (instagram_positions.includes("explore_home") && !instagram_positions.includes("explore")) {
+      instagram_positions.push("explore");
+    }
+    // ig_search conflicts with other placements
+    const igSearchIdx = instagram_positions.indexOf("ig_search");
+    if (igSearchIdx !== -1) instagram_positions.splice(igSearchIdx, 1);
   }
 
-  const targeting: Record<string, unknown> = { geo_locations: { countries: ["BR"] } };
+  const t = opts.targeting;
+  let geoLocations: Record<string, unknown>;
+  if (t?.locations?.length) {
+    geoLocations = {};
+    const cityLocs = t.locations.filter((l) => l.type === "city");
+    const regionLocs = t.locations.filter((l) => l.type !== "city");
+    if (cityLocs.length) {
+      geoLocations.cities = cityLocs.map((l) => ({
+        key: l.key,
+        ...(l.radius ? { radius: l.radius, distance_unit: "kilometer" } : {}),
+      }));
+    }
+    if (regionLocs.length) {
+      geoLocations.regions = regionLocs.map((l) => ({ key: l.key }));
+    }
+  } else {
+    geoLocations = { countries: ["BR"] };
+  }
+  const targeting: Record<string, unknown> = { geo_locations: geoLocations };
+  if (t?.ageMin !== undefined && t.ageMin > 18) targeting.age_min = t.ageMin;
+  if (t?.ageMax !== undefined && t.ageMax < 65) targeting.age_max = t.ageMax;
+  if (t?.genderMode === "male") targeting.genders = [1];
+  else if (t?.genderMode === "female") targeting.genders = [2];
+  if (t?.interests?.length) targeting.flexible_spec = [{ interests: t.interests }];
   if (publisher_platforms.length) targeting.publisher_platforms = publisher_platforms;
   if (facebook_positions.length) targeting.facebook_positions = facebook_positions;
   if (instagram_positions.length) targeting.instagram_positions = instagram_positions;
+  // Público Advantage sempre desabilitado
+  targeting.targeting_automation = { advantage_audience: 0 };
 
   // whatsapp_phone_number é obrigatório no promoted_object para destination_type=WHATSAPP (error 100.2446885).
   // whatsapp_phone_number obrigatório para destino WHATSAPP.
@@ -1153,16 +1207,17 @@ export async function createCampaignFromScratch(
     );
   }
 
+  // Meta expects phone without + prefix, spaces, or dashes (e.g. "559988215838")
+  const normalizedPhone = opts.whatsappNumber.replace(/\D/g, "");
   const promotedObject: Record<string, string> = {
     page_id: opts.pageId,
-    whatsapp_phone_number: opts.whatsappNumber,
+    whatsapp_phone_number: normalizedPhone,
   };
   const destinationType = "WHATSAPP";
 
   const adSet = await postMeta(`${opts.adAccountId}/adsets`, {
     name: opts.name,
     campaign_id: campaignId,
-    daily_budget: String(Math.round(opts.dailyBudget * 100)),
     billing_event: "IMPRESSIONS",
     optimization_goal: "CONVERSATIONS",
     destination_type: destinationType,
@@ -1173,4 +1228,125 @@ export async function createCampaignFromScratch(
   }) as { id: string };
 
   return { campaignId, adSetId: adSet.id };
+}
+
+// ── Ad media upload ───────────────────────────────────────────
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve((reader.result as string).split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+export async function uploadAdImage(adAccountId: string, file: File, token: string): Promise<string> {
+  const base64 = await fileToBase64(file);
+  const formData = new FormData();
+  formData.append("bytes", base64);
+  formData.append("filename", file.name);
+  formData.append("access_token", token);
+
+  const res = await fetch(`${BASE_URL}/${adAccountId}/adimages`, { method: "POST", body: formData });
+  const json = (await res.json()) as { images?: Record<string, { hash: string }>; error?: MetaApiError };
+  if (json.error) {
+    await recordMetaApiError(`${adAccountId}/adimages`, res.status, json.error);
+    throw new Error(formatMetaError(json.error));
+  }
+  const firstImage = Object.values(json.images ?? {})[0];
+  if (!firstImage?.hash) throw new Error("Upload de imagem falhou: hash não retornado pela Meta.");
+  return firstImage.hash;
+}
+
+export async function uploadAdVideo(adAccountId: string, file: File, token: string): Promise<string> {
+  const formData = new FormData();
+  formData.append("file", file, file.name);
+  formData.append("access_token", token);
+
+  const res = await fetch(`${BASE_URL}/${adAccountId}/advideos`, { method: "POST", body: formData });
+  const json = (await res.json()) as { id?: string; error?: MetaApiError };
+  if (json.error) {
+    await recordMetaApiError(`${adAccountId}/advideos`, res.status, json.error);
+    throw new Error(formatMetaError(json.error));
+  }
+  if (!json.id) throw new Error("Upload de vídeo falhou: ID não retornado pela Meta.");
+  return json.id;
+}
+
+// ── Ad creative & ad creation ─────────────────────────────────
+
+export interface AdCreativeOptions {
+  name: string;
+  pageId: string;
+  whatsappNumber: string; // digits only, e.g. "559988215838"
+  whatsappMessage?: string;
+  primaryText: string;
+  headline: string;
+  description?: string;
+  mediaType: "image" | "video";
+  imageHash?: string;
+  videoId?: string;
+}
+
+export async function createAdCreative(
+  adAccountId: string,
+  opts: AdCreativeOptions,
+  token: string
+): Promise<string> {
+  const waLink = opts.whatsappMessage
+    ? `https://wa.me/${opts.whatsappNumber}?text=${encodeURIComponent(opts.whatsappMessage)}`
+    : `https://wa.me/${opts.whatsappNumber}`;
+
+  const callToAction = {
+    type: "WHATSAPP_MESSAGE",
+    value: { app_destination: "WHATSAPP", whatsapp_number: opts.whatsappNumber },
+  };
+
+  const objectStorySpec =
+    opts.mediaType === "image"
+      ? {
+          page_id: opts.pageId,
+          link_data: {
+            image_hash: opts.imageHash,
+            message: opts.primaryText,
+            name: opts.headline,
+            ...(opts.description ? { description: opts.description } : {}),
+            link: waLink,
+            call_to_action: callToAction,
+          },
+        }
+      : {
+          page_id: opts.pageId,
+          video_data: {
+            video_id: opts.videoId,
+            message: opts.primaryText,
+            title: opts.headline,
+            ...(opts.description ? { description: opts.description } : {}),
+            call_to_action: callToAction,
+          },
+        };
+
+  const result = (await postMetaJson(`${adAccountId}/adcreatives`, {
+    name: opts.name,
+    object_story_spec: objectStorySpec,
+    access_token: token,
+  })) as { id: string };
+
+  return result.id;
+}
+
+export async function createAd(
+  adAccountId: string,
+  opts: { name: string; adSetId: string; creativeId: string },
+  token: string
+): Promise<string> {
+  const result = (await postMeta(`${adAccountId}/ads`, {
+    name: opts.name,
+    adset_id: opts.adSetId,
+    creative: JSON.stringify({ creative_id: opts.creativeId }),
+    status: "PAUSED",
+    access_token: token,
+  })) as { id: string };
+  return result.id;
 }

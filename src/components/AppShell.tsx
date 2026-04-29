@@ -1,11 +1,12 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList } from "lucide-react";
+import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { to: "/", label: "Dashboard", shortLabel: "Início", icon: LayoutDashboard, exact: true },
   { to: "/clients", label: "Clientes", shortLabel: "Clientes", icon: Users, exact: false },
   { to: "/saldos", label: "Saldos", shortLabel: "Saldos", icon: Wallet, exact: false },
+  { to: "/pix", label: "PIX", shortLabel: "PIX", icon: QrCode, exact: false },
   { to: "/tarefas", label: "Tarefas", shortLabel: "Tarefas", icon: ClipboardList, exact: false },
   { to: "/campaigns/new", label: "Nova Campanha", shortLabel: "Campanha", icon: PlusSquare, exact: false },
   { to: "/diagnostico-meta", label: "Diagnóstico", shortLabel: "Diagnóst.", icon: Stethoscope, exact: false },

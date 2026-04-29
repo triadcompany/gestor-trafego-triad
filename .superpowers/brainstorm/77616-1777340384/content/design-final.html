@@ -1,0 +1,134 @@
+<h2>Design final — Saldo Meta no Dashboard</h2>
+<p class="subtitle">Como vai ficar. Confirme se está certo antes de implementar.</p>
+
+<div class="mockup" style="max-width:680px; margin:0 auto;">
+  <div class="mockup-header">Dashboard — Gestor de Tráfego</div>
+  <div class="mockup-body" style="padding:16px; background:#0f0f17;">
+
+    <!-- Top bar -->
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <div>
+        <div style="color:#f1f1f1; font-size:1rem; font-weight:600;">domingo, 27 de abril</div>
+        <div style="color:#888; font-size:0.75rem;">Sincronizado às 14h22</div>
+      </div>
+      <div style="background:#1e3a5f; color:#60a5fa; padding:4px 12px; border-radius:6px; font-size:0.75rem; cursor:pointer;">↻ Sincronizar</div>
+    </div>
+
+    <!-- Painel de saldos (colapsável) -->
+    <div style="background:#111827; border:1px solid #1e3a5f; border-radius:10px; padding:12px; margin-bottom:14px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+        <span style="color:#60a5fa; font-size:0.72rem; text-transform:uppercase; letter-spacing:.06em; font-weight:600;">Saldos Meta</span>
+        <span style="color:#555; font-size:0.72rem; cursor:pointer;">▲ Recolher</span>
+      </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#ffffff06; border-radius:6px; border-left:3px solid #ef4444;">
+          <span style="color:#d1d5db; font-size:0.8rem;">Fiat Strada RJ</span>
+          <span style="color:#ef4444; font-weight:700; font-size:0.85rem;">R$ 89</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#ffffff06; border-radius:6px; border-left:3px solid #facc15;">
+          <span style="color:#d1d5db; font-size:0.8rem;">Honda Civic SP</span>
+          <span style="color:#facc15; font-weight:700; font-size:0.85rem;">R$ 843</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#ffffff06; border-radius:6px; border-left:3px solid #22c55e;">
+          <span style="color:#d1d5db; font-size:0.8rem;">Toyota Corolla BH</span>
+          <span style="color:#22c55e; font-weight:700; font-size:0.85rem;">R$ 2.140</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:#ffffff06; border-radius:6px; border-left:3px solid #22c55e;">
+          <span style="color:#d1d5db; font-size:0.8rem;">VW Polo SP</span>
+          <span style="color:#22c55e; font-weight:700; font-size:0.85rem;">R$ 3.200</span>
+        </div>
+      </div>
+      <div style="text-align:center; margin-top:8px; color:#ef4444; font-size:0.72rem;">1 cliente com saldo crítico · 1 em atenção</div>
+    </div>
+
+    <!-- Filtros -->
+    <div style="display:flex; gap:6px; margin-bottom:12px;">
+      <div style="background:#1e3a5f; color:#60a5fa; padding:4px 12px; border-radius:20px; font-size:0.75rem;">Todos</div>
+      <div style="color:#555; padding:4px 12px; border-radius:20px; font-size:0.75rem; border:1px solid #222;">No alvo</div>
+      <div style="color:#555; padding:4px 12px; border-radius:20px; font-size:0.75rem; border:1px solid #222;">Atenção</div>
+      <div style="color:#555; padding:4px 12px; border-radius:20px; font-size:0.75rem; border:1px solid #222;">Crítico</div>
+    </div>
+
+    <!-- Cards de cliente -->
+    <div style="display:flex; flex-direction:column; gap:8px;">
+
+      <!-- Card crítico de saldo -->
+      <div style="background:#1a1a2e; border:1px solid #ef444433; border-radius:10px; padding:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div style="width:8px; height:8px; border-radius:50%; background:#22c55e;"></div>
+            <span style="color:#f1f1f1; font-weight:600; font-size:0.9rem;">Fiat Strada RJ</span>
+          </div>
+          <span style="background:#22c55e22; color:#22c55e; padding:2px 8px; border-radius:20px; font-size:0.72rem;">No alvo</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:8px; text-align:center;">
+          <div>
+            <div style="color:#666; font-size:0.68rem; margin-bottom:3px;">Gasto hoje</div>
+            <div style="color:#f1f1f1; font-weight:600; font-size:0.85rem;">R$ 187</div>
+          </div>
+          <div>
+            <div style="color:#666; font-size:0.68rem; margin-bottom:3px;">Leads</div>
+            <div style="color:#f1f1f1; font-weight:600; font-size:0.85rem;">12</div>
+          </div>
+          <div>
+            <div style="color:#666; font-size:0.68rem; margin-bottom:3px;">CPL</div>
+            <div style="color:#22c55e; font-weight:600; font-size:0.85rem;">R$ 15,58</div>
+          </div>
+          <div>
+            <div style="color:#666; font-size:0.68rem; margin-bottom:3px;">Saldo Meta</div>
+            <div style="color:#ef4444; font-weight:700; font-size:0.85rem;">R$ 89 ⚠</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Card normal -->
+      <div style="background:#1a1a2e; border:1px solid #333; border-radius:10px; padding:14px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <div style="display:flex; align-items:center; gap:8px;">
+            <div style="width:8px; height:8px; border-radius:50%; background:#facc15;"></div>
+            <span style="color:#f1f1f1; font-weight:600; font-size:0.9rem;">Honda Civic SP</span>
+          </div>
+          <span style="background:#facc1522; color:#facc15; padding:2px 8px; border-radius:20px; font-size:0.72rem;">Atenção</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:8px; text-align:center;">
+          <div>
+            <div style="color:#666; font-size:0.68rem; margin-bottom:3px;">Gasto hoje</div>
+            <div style="color:#f1f1f1; font-weight:600; font-size:0.85rem;">R$ 310</div>
+          </div>
+          <div>
+            <div style="color:#666; font-size:0.68rem; margin-bottom:3px;">Leads</div>
+            <div style="color:#f1f1f1; font-weight:600; font-size:0.85rem;">8</div>
+          </div>
+          <div>
+            <div style="color:#666; font-size:0.68rem; margin-bottom:3px;">CPL</div>
+            <div style="color:#facc15; font-weight:600; font-size:0.85rem;">R$ 38,75</div>
+          </div>
+          <div>
+            <div style="color:#666; font-size:0.68rem; margin-bottom:3px;">Saldo Meta</div>
+            <div style="color:#facc15; font-weight:600; font-size:0.85rem;">R$ 843</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="text-align:center; margin-top:10px; color:#444; font-size:0.7rem;">Saldo: 🟢 &gt; R$500 · 🟡 R$200–R$500 · 🔴 &lt; R$200</div>
+  </div>
+</div>
+
+<div class="options" style="margin-top:1.5rem; max-width:680px; margin-left:auto; margin-right:auto;">
+  <div class="option" data-choice="aprovado" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content">
+      <h3>Design aprovado — pode escrever o spec</h3>
+      <p>O painel de saldos + métrica no card está certo. Pode avançar.</p>
+    </div>
+  </div>
+  <div class="option" data-choice="ajustar" onclick="toggleSelect(this)">
+    <div class="letter">✎</div>
+    <div class="content">
+      <h3>Quero ajustar algo</h3>
+      <p>Diga no terminal o que mudaria.</p>
+    </div>
+  </div>
+</div>

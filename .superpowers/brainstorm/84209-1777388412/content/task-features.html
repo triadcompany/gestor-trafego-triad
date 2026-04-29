@@ -1,0 +1,56 @@
+<h2>O que pode ter na página de Tarefas?</h2>
+<p class="subtitle">Selecione as ideias que fazem sentido para o seu fluxo de trabalho</p>
+
+<div class="options" data-multiselect>
+
+  <div class="option" data-choice="checklists" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Checklists de Rotina por Cliente</h3>
+      <p>Templates de tarefas recorrentes: "verificar CPL toda manhã", "checar saldo às 18h", "enviar relatório semanal". Cada cliente tem seu checklist semanal ou diário e você marca conforme executa.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="followups" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Follow-ups e Lembretes</h3>
+      <p>Tarefas com data/hora de vencimento e alerta visual. Ex: "Ligar para cliente X na sexta", "Revisar criativos até amanhã", "Enviar relatório mensal dia 5". Destaque visual para tarefas atrasadas.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="alerts" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Tarefas Geradas Automaticamente pelo Sistema</h3>
+      <p>O sistema cria tarefas automaticamente quando detecta problemas: "CPL acima do limite — revisar segmentação [Cliente Y]", "Saldo crítico — recarregar conta [Cliente Z]". Tarefas de ação direta ligadas aos dados.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="notes" onclick="toggleSelect(this)">
+    <div class="letter">D</div>
+    <div class="content">
+      <h3>Anotações por Cliente</h3>
+      <p>Bloco de notas vinculado a cada cliente: observações de reunião, briefing de criativos pendentes, feedback de lead quality. Diferente de tarefa — não tem "concluído", é referência permanente.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="kanban" onclick="toggleSelect(this)">
+    <div class="letter">E</div>
+    <div class="content">
+      <h3>Kanban de Status de Campanha</h3>
+      <p>Colunas: A fazer / Em andamento / Aguardando cliente / Concluído. Tarefas maiores como "criar nova campanha", "testar novo criativo", "ajustar verba" ficam em cards que você arrasta entre as colunas.</p>
+    </div>
+  </div>
+
+  <div class="option" data-choice="reports" onclick="toggleSelect(this)">
+    <div class="letter">F</div>
+    <div class="content">
+      <h3>Controle de Relatórios</h3>
+      <p>Fila de relatórios a enviar para clientes com status: pendente / enviado / aprovado. Data de envio, periodicidade (semanal/mensal) e histórico de envios por cliente.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top: 1.5rem; text-align: center;">Pode selecionar mais de um · diga no terminal o que achou</p>

@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TarefasRouteImport } from './routes/tarefas'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SaldosRouteImport } from './routes/saldos'
+import { Route as PixRouteImport } from './routes/pix'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DiagnosticoMetaRouteImport } from './routes/diagnostico-meta'
 import { Route as IndexRouteImport } from './routes/index'
@@ -33,6 +34,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const SaldosRoute = SaldosRouteImport.update({
   id: '/saldos',
   path: '/saldos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PixRoute = PixRouteImport.update({
+  id: '/pix',
+  path: '/pix',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
+  '/pix': typeof PixRoute
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
@@ -87,6 +94,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
+  '/pix': typeof PixRoute
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
@@ -100,6 +108,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
+  '/pix': typeof PixRoute
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
@@ -114,6 +123,7 @@ export interface FileRouteTypes {
     | '/'
     | '/diagnostico-meta'
     | '/login'
+    | '/pix'
     | '/saldos'
     | '/settings'
     | '/tarefas'
@@ -126,6 +136,7 @@ export interface FileRouteTypes {
     | '/'
     | '/diagnostico-meta'
     | '/login'
+    | '/pix'
     | '/saldos'
     | '/settings'
     | '/tarefas'
@@ -138,6 +149,7 @@ export interface FileRouteTypes {
     | '/'
     | '/diagnostico-meta'
     | '/login'
+    | '/pix'
     | '/saldos'
     | '/settings'
     | '/tarefas'
@@ -151,6 +163,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DiagnosticoMetaRoute: typeof DiagnosticoMetaRoute
   LoginRoute: typeof LoginRoute
+  PixRoute: typeof PixRoute
   SaldosRoute: typeof SaldosRoute
   SettingsRoute: typeof SettingsRoute
   TarefasRoute: typeof TarefasRoute
@@ -181,6 +194,13 @@ declare module '@tanstack/react-router' {
       path: '/saldos'
       fullPath: '/saldos'
       preLoaderRoute: typeof SaldosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pix': {
+      id: '/pix'
+      path: '/pix'
+      fullPath: '/pix'
+      preLoaderRoute: typeof PixRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -239,6 +259,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DiagnosticoMetaRoute: DiagnosticoMetaRoute,
   LoginRoute: LoginRoute,
+  PixRoute: PixRoute,
   SaldosRoute: SaldosRoute,
   SettingsRoute: SettingsRoute,
   TarefasRoute: TarefasRoute,

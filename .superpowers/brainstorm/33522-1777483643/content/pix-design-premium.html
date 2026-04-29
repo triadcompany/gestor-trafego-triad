@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PIX — Gestor de Tráfego</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:        #05060e;
+  --surface:   #080b18;
+  --surface2:  #0c1020;
+  --border:    rgba(255,255,255,.06);
+  --border2:   rgba(255,255,255,.10);
+  --text:      #e8eaf2;
+  --muted:     #3d4258;
+  --muted2:    #5a5f7a;
+  --accent:    #2dd4bf;
+  --accent-dim: rgba(45,212,191,.12);
+  --semanal:   #a78bfa;
+  --quinzenal: #38bdf8;
+  --mensal:    #fb923c;
+  --hoje:      #f87171;
+  --proximo:   #fbbf24;
+  --sidebar-w: 220px;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Syne', sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  display: flex;
+  overflow-x: hidden;
+}
+
+/* Grain texture overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 999;
+  opacity: .4;
+}
+
+/* ── SIDEBAR ──────────────────────────── */
+.sidebar {
+  width: var(--sidebar-w);
+  min-height: 100vh;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: fixed;
+  top: 0; left: 0; bottom: 0;
+}
+
+.sidebar-brand {
+  padding: 24px 20px 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.brand-logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent), #0ea5e9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 800;
+  color: #000;
+  letter-spacing: -1px;
+}
+
+.brand-name {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  color: var(--text);
+}
+
+.brand-sub {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  margin-top: 1px;
+  letter-spacing: 1px;
+}
+
+.nav {
+  padding: 12px 10px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted2);
+  cursor: pointer;
+  transition: all .18s ease;
+  text-decoration: none;
+  position: relative;
+  letter-spacing: 0.2px;
+}
+
+.nav-item:hover {
+  color: var(--text);
+  background: rgba(255,255,255,.04);
+}
+
+.nav-item.active {
+  color: var(--text);
+  background: rgba(45,212,191,.08);
+  border: 1px solid rgba(45,212,191,.15);
+}
+
+.nav-item.active::before {
+  content: '';
+  position: absolute;
+  left: -10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 60%;
+  background: var(--accent);
+  border-radius: 0 2px 2px 0;
+}
+
+.nav-icon {
+  width: 16px;
+  height: 16px;
+  opacity: .7;
+  flex-shrink: 0;
+}
+
+.nav-item.active .nav-icon { opacity: 1; }
+
+/* ── MAIN ─────────────────────────────── */
+.main {
+  margin-left: var(--sidebar-w);
+  flex: 1;
+  padding: 36px 40px;
+  max-width: 900px;
+}
+
+/* ── HEADER ───────────────────────────── */
+.page-header {
+  margin-bottom: 32px;
+  animation: fadeUp .5s ease both;
+}
+
+.page-eyebrow {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 6px;
+}
+
+.page-title {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.5px;
+  color: var(--text);
+  line-height: 1.1;
+}
+
+.page-date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 6px;
+  letter-spacing: 0.5px;
+}
+
+/* ── SUMMARY CARDS ────────────────────── */
+.summary-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 14px;
+  margin-bottom: 36px;
+  animation: fadeUp .5s .1s ease both;
+}
+
+.summary-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 18px 20px;
+  position: relative;
+  overflow: hidden;
+  transition: border-color .2s;
+}
+
+.summary-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  border-radius: 14px 14px 0 0;
+}
+
+.summary-card.danger::before  { background: linear-gradient(90deg, var(--hoje), transparent); }
+.summary-card.warning::before { background: linear-gradient(90deg, var(--proximo), transparent); }
+.summary-card.neutral::before { background: linear-gradient(90deg, var(--accent), transparent); }
+
+.summary-card:hover { border-color: var(--border2); }
+
+.summary-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+.summary-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  line-height: 1;
+}
+
+.summary-card.danger  .summary-value { color: var(--hoje); }
+.summary-card.warning .summary-value { color: var(--proximo); }
+.summary-card.neutral .summary-value { color: var(--accent); }
+
+.summary-sub {
+  font-size: 11px;
+  color: var(--muted2);
+  margin-top: 6px;
+}
+
+/* ── TABLE ────────────────────────────── */
+.table-container {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  overflow: hidden;
+  animation: fadeUp .5s .2s ease both;
+}
+
+.table-header {
+  display: grid;
+  grid-template-columns: 1fr 120px 120px 150px;
+  padding: 12px 20px;
+  background: var(--surface2);
+  border-bottom: 1px solid var(--border);
+}
+
+.th {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.th:not(:first-child) { text-align: right; }
+
+/* Group label */
+.group-label {
+  padding: 8px 20px;
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.group-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.group-dot.hoje    { background: var(--hoje);    box-shadow: 0 0 8px var(--hoje); }
+.group-dot.proximo { background: var(--proximo); box-shadow: 0 0 8px var(--proximo); }
+.group-dot.distante { background: var(--muted);  }
+
+.group-text {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.group-text.hoje    { color: var(--hoje);    }
+.group-text.proximo { color: var(--proximo); }
+
+/* Row */
+.table-row {
+  display: grid;
+  grid-template-columns: 1fr 120px 120px 150px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  align-items: center;
+  transition: background .15s ease;
+  position: relative;
+}
+
+.table-row:last-child { border-bottom: none; }
+
+.table-row:hover { background: rgba(255,255,255,.02); }
+
+.table-row.row-hoje {
+  background: rgba(248,113,113,.03);
+}
+
+.table-row.row-hoje::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--hoje);
+  box-shadow: 2px 0 12px rgba(248,113,113,.4);
+}
+
+.table-row.row-proximo {
+  background: rgba(251,191,36,.02);
+}
+
+.table-row.row-proximo::before {
+  content: '';
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  width: 3px;
+  background: var(--proximo);
+  box-shadow: 2px 0 10px rgba(251,191,36,.3);
+}
+
+/* Client cell */
+.client-cell {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  letter-spacing: -0.5px;
+}
+
+.avatar-al { background: rgba(248,113,113,.12); color: #f87171; border: 1px solid rgba(248,113,113,.2); }
+.avatar-mv { background: rgba(167,139,250,.12); color: #a78bfa; border: 1px solid rgba(167,139,250,.2); }
+.avatar-rc { background: rgba(56,189,248,.12);  color: #38bdf8; border: 1px solid rgba(56,189,248,.2);  }
+.avatar-im { background: rgba(251,146,60,.12);  color: #fb923c; border: 1px solid rgba(251,146,60,.2);  }
+.avatar-cr { background: rgba(45,212,191,.12);  color: #2dd4bf; border: 1px solid rgba(45,212,191,.2);  }
+
+.client-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  letter-spacing: 0.1px;
+}
+
+.client-ref {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+  letter-spacing: 0.5px;
+}
+
+/* Cycle badge */
+.cycle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.cycle-badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 20px;
+}
+
+.cycle-badge.semanal {
+  background: rgba(167,139,250,.12);
+  color: var(--semanal);
+  border: 1px solid rgba(167,139,250,.25);
+  box-shadow: 0 0 12px rgba(167,139,250,.08);
+}
+
+.cycle-badge.quinzenal {
+  background: rgba(56,189,248,.12);
+  color: var(--quinzenal);
+  border: 1px solid rgba(56,189,248,.25);
+  box-shadow: 0 0 12px rgba(56,189,248,.08);
+}
+
+.cycle-badge.mensal {
+  background: rgba(251,146,60,.12);
+  color: var(--mensal);
+  border: 1px solid rgba(251,146,60,.25);
+  box-shadow: 0 0 12px rgba(251,146,60,.08);
+}
+
+/* Parcela */
+.parcela {
+  text-align: right;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: -0.5px;
+}
+
+/* Quando */
+.quando {
+  text-align: right;
+}
+
+.quando-data {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.quando-sub {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.quando-data.hoje    { color: var(--hoje);    }
+.quando-data.proximo { color: var(--proximo); }
+.quando-data.distante { color: var(--muted2); }
+
+/* ── CONFIG PANEL ─────────────────────── */
+.config-section {
+  margin-top: 28px;
+  animation: fadeUp .5s .35s ease both;
+}
+
+.config-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.config-label::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.config-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 20px 24px;
+  display: grid;
+  grid-template-columns: auto 1fr 1fr 1fr;
+  gap: 24px;
+  align-items: center;
+  max-width: 700px;
+}
+
+.config-client-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 24px;
+  border-right: 1px solid var(--border);
+}
+
+.config-client-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.config-client-sub {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: 'JetBrains Mono', monospace;
+  margin-top: 2px;
+}
+
+.config-field label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--muted);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.config-input {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  width: 100%;
+  outline: none;
+  transition: border-color .2s;
+}
+
+.config-input:focus { border-color: var(--accent); }
+
+.config-select {
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent);
+  width: 100%;
+  outline: none;
+  cursor: pointer;
+  -webkit-appearance: none;
+  transition: border-color .2s;
+}
+
+.config-select:focus { border-color: var(--accent); }
+
+/* ── LEGEND ───────────────────────────── */
+.legend {
+  display: flex;
+  gap: 20px;
+  margin-top: 16px;
+  padding: 0 4px;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+
+/* ── ANIMATIONS ───────────────────────── */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: .6; }
+}
+
+.hoje .group-dot { animation: pulse-glow 2s ease infinite; }
+
+/* ── COUNTER ANIMATION ────────────────── */
+.count-up { display: inline; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="brand-logo">
+      <div class="brand-icon">GT</div>
+      <div>
+        <div class="brand-name">Gestor</div>
+        <div class="brand-sub">TRÁFEGO META</div>
+      </div>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <a class="nav-item" href="#">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/></svg>
+      Dashboard
+    </a>
+    <a class="nav-item" href="#">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      Clientes
+    </a>
+    <a class="nav-item" href="#">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Campanhas
+    </a>
+    <a class="nav-item" href="#">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+      Saldos
+    </a>
+    <a class="nav-item active" href="#">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+      PIX
+    </a>
+    <a class="nav-item" href="#">
+      <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      Tarefas
+    </a>
+  </nav>
+</aside>
+
+<!-- Main content -->
+<main class="main">
+
+  <!-- Header -->
+  <div class="page-header">
+    <div class="page-eyebrow">Financeiro</div>
+    <h1 class="page-title">Cobranças PIX</h1>
+    <div class="page-date">Terça-feira, 29 de abril de 2026</div>
+  </div>
+
+  <!-- Summary cards -->
+  <div class="summary-row">
+    <div class="summary-card danger">
+      <div class="summary-label">A cobrar hoje</div>
+      <div class="summary-value" id="val-hoje">R$ 1.250</div>
+      <div class="summary-sub">2 clientes vencem hoje</div>
+    </div>
+    <div class="summary-card warning">
+      <div class="summary-label">Esta semana</div>
+      <div class="summary-value" id="val-semana">R$ 2.500</div>
+      <div class="summary-sub">inclui próximos 7 dias</div>
+    </div>
+    <div class="summary-card neutral">
+      <div class="summary-label">Clientes PIX</div>
+      <div class="summary-value">5</div>
+      <div class="summary-sub">R$ 8.000 / mês total</div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-container">
+
+    <!-- Header -->
+    <div class="table-header">
+      <div class="th">Cliente</div>
+      <div class="th" style="text-align:right">Ciclo</div>
+      <div class="th" style="text-align:right">Parcela</div>
+      <div class="th" style="text-align:right">Próximo PIX</div>
+    </div>
+
+    <!-- Group: Hoje -->
+    <div class="group-label">
+      <div class="group-dot hoje"></div>
+      <span class="group-text hoje">Vencem hoje</span>
+    </div>
+
+    <div class="table-row row-hoje">
+      <div class="client-cell">
+        <div class="avatar avatar-al">AL</div>
+        <div>
+          <div class="client-name">AllCar Veículos</div>
+          <div class="client-ref">ref. dias 8 e 22</div>
+        </div>
+      </div>
+      <div class="cycle"><span class="cycle-badge quinzenal">Quinzenal</span></div>
+      <div class="parcela">R$ 750</div>
+      <div class="quando">
+        <div class="quando-data hoje">Hoje, 29/04</div>
+        <div class="quando-sub">vence agora</div>
+      </div>
+    </div>
+
+    <div class="table-row row-hoje">
+      <div class="client-cell">
+        <div class="avatar avatar-mv">MV</div>
+        <div>
+          <div class="client-name">MV Construtora</div>
+          <div class="client-ref">ref. toda terça-feira</div>
+        </div>
+      </div>
+      <div class="cycle"><span class="cycle-badge semanal">Semanal</span></div>
+      <div class="parcela">R$ 500</div>
+      <div class="quando">
+        <div class="quando-data hoje">Hoje, 29/04</div>
+        <div class="quando-sub">vence agora</div>
+      </div>
+    </div>
+
+    <!-- Group: Esta semana -->
+    <div class="group-label">
+      <div class="group-dot proximo"></div>
+      <span class="group-text proximo">Esta semana</span>
+    </div>
+
+    <div class="table-row row-proximo">
+      <div class="client-cell">
+        <div class="avatar avatar-rc">RC</div>
+        <div>
+          <div class="client-name">RC Imóveis</div>
+          <div class="client-ref">ref. dias 1 e 15</div>
+        </div>
+      </div>
+      <div class="cycle"><span class="cycle-badge quinzenal">Quinzenal</span></div>
+      <div class="parcela">R$ 1.250</div>
+      <div class="quando">
+        <div class="quando-data proximo">01/05</div>
+        <div class="quando-sub">em 2 dias</div>
+      </div>
+    </div>
+
+    <!-- Group: Mais adiante -->
+    <div class="group-label">
+      <div class="group-dot distante"></div>
+      <span class="group-text">Mais adiante</span>
+    </div>
+
+    <div class="table-row">
+      <div class="client-cell">
+        <div class="avatar avatar-im">IM</div>
+        <div>
+          <div class="client-name">ImóvelCerto SP</div>
+          <div class="client-ref">ref. dia 15 do mês</div>
+        </div>
+      </div>
+      <div class="cycle"><span class="cycle-badge mensal">Mensal</span></div>
+      <div class="parcela">R$ 2.000</div>
+      <div class="quando">
+        <div class="quando-data distante">15/05</div>
+        <div class="quando-sub">em 16 dias</div>
+      </div>
+    </div>
+
+    <div class="table-row">
+      <div class="client-cell">
+        <div class="avatar avatar-cr">CR</div>
+        <div>
+          <div class="client-name">Construtora Ramos</div>
+          <div class="client-ref">ref. dia 20 do mês</div>
+        </div>
+      </div>
+      <div class="cycle"><span class="cycle-badge mensal">Mensal</span></div>
+      <div class="parcela">R$ 3.000</div>
+      <div class="quando">
+        <div class="quando-data distante">20/05</div>
+        <div class="quando-sub">em 21 dias</div>
+      </div>
+    </div>
+
+  </div><!-- /table -->
+
+  <!-- Legend -->
+  <div class="legend">
+    <div class="legend-item">
+      <span class="cycle-badge semanal" style="font-size:8px;padding:2px 7px;">Semanal</span>
+      mensal ÷ 4
+    </div>
+    <div class="legend-item">
+      <span class="cycle-badge quinzenal" style="font-size:8px;padding:2px 7px;">Quinzenal</span>
+      mensal ÷ 2
+    </div>
+    <div class="legend-item">
+      <span class="cycle-badge mensal" style="font-size:8px;padding:2px 7px;">Mensal</span>
+      valor completo
+    </div>
+  </div>
+
+  <!-- Config section -->
+  <div class="config-section">
+    <div class="config-label">Configuração por cliente — exemplo: AllCar Veículos</div>
+    <div class="config-card">
+      <div class="config-client-info">
+        <div class="avatar avatar-al" style="width:38px;height:38px;font-size:11px;">AL</div>
+        <div>
+          <div class="config-client-name">AllCar Veículos</div>
+          <div class="config-client-sub">Cadastro do cliente</div>
+        </div>
+      </div>
+
+      <div class="config-field">
+        <label>Inv. Mensal</label>
+        <input class="config-input" type="text" value="R$ 1.500" />
+      </div>
+
+      <div class="config-field">
+        <label>Ciclo</label>
+        <select class="config-select">
+          <option>Semanal</option>
+          <option selected>Quinzenal</option>
+          <option>Mensal</option>
+        </select>
+      </div>
+
+      <div class="config-field">
+        <label>Data referência</label>
+        <input class="config-input" type="text" value="Dia 8" />
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+// Staggered row animation
+document.querySelectorAll('.table-row').forEach((row, i) => {
+  row.style.opacity = '0';
+  row.style.transform = 'translateY(8px)';
+  row.style.transition = 'opacity .3s ease, transform .3s ease, background .15s ease';
+  setTimeout(() => {
+    row.style.opacity = '1';
+    row.style.transform = 'translateY(0)';
+  }, 350 + i * 60);
+});
+</script>
+</body>
+</html>

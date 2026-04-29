@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Mockup — Página /pix v2</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0a0a0f; color: #e0e0e0; font-family: system-ui, sans-serif; padding: 0; min-height: 100vh; }
+.app { display: flex; min-height: 100vh; }
+
+.sidebar { width: 200px; background: #0f0f1a; border-right: 1px solid #1a1a2e; padding: 16px 0; flex-shrink: 0; }
+.sidebar-logo { padding: 0 16px 16px; font-size: 13px; font-weight: 700; color: #fff; border-bottom: 1px solid #1a1a2e; margin-bottom: 8px; }
+.sidebar-logo span { color: #4a9eff; }
+.nav-item { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 13px; color: #666; cursor: pointer; }
+.nav-item.active { color: #fff; background: #1a1a2e; border-right: 2px solid #4a9eff; }
+.nav-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+.nav-badge { margin-left: auto; background: #ef4444; color: #fff; font-size: 10px; font-weight: 700; padding: 1px 5px; border-radius: 10px; }
+
+.main { flex: 1; padding: 24px 32px; }
+
+.page-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+.page-title { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+.page-sub { font-size: 12px; color: #555; margin-top: 2px; font-family: monospace; }
+.btn-primary { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; background: #4a9eff; color: #fff; }
+
+.chips { display: flex; gap: 10px; margin-bottom: 24px; }
+.chip { background: #1a1a2e; border: 1px solid #222; border-radius: 10px; padding: 12px 16px; min-width: 140px; }
+.chip-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 1px; font-family: monospace; margin-bottom: 4px; }
+.chip-value { font-size: 22px; font-weight: 700; font-family: monospace; }
+.chip-sub { font-size: 11px; color: #444; margin-top: 2px; }
+
+.table-wrap { background: #0f0f1a; border: 1px solid #1a1a2e; border-radius: 12px; overflow: hidden; }
+.table-head { display: grid; grid-template-columns: 1fr 110px 90px 100px 110px 90px 100px; padding: 10px 16px; background: #0a0a12; border-bottom: 1px solid #1a1a2e; }
+.th { font-size: 10px; font-family: monospace; text-transform: uppercase; letter-spacing: 1px; color: #444; }
+.th:not(:first-child) { text-align: right; }
+
+.table-row { display: grid; grid-template-columns: 1fr 110px 90px 100px 110px 90px 100px; padding: 12px 16px; border-bottom: 1px solid #111827; align-items: center; }
+.table-row:last-child { border-bottom: none; }
+.table-row.overdue { background: rgba(239,68,68,.04); }
+.table-row.today { background: rgba(245,158,11,.04); }
+
+.client-cell { display: flex; align-items: center; gap: 10px; }
+.avatar { width: 30px; height: 30px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; font-family: monospace; flex-shrink: 0; }
+.avatar.red { background: rgba(239,68,68,.15); color: #ef4444; border: 1px solid rgba(239,68,68,.2); }
+.avatar.yellow { background: rgba(245,158,11,.15); color: #f59e0b; border: 1px solid rgba(245,158,11,.2); }
+.avatar.green { background: rgba(34,197,94,.15); color: #22c55e; border: 1px solid rgba(34,197,94,.2); }
+.avatar.blue { background: rgba(74,158,255,.15); color: #4a9eff; border: 1px solid rgba(74,158,255,.2); }
+.client-name { font-size: 13px; color: #e0e0e0; font-weight: 500; }
+.client-since { font-size: 10px; color: #444; font-family: monospace; margin-top: 2px; }
+
+/* Cycle badges - the key new element */
+.cycle-badge { display: inline-flex; align-items: center; justify-content: center; padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: 700; font-family: monospace; letter-spacing: 0.3px; white-space: nowrap; }
+.cycle-badge.semanal  { background: rgba(168,85,247,.15); color: #a855f7; border: 1px solid rgba(168,85,247,.25); }
+.cycle-badge.quinzenal { background: rgba(14,165,233,.15); color: #0ea5e9; border: 1px solid rgba(14,165,233,.25); }
+.cycle-badge.mensal   { background: rgba(251,146,60,.15); color: #fb923c; border: 1px solid rgba(251,146,60,.25); }
+
+.cell-right { text-align: right; font-family: monospace; font-size: 12px; }
+
+.badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 20px; font-size: 10px; font-weight: 600; font-family: monospace; }
+.badge.overdue  { background: rgba(239,68,68,.15);  color: #ef4444; border: 1px solid rgba(239,68,68,.2); }
+.badge.today    { background: rgba(245,158,11,.15); color: #f59e0b; border: 1px solid rgba(245,158,11,.2); }
+.badge.upcoming { background: rgba(74,158,255,.1);  color: #4a9eff; border: 1px solid rgba(74,158,255,.15); }
+.badge.paid     { background: rgba(34,197,94,.1);   color: #22c55e; border: 1px solid rgba(34,197,94,.15); }
+
+.action-btn { border-radius: 6px; padding: 5px 10px; font-size: 11px; font-weight: 600; cursor: pointer; white-space: nowrap; border: 1px solid; }
+.action-btn.overdue  { background: rgba(239,68,68,.12);  color: #ef4444; border-color: rgba(239,68,68,.2); }
+.action-btn.today    { background: rgba(245,158,11,.12); color: #f59e0b; border-color: rgba(245,158,11,.2); }
+.action-btn.upcoming { background: rgba(74,158,255,.06); color: #4a9eff; border-color: rgba(74,158,255,.12); opacity:.5; cursor:default; }
+.action-btn.paid     { background: transparent; color: #333; border-color: #1a1a2e; cursor: default; }
+
+.section-divider { padding: 6px 16px; background: #070710; border-bottom: 1px solid #111827; }
+.section-divider span { font-size: 10px; font-family: monospace; text-transform: uppercase; letter-spacing: 1px; color: #333; }
+
+.hint { background: #1a1a2e; border: 1px solid #222; border-radius: 8px; padding: 10px 14px; font-size: 12px; color: #555; margin-top: 16px; display: flex; align-items: center; gap: 8px; }
+
+/* Legend */
+.legend { display: flex; gap: 16px; margin-top: 12px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #555; font-family: monospace; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="sidebar">
+    <div class="sidebar-logo">Gestor <span>Tráfego</span></div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+      Clientes
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+      Saldos
+    </div>
+    <div class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="10"/></svg>
+      PIX
+      <span class="nav-badge">3</span>
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+      Tarefas
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="page-header">
+      <div>
+        <div class="page-title">Cobranças PIX</div>
+        <div class="page-sub">Hoje: terça, 29 de abril de 2026</div>
+      </div>
+      <button class="btn-primary">+ Registrar pagamento</button>
+    </div>
+
+    <div class="chips">
+      <div class="chip">
+        <div class="chip-label">Vencidos</div>
+        <div class="chip-value" style="color:#ef4444">1</div>
+        <div class="chip-sub">precisam de atenção</div>
+      </div>
+      <div class="chip">
+        <div class="chip-label">Vencem hoje</div>
+        <div class="chip-value" style="color:#f59e0b">2</div>
+        <div class="chip-sub">gerar PIX agora</div>
+      </div>
+      <div class="chip">
+        <div class="chip-label">Próximos 7 dias</div>
+        <div class="chip-value" style="color:#4a9eff">1</div>
+        <div class="chip-sub">planejamento</div>
+      </div>
+      <div class="chip">
+        <div class="chip-label">A cobrar</div>
+        <div class="chip-value" style="color:#e0e0e0;font-size:18px;">R$ 4.000</div>
+        <div class="chip-sub">total pendente</div>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-head">
+        <div class="th">Cliente</div>
+        <div class="th" style="text-align:right">Ciclo</div>
+        <div class="th" style="text-align:right">Parcela</div>
+        <div class="th" style="text-align:right">Inv. Mensal</div>
+        <div class="th" style="text-align:right">Vencimento</div>
+        <div class="th" style="text-align:right">Status</div>
+        <div class="th" style="text-align:right">Ação</div>
+      </div>
+
+      <div class="section-divider"><span>🔴 Vencidos</span></div>
+
+      <div class="table-row overdue">
+        <div class="client-cell">
+          <div class="avatar red">AL</div>
+          <div>
+            <div class="client-name">AllCar Veículos</div>
+            <div class="client-since">desde dia 8</div>
+          </div>
+        </div>
+        <div class="cell-right"><span class="cycle-badge quinzenal">Quinzenal</span></div>
+        <div class="cell-right" style="color:#4a9eff;font-weight:700;">R$ 750</div>
+        <div class="cell-right" style="color:#555;">R$ 1.500</div>
+        <div class="cell-right" style="color:#ef4444;">22/04 · 7d atrás</div>
+        <div class="cell-right"><span class="badge overdue">Vencido</span></div>
+        <div style="text-align:right"><button class="action-btn overdue">✓ Marcar pago</button></div>
+      </div>
+
+      <div class="section-divider"><span>🟡 Vencem hoje</span></div>
+
+      <div class="table-row today">
+        <div class="client-cell">
+          <div class="avatar yellow">IM</div>
+          <div>
+            <div class="client-name">ImóvelCerto SP</div>
+            <div class="client-since">desde dia 29</div>
+          </div>
+        </div>
+        <div class="cell-right"><span class="cycle-badge mensal">Mensal</span></div>
+        <div class="cell-right" style="color:#4a9eff;font-weight:700;">R$ 2.000</div>
+        <div class="cell-right" style="color:#555;">R$ 2.000</div>
+        <div class="cell-right" style="color:#f59e0b;">29/04 — Hoje</div>
+        <div class="cell-right"><span class="badge today">Hoje</span></div>
+        <div style="text-align:right"><button class="action-btn today">✓ Marcar pago</button></div>
+      </div>
+
+      <div class="table-row today">
+        <div class="client-cell">
+          <div class="avatar yellow">MV</div>
+          <div>
+            <div class="client-name">MV Construtora</div>
+            <div class="client-since">desde terça-feira</div>
+          </div>
+        </div>
+        <div class="cell-right"><span class="cycle-badge semanal">Semanal</span></div>
+        <div class="cell-right" style="color:#4a9eff;font-weight:700;">R$ 500</div>
+        <div class="cell-right" style="color:#555;">R$ 2.000</div>
+        <div class="cell-right" style="color:#f59e0b;">29/04 — Hoje</div>
+        <div class="cell-right"><span class="badge today">Hoje</span></div>
+        <div style="text-align:right"><button class="action-btn today">✓ Marcar pago</button></div>
+      </div>
+
+      <div class="section-divider"><span>🔵 Próximos</span></div>
+
+      <div class="table-row">
+        <div class="client-cell">
+          <div class="avatar blue">RC</div>
+          <div>
+            <div class="client-name">RC Imóveis</div>
+            <div class="client-since">desde dia 1</div>
+          </div>
+        </div>
+        <div class="cell-right"><span class="cycle-badge quinzenal">Quinzenal</span></div>
+        <div class="cell-right" style="color:#4a9eff;font-weight:700;">R$ 1.250</div>
+        <div class="cell-right" style="color:#555;">R$ 2.500</div>
+        <div class="cell-right" style="color:#555;">01/05 · em 2d</div>
+        <div class="cell-right"><span class="badge upcoming">em 2 dias</span></div>
+        <div style="text-align:right"><button class="action-btn upcoming">✓ Marcar pago</button></div>
+      </div>
+
+      <div class="section-divider"><span>✅ Pagos recentemente</span></div>
+
+      <div class="table-row" style="opacity:.45;">
+        <div class="client-cell">
+          <div class="avatar green">CR</div>
+          <div>
+            <div class="client-name">Construtora Ramos</div>
+            <div class="client-since">desde dia 15</div>
+          </div>
+        </div>
+        <div class="cell-right"><span class="cycle-badge mensal">Mensal</span></div>
+        <div class="cell-right" style="color:#22c55e;">R$ 3.000</div>
+        <div class="cell-right" style="color:#555;">R$ 3.000</div>
+        <div class="cell-right" style="color:#555;">15/04</div>
+        <div class="cell-right"><span class="badge paid">✓ Pago</span></div>
+        <div style="text-align:right"><button class="action-btn paid">✓ Pago</button></div>
+      </div>
+
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><span class="cycle-badge semanal" style="font-size:10px;">Semanal</span> mensalidade ÷ 4</div>
+      <div class="legend-item"><span class="cycle-badge quinzenal" style="font-size:10px;">Quinzenal</span> mensalidade ÷ 2</div>
+      <div class="legend-item"><span class="cycle-badge mensal" style="font-size:10px;">Mensal</span> mensalidade completa</div>
+    </div>
+
+    <div class="hint" style="margin-top:10px;">
+      💡 Ciclo e investimento mensal são configurados no cadastro de cada cliente.
+    </div>
+  </div>
+</div>
+
+<script>
+document.querySelectorAll('.action-btn.overdue, .action-btn.today').forEach(btn => {
+  btn.addEventListener('click', function() {
+    const row = this.closest('.table-row');
+    row.style.opacity = '0.45';
+    const badge = row.querySelector('.badge');
+    badge.className = 'badge paid';
+    badge.textContent = '✓ Pago';
+    this.className = 'action-btn paid';
+    this.textContent = '✓ Pago';
+  });
+});
+</script>
+</body>
+</html>

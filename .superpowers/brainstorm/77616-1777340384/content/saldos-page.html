@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Saldos Meta</title>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600;700&family=Geist:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #080c14;
+    --surface: #0d1220;
+    --surface2: #111827;
+    --border: #1e2d45;
+    --border2: #243347;
+    --text: #e8edf5;
+    --muted: #4a5d78;
+    --accent: #3b82f6;
+    --accent-glow: rgba(59,130,246,0.12);
+    --green: #22c55e;
+    --green-bg: rgba(34,197,94,0.07);
+    --green-border: rgba(34,197,94,0.18);
+    --yellow: #f59e0b;
+    --yellow-bg: rgba(245,158,11,0.07);
+    --yellow-border: rgba(245,158,11,0.18);
+    --red: #ef4444;
+    --red-bg: rgba(239,68,68,0.07);
+    --red-border: rgba(239,68,68,0.18);
+    --mono: 'Geist Mono', monospace;
+    --sans: 'Geist', sans-serif;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 28px 24px;
+    background-image: radial-gradient(ellipse 70% 40% at 50% -10%, rgba(59,130,246,0.05) 0%, transparent 60%);
+  }
+
+  /* ── Topbar nav ── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 28px;
+    animation: fadeUp 0.3s ease both;
+  }
+
+  .back-link {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.78rem;
+    color: var(--muted);
+    font-family: var(--mono);
+    text-decoration: none;
+    transition: color 0.15s;
+  }
+  .back-link:hover { color: var(--text); }
+
+  .breadcrumb-sep { color: var(--border2); font-size: 0.8rem; }
+
+  .breadcrumb-current {
+    font-size: 0.78rem;
+    font-family: var(--mono);
+    color: var(--text);
+  }
+
+  /* ── Page header ── */
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    margin-bottom: 24px;
+    animation: fadeUp 0.35s ease 0.05s both;
+  }
+
+  .page-header h1 {
+    font-size: 1.6rem;
+    font-weight: 600;
+    letter-spacing: -0.03em;
+  }
+
+  .page-header .sync-info {
+    font-size: 0.72rem;
+    font-family: var(--mono);
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  .refresh-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--surface2);
+    border: 1px solid var(--border2);
+    color: var(--accent);
+    padding: 8px 16px;
+    border-radius: 9px;
+    font-size: 0.78rem;
+    font-family: var(--mono);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .refresh-btn:hover { background: var(--accent-glow); border-color: var(--accent); }
+
+  /* ── Summary strip ── */
+  .summary-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 24px;
+    animation: fadeUp 0.35s ease 0.08s both;
+  }
+
+  .summary-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .summary-label {
+    font-size: 0.65rem;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+  }
+
+  .summary-value {
+    font-size: 1.5rem;
+    font-family: var(--mono);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+  }
+
+  .summary-value.total { color: var(--text); }
+  .summary-value.red { color: var(--red); }
+  .summary-value.yellow { color: var(--yellow); }
+
+  .summary-sub {
+    font-size: 0.7rem;
+    color: var(--muted);
+    font-family: var(--mono);
+  }
+
+  /* ── Table ── */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    overflow: hidden;
+    animation: fadeUp 0.4s ease 0.12s both;
+  }
+
+  .table-header {
+    display: grid;
+    grid-template-columns: 1fr 130px 120px 120px 90px;
+    gap: 0;
+    padding: 10px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+
+  .th {
+    font-size: 0.62rem;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--muted);
+    font-weight: 500;
+  }
+
+  .th.right { text-align: right; }
+
+  .table-row {
+    display: grid;
+    grid-template-columns: 1fr 130px 120px 120px 90px;
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    align-items: center;
+    transition: background 0.12s;
+    cursor: pointer;
+  }
+
+  .table-row:last-child { border-bottom: none; }
+  .table-row:hover { background: var(--surface2); }
+
+  .client-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .client-avatar {
+    width: 30px; height: 30px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.7rem;
+    font-weight: 700;
+    font-family: var(--mono);
+    flex-shrink: 0;
+  }
+
+  .client-avatar.green { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+  .client-avatar.yellow { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow-border); }
+  .client-avatar.red { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+
+  .client-name-text {
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--text);
+  }
+
+  .client-segment {
+    font-size: 0.68rem;
+    font-family: var(--mono);
+    color: var(--muted);
+    margin-top: 1px;
+  }
+
+  .cell-value {
+    font-family: var(--mono);
+    font-size: 0.88rem;
+    font-weight: 600;
+    text-align: right;
+  }
+
+  .cell-value.green { color: var(--green); }
+  .cell-value.yellow { color: var(--yellow); }
+  .cell-value.red { color: var(--red); animation: pulse 1.5s ease-in-out infinite; }
+  .cell-value.muted { color: var(--muted); font-weight: 400; }
+
+  .status-chip {
+    display: inline-flex;
+    justify-content: flex-end;
+  }
+
+  .chip {
+    font-size: 0.65rem;
+    font-family: var(--mono);
+    padding: 3px 8px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+
+  .chip.green { background: var(--green-bg); color: var(--green); border: 1px solid var(--green-border); }
+  .chip.yellow { background: var(--yellow-bg); color: var(--yellow); border: 1px solid var(--yellow-border); }
+  .chip.red { background: var(--red-bg); color: var(--red); border: 1px solid var(--red-border); }
+
+  /* Barra de saldo visual */
+  .balance-bar-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .balance-bar-track {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+    width: 100px;
+  }
+
+  .balance-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.5s ease;
+  }
+
+  .balance-bar-fill.green { background: var(--green); }
+  .balance-bar-fill.yellow { background: var(--yellow); }
+  .balance-bar-fill.red { background: var(--red); }
+
+  /* Sidebar nav hint */
+  .nav-hint {
+    position: fixed;
+    left: 0; top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 8px 6px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: none;
+    border-radius: 0 8px 8px 0;
+    opacity: 0.5;
+  }
+
+  .nav-dot { width: 6px; height: 6px; background: var(--border2); border-radius: 50%; }
+  .nav-dot.active { background: var(--accent); }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .table-row:nth-child(1) { animation: fadeUp 0.3s ease 0.15s both; }
+  .table-row:nth-child(2) { animation: fadeUp 0.3s ease 0.2s both; }
+  .table-row:nth-child(3) { animation: fadeUp 0.3s ease 0.25s both; }
+  .table-row:nth-child(4) { animation: fadeUp 0.3s ease 0.3s both; }
+  .table-row:nth-child(5) { animation: fadeUp 0.3s ease 0.35s both; }
+</style>
+</head>
+<body>
+
+<!-- Topbar -->
+<div class="topbar">
+  <a class="back-link" href="#">← Dashboard</a>
+  <span class="breadcrumb-sep">/</span>
+  <span class="breadcrumb-current">Saldos Meta</span>
+</div>
+
+<!-- Page header -->
+<div class="page-header">
+  <div>
+    <h1>Saldos Meta</h1>
+    <div class="sync-info">Atualizado às 14:22 · sincronização automática a cada hora</div>
+  </div>
+  <button class="refresh-btn">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 4v6h6"/><path d="M23 20v-6h-6"/><path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/></svg>
+    Atualizar agora
+  </button>
+</div>
+
+<!-- Summary strip -->
+<div class="summary-strip">
+  <div class="summary-card">
+    <span class="summary-label">Total disponível</span>
+    <span class="summary-value total">R$ 7.832</span>
+    <span class="summary-sub">5 contas ativas</span>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Contas críticas</span>
+    <span class="summary-value red">1</span>
+    <span class="summary-sub">abaixo de R$ 200</span>
+  </div>
+  <div class="summary-card">
+    <span class="summary-label">Em atenção</span>
+    <span class="summary-value yellow">1</span>
+    <span class="summary-sub">R$ 200 – R$ 500</span>
+  </div>
+</div>
+
+<!-- Table -->
+<div class="table-wrap">
+  <div class="table-header">
+    <div class="th">Cliente</div>
+    <div class="th right">Saldo Meta</div>
+    <div class="th right">Gasto hoje</div>
+    <div class="th right">Estimativa</div>
+    <div class="th right">Status</div>
+  </div>
+
+  <!-- Row crítico -->
+  <div class="table-row">
+    <div class="client-info">
+      <div class="client-avatar red">FS</div>
+      <div>
+        <div class="client-name-text">Fiat Strada RJ</div>
+        <div class="client-segment">premium</div>
+      </div>
+    </div>
+    <div class="balance-bar-wrap">
+      <div class="cell-value red">R$ 89</div>
+      <div class="balance-bar-track"><div class="balance-bar-fill red" style="width:3%"></div></div>
+    </div>
+    <div class="cell-value muted">R$ 187</div>
+    <div class="cell-value red">~0,5 dia</div>
+    <div class="status-chip"><span class="chip red">Crítico</span></div>
+  </div>
+
+  <!-- Row atenção -->
+  <div class="table-row">
+    <div class="client-info">
+      <div class="client-avatar yellow">HC</div>
+      <div>
+        <div class="client-name-text">Honda Civic SP</div>
+        <div class="client-segment">premium</div>
+      </div>
+    </div>
+    <div class="balance-bar-wrap">
+      <div class="cell-value yellow">R$ 843</div>
+      <div class="balance-bar-track"><div class="balance-bar-fill yellow" style="width:26%"></div></div>
+    </div>
+    <div class="cell-value muted">R$ 310</div>
+    <div class="cell-value yellow">~2,7 dias</div>
+    <div class="status-chip"><span class="chip yellow">Atenção</span></div>
+  </div>
+
+  <!-- Row ok -->
+  <div class="table-row">
+    <div class="client-info">
+      <div class="client-avatar green">TC</div>
+      <div>
+        <div class="client-name-text">Toyota Corolla BH</div>
+        <div class="client-segment">popular</div>
+      </div>
+    </div>
+    <div class="balance-bar-wrap">
+      <div class="cell-value green">R$ 2.140</div>
+      <div class="balance-bar-track"><div class="balance-bar-fill green" style="width:67%"></div></div>
+    </div>
+    <div class="cell-value muted">R$ 420</div>
+    <div class="cell-value green">~5,1 dias</div>
+    <div class="status-chip"><span class="chip green">Ok</span></div>
+  </div>
+
+  <!-- Row ok -->
+  <div class="table-row">
+    <div class="client-info">
+      <div class="client-avatar green">VP</div>
+      <div>
+        <div class="client-name-text">VW Polo SP</div>
+        <div class="client-segment">popular</div>
+      </div>
+    </div>
+    <div class="balance-bar-wrap">
+      <div class="cell-value green">R$ 3.200</div>
+      <div class="balance-bar-track"><div class="balance-bar-fill green" style="width:100%"></div></div>
+    </div>
+    <div class="cell-value muted">R$ 255</div>
+    <div class="cell-value green">~12,5 dias</div>
+    <div class="status-chip"><span class="chip green">Ok</span></div>
+  </div>
+
+  <!-- Row ok -->
+  <div class="table-row">
+    <div class="client-info">
+      <div class="client-avatar green">CO</div>
+      <div>
+        <div class="client-name-text">Chevrolet Onix MG</div>
+        <div class="client-segment">popular</div>
+      </div>
+    </div>
+    <div class="balance-bar-wrap">
+      <div class="cell-value green">R$ 1.560</div>
+      <div class="balance-bar-track"><div class="balance-bar-fill green" style="width:49%"></div></div>
+    </div>
+    <div class="cell-value muted">R$ 198</div>
+    <div class="cell-value green">~7,9 dias</div>
+    <div class="status-chip"><span class="chip green">Ok</span></div>
+  </div>
+
+</div>
+
+</body>
+</html>

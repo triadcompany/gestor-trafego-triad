@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tarefas — Gestor de Tráfego</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Mono:ital,wght@0,300;0,400;0,500;1,400&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:           #0c0e16;
+      --surface:      #12151f;
+      --surface-2:    #171a26;
+      --surface-3:    #1c2030;
+      --border:       #1e2235;
+      --border-2:     #252a3d;
+      --text-1:       #e8eaf0;
+      --text-2:       #8b91ac;
+      --text-3:       #4f5673;
+      --accent:       #4f7fff;
+      --accent-glow:  rgba(79,127,255,.14);
+      --green:        #22c55e;
+      --green-bg:     rgba(34,197,94,.09);
+      --green-border: rgba(34,197,94,.2);
+      --amber:        #f59e0b;
+      --amber-bg:     rgba(245,158,11,.09);
+      --amber-border: rgba(245,158,11,.2);
+
+      --c-carhaus:        #4f7fff;
+      --c-carhaus-bg:     rgba(79,127,255,.09);
+      --c-carhaus-border: rgba(79,127,255,.22);
+
+      --c-imob:        #a855f7;
+      --c-imob-bg:     rgba(168,85,247,.09);
+      --c-imob-border: rgba(168,85,247,.22);
+
+      --c-const:        #10b981;
+      --c-const-bg:     rgba(16,185,129,.09);
+      --c-const-border: rgba(16,185,129,.22);
+
+      --c-praxis:        #f59e0b;
+      --c-praxis-bg:     rgba(245,158,11,.09);
+      --c-praxis-border: rgba(245,158,11,.22);
+    }
+
+    html, body { min-height: 100vh; background: var(--bg); color: var(--text-1); font-family: 'Outfit', sans-serif; }
+
+    body::after {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 9999;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+    }
+
+    .app { display: flex; min-height: 100vh; }
+
+    /* ── Sidebar ─────────────────────────────────── */
+    .sidebar {
+      width: 224px; flex-shrink: 0;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      display: flex; flex-direction: column;
+      position: fixed; inset-y: 0; left: 0; z-index: 100;
+    }
+    .sidebar-logo {
+      padding: 18px 16px; border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .logo-mark {
+      width: 34px; height: 34px;
+      background: linear-gradient(135deg, #4f7fff 0%, #7b5ea7 100%);
+      border-radius: 9px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: #fff;
+      font-family: 'DM Mono', monospace; flex-shrink: 0;
+      box-shadow: 0 0 18px rgba(79,127,255,.35);
+    }
+    .logo-text span { display: block; font-size: 12px; font-weight: 600; color: var(--text-1); line-height: 1.3; }
+    .sidebar-nav { padding: 12px 8px; flex: 1; display: flex; flex-direction: column; gap: 2px; }
+    .nav-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 8px;
+      font-size: 13px; font-weight: 500; color: var(--text-2);
+      cursor: pointer; transition: all .14s ease; text-decoration: none;
+      border: 1px solid transparent;
+    }
+    .nav-item:hover { background: var(--surface-2); color: var(--text-1); }
+    .nav-item.active {
+      background: var(--accent-glow); color: var(--accent);
+      border-color: rgba(79,127,255,.2);
+    }
+    .nav-icon { width: 15px; height: 15px; flex-shrink: 0; }
+    .sidebar-footer { padding: 12px 16px; border-top: 1px solid var(--border); font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text-3); }
+
+    /* ── Main ───────────────────────────────────── */
+    .main { margin-left: 224px; flex: 1; min-height: 100vh; }
+
+    /* Page header */
+    .page-header { padding: 28px 32px 0; border-bottom: 1px solid var(--border); }
+    .header-top { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; }
+    .page-eyebrow {
+      font-family: 'DM Mono', monospace; font-size: 10px;
+      text-transform: uppercase; letter-spacing: .12em;
+      color: var(--accent); margin-bottom: 5px;
+    }
+    .page-title {
+      font-family: 'DM Serif Display', serif; font-size: 32px;
+      color: var(--text-1); line-height: 1.05; letter-spacing: -.5px;
+    }
+    .page-subtitle { font-size: 13px; color: var(--text-2); margin-top: 5px; font-weight: 400; }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 8px 16px; border-radius: 8px;
+      font-size: 13px; font-weight: 600; font-family: 'Outfit', sans-serif;
+      cursor: pointer; border: none; transition: all .15s ease; line-height: 1;
+    }
+    .btn-primary {
+      background: var(--accent); color: #fff;
+      box-shadow: 0 0 20px rgba(79,127,255,.28);
+    }
+    .btn-primary:hover { background: #3d6ef0; transform: translateY(-1px); box-shadow: 0 0 28px rgba(79,127,255,.4); }
+    .btn-ghost {
+      background: var(--surface-2); color: var(--text-2);
+      border: 1px solid var(--border-2);
+    }
+    .btn-ghost:hover { background: var(--surface-3); color: var(--text-1); }
+
+    /* Tabs */
+    .tabs { display: flex; margin-top: 4px; }
+    .tab {
+      padding: 12px 22px; font-size: 13px; font-weight: 500;
+      color: var(--text-3); cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all .15s ease; user-select: none;
+    }
+    .tab:hover { color: var(--text-2); }
+    .tab.active { color: var(--text-1); border-bottom-color: var(--accent); }
+    .tab-count {
+      display: inline-flex; align-items: center; justify-content: center;
+      min-width: 18px; height: 18px; padding: 0 5px;
+      background: var(--surface-3); border-radius: 20px;
+      font-size: 10px; font-family: 'DM Mono', monospace;
+      color: var(--text-2); margin-left: 6px;
+    }
+    .tab.active .tab-count { background: var(--accent-glow); color: var(--accent); }
+
+    /* Tab content */
+    @keyframes fadeUp {
+      from { opacity: 0; transform: translateY(7px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .tab-content { display: none; padding: 26px 32px; animation: fadeUp .22s ease; }
+    .tab-content.active { display: block; }
+
+    /* ── Filter bar ─────────────────────────────── */
+    .filter-bar { display: flex; align-items: center; gap: 10px; margin-bottom: 22px; }
+    .search-wrap { position: relative; }
+    .search-icon { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--text-3); }
+    .search-input {
+      background: var(--surface); border: 1px solid var(--border-2);
+      color: var(--text-1); padding: 8px 12px 8px 34px;
+      border-radius: 8px; font-size: 13px; font-family: 'Outfit', sans-serif;
+      width: 240px; outline: none; transition: border-color .15s, box-shadow .15s;
+    }
+    .search-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+    .search-input::placeholder { color: var(--text-3); }
+    .client-select {
+      background: var(--surface); border: 1px solid var(--border-2);
+      color: var(--text-2); padding: 8px 12px;
+      border-radius: 8px; font-size: 13px; font-family: 'Outfit', sans-serif;
+      outline: none; cursor: pointer; transition: border-color .15s;
+    }
+    .client-select:focus { border-color: var(--accent); }
+    .filter-count { margin-left: auto; font-size: 12px; font-family: 'DM Mono', monospace; color: var(--text-3); }
+
+    /* ── Note cards ─────────────────────────────── */
+    .notes-list { display: flex; flex-direction: column; gap: 10px; }
+    .note-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; padding: 16px 18px;
+      position: relative; overflow: hidden;
+      transition: all .18s ease; cursor: default;
+    }
+    .note-card::before {
+      content: ''; position: absolute; left: 0; top: 0; bottom: 0;
+      width: 3px; border-radius: 12px 0 0 12px;
+    }
+    .note-card.carhaus::before { background: var(--c-carhaus); box-shadow: 0 0 10px var(--c-carhaus); }
+    .note-card.imob::before    { background: var(--c-imob);    box-shadow: 0 0 10px var(--c-imob); }
+    .note-card.const::before   { background: var(--c-const);   box-shadow: 0 0 10px var(--c-const); }
+    .note-card.praxis::before  { background: var(--c-praxis);  box-shadow: 0 0 10px var(--c-praxis); }
+    .note-card:hover {
+      border-color: var(--border-2); background: var(--surface-2);
+      transform: translateY(-2px); box-shadow: 0 6px 24px rgba(0,0,0,.35);
+    }
+    .note-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .client-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 20px;
+      font-size: 10px; font-family: 'DM Mono', monospace;
+      font-weight: 500; text-transform: uppercase; letter-spacing: .07em;
+    }
+    .client-badge.carhaus { background: var(--c-carhaus-bg); color: var(--c-carhaus); border: 1px solid var(--c-carhaus-border); }
+    .client-badge.imob    { background: var(--c-imob-bg);    color: var(--c-imob);    border: 1px solid var(--c-imob-border); }
+    .client-badge.const   { background: var(--c-const-bg);   color: var(--c-const);   border: 1px solid var(--c-const-border); }
+    .client-badge.praxis  { background: var(--c-praxis-bg);  color: var(--c-praxis);  border: 1px solid var(--c-praxis-border); }
+    .note-meta { display: flex; align-items: center; gap: 8px; }
+    .note-time { font-size: 11px; font-family: 'DM Mono', monospace; color: var(--text-3); }
+    .note-actions { display: flex; gap: 4px; opacity: 0; transition: opacity .15s; }
+    .note-card:hover .note-actions { opacity: 1; }
+    .action-btn {
+      width: 26px; height: 26px; border-radius: 6px;
+      background: var(--surface-3); border: 1px solid var(--border-2);
+      color: var(--text-3);
+      display: flex; align-items: center; justify-content: center;
+      cursor: pointer; transition: all .14s;
+    }
+    .action-btn:hover { background: var(--surface-2); color: var(--text-1); border-color: var(--border-2); }
+    .action-btn.del:hover { background: rgba(239,68,68,.1); border-color: rgba(239,68,68,.3); color: #ef4444; }
+    .note-text { font-size: 14px; color: var(--text-1); line-height: 1.65; font-weight: 400; }
+
+    /* Composer */
+    .note-composer {
+      background: var(--surface); border: 1px solid var(--accent);
+      border-radius: 12px; padding: 16px 18px;
+      margin-bottom: 18px;
+      box-shadow: 0 0 0 3px var(--accent-glow), 0 8px 32px rgba(0,0,0,.3);
+      animation: fadeUp .2s ease;
+    }
+    .composer-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .composer-label { font-size: 11px; font-family: 'DM Mono', monospace; text-transform: uppercase; letter-spacing: .1em; color: var(--accent); }
+    .composer-select {
+      background: var(--surface-2); border: 1px solid var(--border-2);
+      color: var(--text-1); padding: 5px 10px;
+      border-radius: 6px; font-size: 12px; font-family: 'Outfit', sans-serif; outline: none;
+    }
+    .composer-textarea {
+      width: 100%; background: transparent; border: none;
+      color: var(--text-1); font-size: 14px; font-family: 'Outfit', sans-serif;
+      line-height: 1.65; resize: none; outline: none; min-height: 72px;
+    }
+    .composer-textarea::placeholder { color: var(--text-3); }
+    .composer-footer {
+      display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+      margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border);
+    }
+
+    /* Stagger */
+    .note-card:nth-child(1) { animation: fadeUp .32s ease .00s both; }
+    .note-card:nth-child(2) { animation: fadeUp .32s ease .06s both; }
+    .note-card:nth-child(3) { animation: fadeUp .32s ease .12s both; }
+    .note-card:nth-child(4) { animation: fadeUp .32s ease .18s both; }
+
+    /* ── Reports ─────────────────────────────────── */
+    .reports-summary { display: flex; gap: 10px; align-items: center; margin-bottom: 22px; }
+    .summary-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 14px; border-radius: 20px;
+      font-size: 12px; font-family: 'DM Mono', monospace; font-weight: 500;
+    }
+    .chip-pending { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
+    .chip-sent    { background: var(--green-bg);  color: var(--green);  border: 1px solid var(--green-border); }
+
+    .reports-table {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 12px; overflow: hidden;
+    }
+    .table-header {
+      display: grid; grid-template-columns: 1fr 130px 100px 130px 110px;
+      padding: 10px 20px; background: var(--surface-2);
+      border-bottom: 1px solid var(--border);
+    }
+    .th {
+      font-size: 10px; font-family: 'DM Mono', monospace;
+      text-transform: uppercase; letter-spacing: .1em;
+      color: var(--text-3); font-weight: 500;
+    }
+    .th.r { text-align: right; }
+    .table-row {
+      display: grid; grid-template-columns: 1fr 130px 100px 130px 110px;
+      padding: 13px 20px; border-bottom: 1px solid var(--border);
+      transition: background .14s; align-items: center;
+    }
+    .table-row:last-child { border-bottom: none; }
+    .table-row:hover { background: var(--surface-2); }
+    .table-row.sent { opacity: .55; }
+    .table-row.sent:hover { opacity: .8; }
+    .td { font-size: 13px; color: var(--text-1); }
+    .td.r { text-align: right; }
+    .td-mono { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-2); }
+    .client-name { font-weight: 500; display: flex; align-items: center; gap: 8px; }
+    .client-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .period-badge {
+      display: inline-flex; padding: 2px 8px; border-radius: 4px;
+      font-size: 10px; font-family: 'DM Mono', monospace;
+      background: var(--surface-3); color: var(--text-2); border: 1px solid var(--border-2);
+    }
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 4px 11px; border-radius: 20px;
+      font-size: 11px; font-family: 'DM Mono', monospace; font-weight: 500;
+      cursor: pointer; transition: all .15s;
+    }
+    .status-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .status-pending { background: var(--amber-bg); color: var(--amber); border: 1px solid var(--amber-border); }
+    .status-pending:hover { background: rgba(245,158,11,.18); box-shadow: 0 0 14px rgba(245,158,11,.2); }
+    .status-sent    { background: var(--green-bg);  color: var(--green);  border: 1px solid var(--green-border); cursor: default; }
+    .table-hint {
+      padding: 10px 20px; font-size: 11px;
+      font-family: 'DM Mono', monospace; color: var(--text-3);
+      border-top: 1px solid var(--border); background: var(--surface-2);
+    }
+
+    .table-row:nth-child(1) { animation: fadeUp .28s ease .00s both; }
+    .table-row:nth-child(2) { animation: fadeUp .28s ease .05s both; }
+    .table-row:nth-child(3) { animation: fadeUp .28s ease .10s both; }
+    .table-row:nth-child(4) { animation: fadeUp .28s ease .15s both; }
+    .table-row:nth-child(5) { animation: fadeUp .28s ease .20s both; }
+    .table-row:nth-child(6) { animation: fadeUp .28s ease .25s both; }
+    .table-row:nth-child(7) { animation: fadeUp .28s ease .30s both; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-mark">GT</div>
+      <div class="logo-text"><span>Gestor de</span><span>Tráfego</span></div>
+    </div>
+    <nav class="sidebar-nav">
+      <a class="nav-item" href="#">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/></svg>
+        Dashboard
+      </a>
+      <a class="nav-item" href="#">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Clientes
+      </a>
+      <a class="nav-item" href="#">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+        Saldos
+      </a>
+      <a class="nav-item active" href="#">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        Tarefas
+      </a>
+      <a class="nav-item" href="#">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="16.5" y1="16.5" x2="22" y2="22"/></svg>
+        Diagnóstico
+      </a>
+      <a class="nav-item" href="#">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M5.34 17.66l-1.41 1.41M2 12h2M20 12h2M19.07 19.07l-1.41-1.41M5.34 6.34 3.93 4.93"/></svg>
+        Configurações
+      </a>
+    </nav>
+    <div class="sidebar-footer">v0.1 · Interno</div>
+  </aside>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="page-header">
+      <div class="header-top">
+        <div>
+          <div class="page-eyebrow">Central de gestão</div>
+          <h1 class="page-title">Tarefas</h1>
+          <p class="page-subtitle">Anotações por cliente e controle de relatórios</p>
+        </div>
+        <div id="header-action">
+          <button class="btn btn-primary" onclick="toggleComposer()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Nova anotação
+          </button>
+        </div>
+      </div>
+      <div class="tabs">
+        <div class="tab active" onclick="switchTab('notes')" id="tab-notes">
+          Anotações <span class="tab-count">4</span>
+        </div>
+        <div class="tab" onclick="switchTab('reports')" id="tab-reports">
+          Relatórios <span class="tab-count">7</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── ABA: ANOTAÇÕES ──────────────────────── -->
+    <div class="tab-content active" id="content-notes">
+
+      <div class="note-composer" id="composer" style="display:none">
+        <div class="composer-header">
+          <span class="composer-label">Nova anotação</span>
+          <select class="composer-select">
+            <option value="">Selecionar cliente...</option>
+            <option>Carhaus Alphaville</option>
+            <option>Imobiliária XYZ</option>
+            <option>Construtora ABC</option>
+            <option>Grupo Praxis</option>
+          </select>
+        </div>
+        <textarea class="composer-textarea" placeholder="Escreva sua anotação aqui..." rows="3"></textarea>
+        <div class="composer-footer">
+          <button class="btn btn-ghost" style="font-size:12px;padding:6px 13px" onclick="toggleComposer()">Cancelar</button>
+          <button class="btn btn-primary" style="font-size:12px;padding:6px 14px">Salvar anotação</button>
+        </div>
+      </div>
+
+      <div class="filter-bar">
+        <div class="search-wrap">
+          <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+          <input type="text" class="search-input" placeholder="Buscar nas anotações...">
+        </div>
+        <select class="client-select">
+          <option>Todos os clientes</option>
+          <option>Carhaus Alphaville</option>
+          <option>Imobiliária XYZ</option>
+          <option>Construtora ABC</option>
+          <option>Grupo Praxis</option>
+        </select>
+        <span class="filter-count">4 notas</span>
+      </div>
+
+      <div class="notes-list">
+
+        <div class="note-card carhaus">
+          <div class="note-header">
+            <span class="client-badge carhaus">Carhaus Alphaville</span>
+            <div class="note-meta">
+              <span class="note-time">há 2 horas</span>
+              <div class="note-actions">
+                <div class="action-btn" title="Editar">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </div>
+                <div class="action-btn del" title="Excluir">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="note-text">Reunião com cliente: solicitou pausa nas campanhas de retargeting até 10/05. Criativos novos chegam na próxima semana — aguardar aprovação antes de subir. Contato: Rafael (11) 99999-0001.</div>
+        </div>
+
+        <div class="note-card imob">
+          <div class="note-header">
+            <span class="client-badge imob">Imobiliária XYZ</span>
+            <div class="note-meta">
+              <span class="note-time">ontem, 14h32</span>
+              <div class="note-actions">
+                <div class="action-btn">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </div>
+                <div class="action-btn del">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="note-text">Lead quality caiu semana passada — feedback do cliente: leads não estão convertendo na abordagem. Testar segmentação por renda estimada + interesse em imóveis de alto padrão. CPL pode subir, mas qualidade deve compensar. Revisar na próxima semana.</div>
+        </div>
+
+        <div class="note-card const">
+          <div class="note-header">
+            <span class="client-badge const">Construtora ABC</span>
+            <div class="note-meta">
+              <span class="note-time">28 abr, 09h15</span>
+              <div class="note-actions">
+                <div class="action-btn">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </div>
+                <div class="action-btn del">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="note-text">Budget aprovado: R$ 8.000/mês a partir de maio. Foco no lançamento Jardins do Vale. Público: 35–55 anos, casados, raio 15km de Campinas. Não usar lookalike ainda — base de leads ainda pequena para isso.</div>
+        </div>
+
+        <div class="note-card praxis">
+          <div class="note-header">
+            <span class="client-badge praxis">Grupo Praxis</span>
+            <div class="note-meta">
+              <span class="note-time">25 abr</span>
+              <div class="note-actions">
+                <div class="action-btn">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </div>
+                <div class="action-btn del">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="note-text">Cliente quer pausa nas campanhas de awareness — focar só em conversão até fim do mês. Manter apenas ad sets de retargeting e fundo de funil. Verificar se pixel está instalado corretamente no site novo deles.</div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ── ABA: RELATÓRIOS ─────────────────────── -->
+    <div class="tab-content" id="content-reports">
+
+      <div class="reports-summary">
+        <span class="summary-chip chip-pending">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          3 pendentes
+        </span>
+        <span class="summary-chip chip-sent">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          4 enviados este mês
+        </span>
+        <button class="btn btn-primary" style="margin-left:auto;font-size:12px;padding:7px 14px">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+          Registrar relatório
+        </button>
+      </div>
+
+      <div class="reports-table">
+        <div class="table-header">
+          <div class="th">Cliente</div>
+          <div class="th r">Período</div>
+          <div class="th r">Tipo</div>
+          <div class="th r">Data envio</div>
+          <div class="th r">Status</div>
+        </div>
+
+        <div class="table-row">
+          <div class="td client-name"><span class="client-dot" style="background:var(--c-carhaus)"></span>Carhaus Alphaville</div>
+          <div class="td td-mono r">Abr / 2025</div>
+          <div class="td r"><span class="period-badge">Mensal</span></div>
+          <div class="td td-mono r" style="color:var(--text-3)">—</div>
+          <div class="td r"><span class="status-badge status-pending"><span class="dot"></span>Pendente</span></div>
+        </div>
+
+        <div class="table-row">
+          <div class="td client-name"><span class="client-dot" style="background:var(--c-imob)"></span>Imobiliária XYZ</div>
+          <div class="td td-mono r">21–27 abr</div>
+          <div class="td r"><span class="period-badge">Semanal</span></div>
+          <div class="td td-mono r" style="color:var(--text-3)">—</div>
+          <div class="td r"><span class="status-badge status-pending"><span class="dot"></span>Pendente</span></div>
+        </div>
+
+        <div class="table-row">
+          <div class="td client-name"><span class="client-dot" style="background:var(--c-const)"></span>Construtora ABC</div>
+          <div class="td td-mono r">Abr / 2025</div>
+          <div class="td r"><span class="period-badge">Mensal</span></div>
+          <div class="td td-mono r" style="color:var(--text-3)">—</div>
+          <div class="td r"><span class="status-badge status-pending"><span class="dot"></span>Pendente</span></div>
+        </div>
+
+        <div class="table-row sent">
+          <div class="td client-name"><span class="client-dot" style="background:var(--c-carhaus)"></span>Carhaus Alphaville</div>
+          <div class="td td-mono r">Mar / 2025</div>
+          <div class="td r"><span class="period-badge">Mensal</span></div>
+          <div class="td td-mono r">05 abr</div>
+          <div class="td r"><span class="status-badge status-sent"><span class="dot"></span>Enviado</span></div>
+        </div>
+
+        <div class="table-row sent">
+          <div class="td client-name"><span class="client-dot" style="background:var(--c-imob)"></span>Imobiliária XYZ</div>
+          <div class="td td-mono r">14–20 abr</div>
+          <div class="td r"><span class="period-badge">Semanal</span></div>
+          <div class="td td-mono r">22 abr</div>
+          <div class="td r"><span class="status-badge status-sent"><span class="dot"></span>Enviado</span></div>
+        </div>
+
+        <div class="table-row sent">
+          <div class="td client-name"><span class="client-dot" style="background:var(--c-praxis)"></span>Grupo Praxis</div>
+          <div class="td td-mono r">7–13 abr</div>
+          <div class="td r"><span class="period-badge">Semanal</span></div>
+          <div class="td td-mono r">14 abr</div>
+          <div class="td r"><span class="status-badge status-sent"><span class="dot"></span>Enviado</span></div>
+        </div>
+
+        <div class="table-row sent">
+          <div class="td client-name"><span class="client-dot" style="background:var(--c-const)"></span>Construtora ABC</div>
+          <div class="td td-mono r">Mar / 2025</div>
+          <div class="td r"><span class="period-badge">Mensal</span></div>
+          <div class="td td-mono r">03 abr</div>
+          <div class="td r"><span class="status-badge status-sent"><span class="dot"></span>Enviado</span></div>
+        </div>
+
+        <div class="table-hint">Clique em "Pendente" para registrar o envio com data e hora atuais.</div>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<script>
+  function switchTab(tab) {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    document.getElementById('content-' + tab).classList.add('active');
+    const btn = document.getElementById('header-action');
+    if (tab === 'notes') {
+      btn.innerHTML = '<button class="btn btn-primary" onclick="toggleComposer()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Nova anotação</button>';
+    } else {
+      btn.innerHTML = '<button class="btn btn-primary"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Registrar relatório</button>';
+    }
+  }
+
+  function toggleComposer() {
+    const c = document.getElementById('composer');
+    const isHidden = c.style.display === 'none' || c.style.display === '';
+    c.style.display = isHidden ? 'block' : 'none';
+    if (isHidden) c.querySelector('textarea').focus();
+  }
+
+  document.addEventListener('click', function(e) {
+    const badge = e.target.closest('.status-pending');
+    if (!badge) return;
+    const now = new Date();
+    const day = String(now.getDate()).padStart(2,'0');
+    const mon = String(now.getMonth()+1).padStart(2,'0');
+    badge.className = 'status-badge status-sent';
+    badge.innerHTML = '<span class="dot"></span>Enviado';
+    badge.style.cursor = 'default';
+    const row = badge.closest('.table-row');
+    row.classList.add('sent');
+    const dateCell = row.querySelectorAll('.td')[3];
+    dateCell.textContent = `${day}/${mon}`;
+    dateCell.style.color = '';
+  });
+</script>
+</body>
+</html>

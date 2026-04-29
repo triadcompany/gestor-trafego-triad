@@ -1,0 +1,80 @@
+<h2>Como exibir o saldo no dashboard?</h2>
+<p class="subtitle">Selecione o layout que faz mais sentido para o seu fluxo de trabalho.</p>
+
+<div class="options">
+
+  <div class="option" data-choice="inline" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Saldo como métrica no card (inline)</h3>
+      <p>O saldo aparece junto com Gasto, Leads e CPL em cada card de cliente. Visível direto na lista, sem precisar abrir nada.</p>
+      <div style="margin-top:1rem; background:#1a1a2e; border:1px solid #333; border-radius:10px; padding:14px; font-size:0.82rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-weight:600; color:#f1f1f1;">Honda Civic SP</span>
+          <span style="background:#22c55e22; color:#22c55e; padding:2px 8px; border-radius:20px; font-size:0.75rem;">No alvo</span>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:8px; text-align:center; margin-top:8px;">
+          <div>
+            <div style="color:#888; font-size:0.7rem; margin-bottom:2px;">Gasto hoje</div>
+            <div style="color:#f1f1f1; font-weight:600;">R$ 187</div>
+          </div>
+          <div>
+            <div style="color:#888; font-size:0.7rem; margin-bottom:2px;">Leads</div>
+            <div style="color:#f1f1f1; font-weight:600;">12</div>
+          </div>
+          <div>
+            <div style="color:#888; font-size:0.7rem; margin-bottom:2px;">CPL</div>
+            <div style="color:#22c55e; font-weight:600;">R$ 15,58</div>
+          </div>
+          <div>
+            <div style="color:#888; font-size:0.7rem; margin-bottom:2px;">Saldo Meta</div>
+            <div style="color:#facc15; font-weight:600;">R$ 843</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="painel" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Painel de saldos separado (resumo rápido)</h3>
+      <p>Uma seção colapsável no topo do dashboard mostra todos os saldos de uma vez — sem poluir os cards. Ideal para a rotina de "checar saldos antes de começar o dia".</p>
+      <div style="margin-top:1rem; background:#1a1a2e; border:1px solid #333; border-radius:10px; padding:14px; font-size:0.82rem;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <span style="color:#888; font-size:0.75rem; text-transform:uppercase; letter-spacing:.05em;">Saldos Meta — hoje, 14h22</span>
+          <span style="color:#60a5fa; font-size:0.75rem; cursor:pointer;">▲ Recolher</span>
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <div style="display:flex; justify-content:space-between; padding:6px 8px; background:#ffffff08; border-radius:6px;">
+            <span style="color:#d1d5db;">Honda Civic SP</span>
+            <span style="color:#facc15; font-weight:600;">R$ 843</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:6px 8px; background:#ffffff08; border-radius:6px;">
+            <span style="color:#d1d5db;">Toyota Corolla BH</span>
+            <span style="color:#22c55e; font-weight:600;">R$ 2.140</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:6px 8px; background:#ffffff08; border-radius:6px;">
+            <span style="color:#d1d5db;">Fiat Strada RJ</span>
+            <span style="color:#ef4444; font-weight:600;">R$ 89</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:6px 8px; background:#ffffff08; border-radius:6px;">
+            <span style="color:#d1d5db;">VW Polo SP</span>
+            <span style="color:#22c55e; font-weight:600;">R$ 3.200</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="ambos" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Os dois: painel resumo + saldo no card</h3>
+      <p>Painel colapsável no topo para visão geral + saldo visível em cada card individualmente. Mais informação de uma vez, mais espaço ocupado.</p>
+    </div>
+  </div>
+
+</div>
+
+<p class="subtitle" style="margin-top:1.5rem;">O saldo é colorido: 🟢 saudável · 🟡 atenção (abaixo de R$500) · 🔴 crítico (abaixo de R$200).</p>

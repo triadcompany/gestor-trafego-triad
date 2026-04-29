@@ -107,8 +107,12 @@ export type Database = {
           meta_balance: number | null
           meta_page_id: string | null
           meta_whatsapp_number: string | null
+          monthly_budget: number | null
           name: string
           payment_method: string
+          pix_active: boolean
+          pix_cycle: string | null
+          pix_reference_day: number | null
           segment: string
         }
         Insert: {
@@ -121,8 +125,12 @@ export type Database = {
           meta_balance?: number | null
           meta_page_id?: string | null
           meta_whatsapp_number?: string | null
+          monthly_budget?: number | null
           name: string
           payment_method?: string
+          pix_active?: boolean
+          pix_cycle?: string | null
+          pix_reference_day?: number | null
           segment?: string
         }
         Update: {
@@ -135,8 +143,12 @@ export type Database = {
           meta_balance?: number | null
           meta_page_id?: string | null
           meta_whatsapp_number?: string | null
+          monthly_budget?: number | null
           name?: string
           payment_method?: string
+          pix_active?: boolean
+          pix_cycle?: string | null
+          pix_reference_day?: number | null
           segment?: string
         }
         Relationships: []
@@ -210,6 +222,28 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      conversation_templates: {
+        Row: {
+          id: string
+          name: string
+          greeting: string | null
+          pre_message: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          greeting?: string | null
+          pre_message?: string | null
+          created_at?: string
+        }
+        Update: {
+          name?: string
+          greeting?: string | null
+          pre_message?: string | null
+        }
+        Relationships: []
       }
     }
     Views: {

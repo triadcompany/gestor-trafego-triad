@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Mockup — Página /pix v3 (simplificado)</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #0a0a0f; color: #e0e0e0; font-family: system-ui, sans-serif; min-height: 100vh; }
+.app { display: flex; min-height: 100vh; }
+
+.sidebar { width: 200px; background: #0f0f1a; border-right: 1px solid #1a1a2e; padding: 16px 0; flex-shrink: 0; }
+.sidebar-logo { padding: 0 16px 16px; font-size: 13px; font-weight: 700; color: #fff; border-bottom: 1px solid #1a1a2e; margin-bottom: 8px; }
+.sidebar-logo span { color: #4a9eff; }
+.nav-item { display: flex; align-items: center; gap: 8px; padding: 8px 16px; font-size: 13px; color: #666; }
+.nav-item.active { color: #fff; background: #1a1a2e; border-right: 2px solid #4a9eff; }
+.nav-item svg { width: 14px; height: 14px; flex-shrink: 0; }
+
+.main { flex: 1; padding: 24px 32px; }
+
+.page-header { margin-bottom: 24px; }
+.page-title { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; }
+.page-sub { font-size: 12px; color: #555; margin-top: 3px; font-family: monospace; }
+
+.table-wrap { background: #0f0f1a; border: 1px solid #1a1a2e; border-radius: 12px; overflow: hidden; max-width: 680px; }
+
+.table-head { display: grid; grid-template-columns: 1fr 110px 120px 130px; padding: 10px 18px; background: #0a0a12; border-bottom: 1px solid #1a1a2e; }
+.th { font-size: 10px; font-family: monospace; text-transform: uppercase; letter-spacing: 1px; color: #444; }
+.th:not(:first-child) { text-align: right; }
+
+.table-row { display: grid; grid-template-columns: 1fr 110px 120px 130px; padding: 13px 18px; border-bottom: 1px solid #111827; align-items: center; }
+.table-row:last-child { border-bottom: none; }
+.table-row:hover { background: #13131f; }
+
+.client-cell { display: flex; align-items: center; gap: 10px; }
+.avatar { width: 30px; height: 30px; border-radius: 7px; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; font-family: monospace; flex-shrink: 0; background: #1a1a2e; color: #666; border: 1px solid #222; }
+.client-name { font-size: 13px; color: #e0e0e0; font-weight: 500; }
+.client-since { font-size: 10px; color: #444; font-family: monospace; margin-top: 2px; }
+
+.cycle-badge { display: inline-flex; align-items: center; justify-content: center; padding: 3px 9px; border-radius: 6px; font-size: 10px; font-weight: 700; font-family: monospace; }
+.cycle-badge.semanal   { background: rgba(168,85,247,.15);  color: #a855f7; border: 1px solid rgba(168,85,247,.25); }
+.cycle-badge.quinzenal { background: rgba(14,165,233,.15);  color: #0ea5e9; border: 1px solid rgba(14,165,233,.25); }
+.cycle-badge.mensal    { background: rgba(251,146,60,.15);  color: #fb923c; border: 1px solid rgba(251,146,60,.25); }
+
+.cell-right { text-align: right; font-family: monospace; font-size: 13px; }
+.parcela { color: #4a9eff; font-weight: 700; }
+.quando-urgente { color: #f59e0b; }
+.quando-normal  { color: #666; }
+.quando-hoje    { color: #ef4444; font-weight: 600; }
+
+.section-label { padding: 5px 18px; background: #070710; border-bottom: 1px solid #111827; font-size: 10px; font-family: monospace; text-transform: uppercase; letter-spacing: 1px; color: #333; }
+
+.legend { display: flex; gap: 16px; margin-top: 14px; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #444; font-family: monospace; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="sidebar">
+    <div class="sidebar-logo">Gestor <span>Tráfego</span></div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      Dashboard
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>
+      Clientes
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+      Saldos
+    </div>
+    <div class="nav-item active">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M2 12h20"/><circle cx="12" cy="12" r="10"/></svg>
+      PIX
+    </div>
+    <div class="nav-item">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/></svg>
+      Tarefas
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="page-header">
+      <div class="page-title">Cobranças PIX</div>
+      <div class="page-sub">Próximos vencimentos por cliente · hoje: 29/04/2026</div>
+    </div>
+
+    <div class="table-wrap">
+      <div class="table-head">
+        <div class="th">Cliente</div>
+        <div class="th" style="text-align:right">Ciclo</div>
+        <div class="th" style="text-align:right">Parcela</div>
+        <div class="th" style="text-align:right">Próximo PIX</div>
+      </div>
+
+      <div class="section-label">Esta semana</div>
+
+      <div class="table-row">
+        <div class="client-cell">
+          <div class="avatar">AL</div>
+          <div>
+            <div class="client-name">AllCar Veículos</div>
+            <div class="client-since">ref. dia 8 e 22</div>
+          </div>
+        </div>
+        <div class="cell-right"><span class="cycle-badge quinzenal">Quinzenal</span></div>
+        <div class="cell-right parcela">R$ 750</div>
+        <div class="cell-right quando-hoje">Hoje, 29/04</div>
+      </div>
+
+      <div class="table-row">
+        <div class="client-cell">
+          <div class="avatar">MV</div>
+          <div>
+            <div class="client-name">MV Construtora</div>
+            <div class="client-since">ref. toda terça</div>
+          </div>
+        </div>
+        <div class="cell-right"><span class="cycle-badge semanal">Semanal</span></div>
+        <div class="cell-right parcela">R$ 500</div>
+        <div class="cell-right quando-hoje">Hoje, 29/04</div>
+      </div>
+
+      <div class="table-row">
+        <div class="client-cell">
+          <div class="avatar">RC</div>
+          <div>
+            <div class="client-name">RC Imóveis</div>
+            <div class="client-since">ref. dia 1 e 15</div>
+          </div>
+        </div>
+        <div class="cell-right"><span class="cycle-badge quinzenal">Quinzenal</span></div>
+        <div class="cell-right parcela">R$ 1.250</div>
+        <div class="cell-right quando-urgente">01/05 · em 2 dias</div>
+      </div>
+
+      <div class="section-label">Próximo mês</div>
+
+      <div class="table-row">
+        <div class="client-cell">
+          <div class="avatar">IM</div>
+          <div>
+            <div class="client-name">ImóvelCerto SP</div>
+            <div class="client-since">ref. dia 15</div>
+          </div>
+        </div>
+        <div class="cell-right"><span class="cycle-badge mensal">Mensal</span></div>
+        <div class="cell-right parcela">R$ 2.000</div>
+        <div class="cell-right quando-normal">15/05 · em 16 dias</div>
+      </div>
+
+      <div class="table-row">
+        <div class="client-cell">
+          <div class="avatar">CR</div>
+          <div>
+            <div class="client-name">Construtora Ramos</div>
+            <div class="client-since">ref. dia 20</div>
+          </div>
+        </div>
+        <div class="cell-right"><span class="cycle-badge mensal">Mensal</span></div>
+        <div class="cell-right parcela">R$ 3.000</div>
+        <div class="cell-right quando-normal">20/05 · em 21 dias</div>
+      </div>
+
+      <div class="table-row">
+        <div class="client-cell">
+          <div class="avatar">MV</div>
+          <div>
+            <div class="client-name">MV Construtora</div>
+            <div class="client-since">ref. toda terça</div>
+          </div>
+        </div>
+        <div class="cell-right"><span class="cycle-badge semanal">Semanal</span></div>
+        <div class="cell-right parcela">R$ 500</div>
+        <div class="cell-right quando-normal">06/05 · em 7 dias</div>
+      </div>
+
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><span class="cycle-badge semanal">Semanal</span> mensal ÷ 4</div>
+      <div class="legend-item"><span class="cycle-badge quinzenal">Quinzenal</span> mensal ÷ 2</div>
+      <div class="legend-item"><span class="cycle-badge mensal">Mensal</span> valor completo</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

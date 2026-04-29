@@ -3,6 +3,7 @@ export type ClientStatus = "on-target" | "attention" | "critical" | "no-data";
 export type SyncStatus = "success" | "error";
 export type PeriodType = "semanal" | "mensal";
 export type ReportStatus = "pendente" | "enviado";
+export type PixCycle = "semanal" | "quinzenal" | "mensal";
 
 export interface Database {
   public: {
@@ -20,6 +21,10 @@ export interface Database {
           created_at: string;
           meta_balance: number | null;
           payment_method: "pix" | "cartao";
+          monthly_budget: number | null;
+          pix_cycle: PixCycle | null;
+          pix_reference_day: number | null;
+          pix_active: boolean;
         };
         Insert: Omit<Database["public"]["Tables"]["clients"]["Row"], "id" | "created_at"> & {
           id?: string;
@@ -108,6 +113,27 @@ export interface Database {
         Update: {
           status?: ReportStatus;
           sent_at?: string | null;
+        };
+      };
+      conversation_templates: {
+        Row: {
+          id: string;
+          name: string;
+          greeting: string | null;
+          pre_message: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          greeting?: string | null;
+          pre_message?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          name?: string;
+          greeting?: string | null;
+          pre_message?: string | null;
         };
       };
     };

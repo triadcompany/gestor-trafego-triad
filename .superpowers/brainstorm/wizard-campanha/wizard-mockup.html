@@ -1,0 +1,1085 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nova Campanha — Wizard Mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0b;
+    --surface: #111113;
+    --surface2: #18181b;
+    --border: #27272a;
+    --border2: #3f3f46;
+    --text: #fafafa;
+    --muted: #71717a;
+    --muted2: #52525b;
+    --primary: #3b82f6;
+    --primary-hover: #2563eb;
+    --primary-subtle: rgba(59,130,246,0.12);
+    --success: #22c55e;
+    --success-subtle: rgba(34,197,94,0.12);
+    --warning: #f59e0b;
+    --radius: 8px;
+    --radius-lg: 12px;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 220px;
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    padding: 20px 0;
+    flex-shrink: 0;
+  }
+  .sidebar-logo {
+    padding: 0 16px 20px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 8px;
+  }
+  .sidebar-logo span { color: var(--primary); }
+  .nav-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 16px;
+    font-size: 13.5px;
+    color: var(--muted);
+    cursor: pointer;
+    border-radius: 6px;
+    margin: 0 8px;
+    transition: all 0.15s;
+  }
+  .nav-item:hover { background: var(--surface2); color: var(--text); }
+  .nav-item.active { background: var(--primary-subtle); color: var(--primary); }
+  .nav-icon { width: 16px; height: 16px; opacity: 0.7; }
+
+  /* Main content */
+  .main {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--bg);
+  }
+
+  .page-container {
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+
+  /* Back link */
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--muted);
+    cursor: pointer;
+    margin-bottom: 24px;
+    transition: color 0.15s;
+  }
+  .back-link:hover { color: var(--text); }
+
+  /* Page title */
+  .page-title {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.3px;
+    margin-bottom: 4px;
+  }
+  .page-subtitle {
+    font-size: 13.5px;
+    color: var(--muted);
+    margin-bottom: 32px;
+  }
+
+  /* Step indicator */
+  .step-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 32px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 4px;
+  }
+  .step-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    font-size: 13px;
+    font-weight: 500;
+    border: none;
+    background: transparent;
+    color: var(--muted);
+    position: relative;
+  }
+  .step-btn.active {
+    background: var(--surface2);
+    color: var(--text);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+  }
+  .step-btn.done {
+    color: var(--success);
+  }
+  .step-btn.done:hover {
+    background: var(--success-subtle);
+  }
+  .step-num {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--border);
+    color: var(--muted);
+    flex-shrink: 0;
+  }
+  .step-btn.active .step-num {
+    background: var(--primary);
+    color: white;
+  }
+  .step-btn.done .step-num {
+    background: var(--success);
+    color: white;
+  }
+  .step-divider {
+    width: 1px;
+    height: 24px;
+    background: var(--border);
+    flex-shrink: 0;
+  }
+
+  /* Card */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    margin-bottom: 16px;
+  }
+
+  .card-title {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 20px;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title-icon {
+    width: 28px;
+    height: 28px;
+    border-radius: 6px;
+    background: var(--primary-subtle);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+  }
+
+  /* Form elements */
+  .field { margin-bottom: 18px; }
+  .field:last-child { margin-bottom: 0; }
+  .label {
+    display: block;
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--muted);
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .label-note {
+    font-size: 11px;
+    color: var(--muted2);
+    text-transform: none;
+    letter-spacing: 0;
+    font-weight: 400;
+    margin-left: 6px;
+  }
+  .input {
+    width: 100%;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 9px 12px;
+    font-size: 13.5px;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.15s;
+    font-family: inherit;
+  }
+  .input:focus { border-color: var(--primary); }
+  .input.filled { border-color: var(--border2); }
+  .input::placeholder { color: var(--muted2); }
+  .input-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+  select.input {
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 32px;
+    cursor: pointer;
+  }
+
+  textarea.input {
+    resize: vertical;
+    min-height: 88px;
+    line-height: 1.5;
+  }
+
+  /* Radio group */
+  .radio-group { display: flex; gap: 8px; }
+  .radio-option {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 10px 14px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 13px;
+    color: var(--muted);
+    background: var(--surface2);
+  }
+  .radio-option.selected {
+    border-color: var(--primary);
+    background: var(--primary-subtle);
+    color: var(--text);
+  }
+  .radio-dot {
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    border: 2px solid var(--border2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: border-color 0.15s;
+  }
+  .radio-option.selected .radio-dot {
+    border-color: var(--primary);
+    background: var(--primary);
+    box-shadow: inset 0 0 0 3px var(--surface);
+  }
+
+  /* Checkbox */
+  .checkbox-group { display: flex; flex-wrap: wrap; gap: 8px; }
+  .checkbox-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-size: 13px;
+    color: var(--muted);
+    background: var(--surface2);
+  }
+  .checkbox-option.checked {
+    border-color: var(--primary);
+    background: var(--primary-subtle);
+    color: var(--text);
+  }
+  .checkbox-box {
+    width: 16px; height: 16px;
+    border-radius: 4px;
+    border: 1.5px solid var(--border2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .checkbox-option.checked .checkbox-box {
+    background: var(--primary);
+    border-color: var(--primary);
+  }
+
+  /* Tags / badges */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+  .tag-remove {
+    cursor: pointer;
+    color: var(--muted2);
+    font-size: 12px;
+    line-height: 1;
+  }
+
+  /* Search input */
+  .search-wrap {
+    position: relative;
+  }
+  .search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .search-wrap .input { padding-left: 32px; }
+
+  /* Age range */
+  .age-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .age-row .input { width: 100%; }
+  .age-dash { color: var(--muted2); font-size: 14px; }
+
+  /* Gender pills */
+  .gender-pills { display: flex; gap: 6px; }
+  .gender-pill {
+    padding: 6px 14px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 12.5px;
+    cursor: pointer;
+    color: var(--muted);
+    background: var(--surface2);
+    transition: all 0.15s;
+  }
+  .gender-pill.active {
+    border-color: var(--primary);
+    background: var(--primary-subtle);
+    color: var(--text);
+  }
+
+  /* Upload zone */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-lg);
+    padding: 40px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: all 0.2s;
+    background: var(--surface2);
+    position: relative;
+  }
+  .upload-zone:hover {
+    border-color: var(--primary);
+    background: var(--primary-subtle);
+  }
+  .upload-icon { font-size: 36px; margin-bottom: 12px; opacity: 0.5; }
+  .upload-label { font-size: 14px; font-weight: 500; margin-bottom: 4px; }
+  .upload-hint { font-size: 12px; color: var(--muted); }
+
+  /* Media preview */
+  .media-preview {
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--surface2);
+    position: relative;
+  }
+  .media-preview img {
+    width: 100%;
+    height: 200px;
+    object-fit: cover;
+    display: block;
+  }
+  .media-preview-info {
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .media-filename { font-size: 12.5px; color: var(--muted); }
+  .media-change {
+    font-size: 12px;
+    color: var(--primary);
+    cursor: pointer;
+    text-decoration: underline;
+  }
+
+  /* Media type tabs */
+  .media-tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .media-tab {
+    flex: 1;
+    padding: 9px;
+    text-align: center;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--muted);
+    background: var(--surface2);
+    transition: all 0.15s;
+    font-weight: 500;
+  }
+  .media-tab.active {
+    border-color: var(--primary);
+    background: var(--primary-subtle);
+    color: var(--text);
+  }
+
+  /* Positions grid */
+  .positions-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+
+  /* Info box */
+  .info-box {
+    display: flex;
+    gap: 10px;
+    background: rgba(59,130,246,0.08);
+    border: 1px solid rgba(59,130,246,0.2);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    font-size: 12.5px;
+    color: var(--muted);
+    line-height: 1.5;
+  }
+  .info-icon { color: var(--primary); flex-shrink: 0; margin-top: 1px; }
+
+  /* Pre-filled notice */
+  .prefilled {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11.5px;
+    color: var(--success);
+    margin-top: 4px;
+  }
+
+  /* Action bar */
+  .action-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 24px;
+  }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 10px 20px;
+    border-radius: var(--radius);
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+    font-family: inherit;
+    text-decoration: none;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: white;
+  }
+  .btn-primary:hover { background: var(--primary-hover); }
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { background: var(--surface2); color: var(--text); }
+  .btn-cancel {
+    background: transparent;
+    color: var(--muted);
+    border: none;
+  }
+  .btn-cancel:hover { color: var(--text); }
+
+  /* Steps content */
+  .step-content { display: none; }
+  .step-content.active { display: block; }
+
+  /* Section divider */
+  .section-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 20px 0;
+  }
+
+  /* Separator label */
+  .sep-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--muted2);
+    margin-bottom: 14px;
+  }
+
+  /* Platform section */
+  .platform-section { margin-top: 16px; }
+  .platform-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--muted2);
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  /* Interests/locations tags area */
+  .tags-area {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 32px;
+    margin-top: 8px;
+  }
+  .tags-empty {
+    font-size: 12px;
+    color: var(--muted2);
+    padding: 4px 0;
+  }
+
+  /* Number input */
+  .input-prefix-wrap { position: relative; }
+  .input-prefix {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 13px;
+    color: var(--muted);
+    pointer-events: none;
+  }
+  .input-prefix-wrap .input { padding-left: 36px; }
+
+  /* Step 3 — ad preview panel */
+  .ad-preview-panel {
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+  }
+  .ad-preview-header {
+    padding: 12px 16px;
+    font-size: 12px;
+    color: var(--muted);
+    border-bottom: 1px solid var(--border);
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .ad-preview-body {
+    padding: 16px;
+  }
+  .ad-preview-img {
+    width: 100%;
+    height: 180px;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted2);
+    font-size: 13px;
+    margin-bottom: 12px;
+    border: 1px dashed var(--border);
+  }
+  .ad-preview-text { font-size: 13px; line-height: 1.5; margin-bottom: 8px; }
+  .ad-preview-headline { font-size: 15px; font-weight: 600; }
+  .ad-preview-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .ad-preview-cta {
+    margin-top: 12px;
+    padding: 9px 16px;
+    background: #25d366;
+    color: white;
+    font-size: 13px;
+    font-weight: 600;
+    border-radius: 6px;
+    text-align: center;
+  }
+
+  /* Duplicate mode */
+  .duplicate-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+  }
+  .mode-notice {
+    display: flex;
+    gap: 10px;
+    background: rgba(245,158,11,0.08);
+    border: 1px solid rgba(245,158,11,0.2);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-top: 16px;
+    line-height: 1.5;
+  }
+  .mode-notice-icon { color: var(--warning); flex-shrink: 0; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+  <div class="sidebar-logo">Gestor de <span>Tráfego</span></div>
+  <div class="nav-item">
+    <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+    Dashboard
+  </div>
+  <div class="nav-item active">
+    <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+    Campanhas
+  </div>
+  <div class="nav-item">
+    <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+    Clientes
+  </div>
+  <div class="nav-item">
+    <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+    Tarefas
+  </div>
+  <div class="nav-item">
+    <svg class="nav-icon" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+    Configurações
+  </div>
+</aside>
+
+<!-- Main -->
+<main class="main">
+  <div class="page-container">
+
+    <div class="back-link">
+      <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+      Voltar ao dashboard
+    </div>
+
+    <h1 class="page-title">Nova Campanha</h1>
+    <p class="page-subtitle">A campanha será criada <strong>pausada</strong> para revisão antes de ativar.</p>
+
+    <!-- Step indicator -->
+    <div class="step-indicator">
+      <button class="step-btn done" onclick="goToStep(1)" id="step-btn-1">
+        <span class="step-num">✓</span>
+        Campanha
+      </button>
+      <div class="step-divider"></div>
+      <button class="step-btn done" onclick="goToStep(2)" id="step-btn-2">
+        <span class="step-num">✓</span>
+        Conjunto
+      </button>
+      <div class="step-divider"></div>
+      <button class="step-btn active" id="step-btn-3">
+        <span class="step-num">3</span>
+        Anúncio
+      </button>
+    </div>
+
+    <!-- ═══ STEP 1: Campanha ═══ -->
+    <div class="step-content" id="step-1">
+
+      <div class="card">
+        <div class="card-title">
+          <div class="card-title-icon">📋</div>
+          Configuração da Campanha
+        </div>
+
+        <div class="field">
+          <label class="label">Modo</label>
+          <div class="radio-group">
+            <div class="radio-option" id="mode-dup" onclick="setMode('dup')">
+              <span class="radio-dot"></span>
+              Duplicar existente
+            </div>
+            <div class="radio-option selected" id="mode-scratch" onclick="setMode('scratch')">
+              <span class="radio-dot"></span>
+              Criar do zero
+            </div>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="field">
+          <label class="label">Cliente</label>
+          <select class="input filled">
+            <option>AllCar Veículos</option>
+            <option>GRS Automoveis</option>
+            <option>N7 Multimarcas</option>
+          </select>
+          <div class="prefilled">
+            <svg width="12" height="12" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>
+            Página e WhatsApp preenchidos automaticamente
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label">Nome da campanha</label>
+          <input class="input filled" type="text" value="[ENG-MSG] [CIVIC 2024] [ALLCAR]">
+        </div>
+
+        <div class="field">
+          <label class="label">Tipo de campanha</label>
+          <div class="radio-group">
+            <div class="radio-option selected">
+              <span class="radio-dot"></span>
+              Engajamento → WhatsApp
+            </div>
+            <div class="radio-option">
+              <span class="radio-dot"></span>
+              Vendas → WhatsApp
+            </div>
+          </div>
+        </div>
+
+        <div class="field">
+          <label class="label">Orçamento diário</label>
+          <div class="input-prefix-wrap">
+            <span class="input-prefix">R$</span>
+            <input class="input filled" type="number" value="50">
+          </div>
+        </div>
+
+        <div class="input-row">
+          <div class="field">
+            <label class="label">ID da Página <span class="label-note">pré-preenchido</span></label>
+            <input class="input filled" type="text" value="970700849470784">
+          </div>
+          <div class="field">
+            <label class="label">WhatsApp <span class="label-note">pré-preenchido</span></label>
+            <input class="input filled" type="text" value="+55 99 8821-5838">
+          </div>
+        </div>
+      </div>
+
+      <div class="action-bar">
+        <button class="btn btn-cancel">Cancelar</button>
+        <button class="btn btn-primary" onclick="goToStep(2)">
+          Avançar →
+        </button>
+      </div>
+    </div>
+
+    <!-- ═══ STEP 2: Conjunto ═══ -->
+    <div class="step-content" id="step-2">
+
+      <div class="card">
+        <div class="card-title">
+          <div class="card-title-icon">🎯</div>
+          Público-alvo
+        </div>
+
+        <div class="field">
+          <label class="label">Localização</label>
+          <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input class="input" placeholder="Buscar cidade ou estado..." type="text">
+          </div>
+          <div class="tags-area">
+            <span class="tag">São Paulo, SP <span class="tag-remove">×</span></span>
+            <span class="tag">Campinas, SP <span class="tag-remove">×</span></span>
+            <span class="tag">Santo André, SP <span class="tag-remove">×</span></span>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="field">
+          <label class="label">Faixa etária</label>
+          <div class="age-row">
+            <input class="input filled" type="number" value="25" style="width:90px; flex-shrink:0">
+            <span class="age-dash">–</span>
+            <input class="input filled" type="number" value="55" style="width:90px; flex-shrink:0">
+            <span style="font-size:12px; color:var(--muted); margin-left:4px">anos</span>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="field">
+          <label class="label">Gênero</label>
+          <div class="gender-pills">
+            <div class="gender-pill active">Todos</div>
+            <div class="gender-pill">Masculino</div>
+            <div class="gender-pill">Feminino</div>
+          </div>
+        </div>
+
+        <div class="section-divider"></div>
+
+        <div class="field">
+          <label class="label">Interesses <span class="label-note">opcional</span></label>
+          <div class="search-wrap">
+            <span class="search-icon">🔍</span>
+            <input class="input" placeholder="Buscar interesse (ex: automóveis, carros usados...)" type="text">
+          </div>
+          <div class="tags-area">
+            <span class="tag">Automóveis <span class="tag-remove">×</span></span>
+            <span class="tag">Carros usados <span class="tag-remove">×</span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <div class="card-title-icon">📱</div>
+          Posicionamentos
+        </div>
+
+        <div class="field">
+          <div class="checkbox-group">
+            <div class="checkbox-option checked">
+              <span class="checkbox-box">✓</span>
+              Facebook
+            </div>
+            <div class="checkbox-option checked">
+              <span class="checkbox-box">✓</span>
+              Instagram
+            </div>
+          </div>
+        </div>
+
+        <div class="platform-section">
+          <div class="platform-label">Posições Facebook</div>
+          <div class="positions-grid">
+            <div class="checkbox-option checked" style="font-size:12.5px">
+              <span class="checkbox-box" style="width:14px;height:14px">✓</span> Feed
+            </div>
+            <div class="checkbox-option checked" style="font-size:12.5px">
+              <span class="checkbox-box" style="width:14px;height:14px">✓</span> Stories
+            </div>
+            <div class="checkbox-option" style="font-size:12.5px">
+              <span class="checkbox-box" style="width:14px;height:14px"></span> Reels
+            </div>
+            <div class="checkbox-option" style="font-size:12.5px">
+              <span class="checkbox-box" style="width:14px;height:14px"></span> Coluna direita
+            </div>
+          </div>
+        </div>
+
+        <div class="platform-section" style="margin-top:16px">
+          <div class="platform-label">Posições Instagram</div>
+          <div class="positions-grid">
+            <div class="checkbox-option checked" style="font-size:12.5px">
+              <span class="checkbox-box" style="width:14px;height:14px">✓</span> Feed
+            </div>
+            <div class="checkbox-option checked" style="font-size:12.5px">
+              <span class="checkbox-box" style="width:14px;height:14px">✓</span> Stories
+            </div>
+            <div class="checkbox-option" style="font-size:12.5px">
+              <span class="checkbox-box" style="width:14px;height:14px"></span> Explorar
+            </div>
+            <div class="checkbox-option" style="font-size:12.5px">
+              <span class="checkbox-box" style="width:14px;height:14px"></span> Reels
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="action-bar">
+        <button class="btn btn-ghost" onclick="goToStep(1)">← Voltar</button>
+        <button class="btn btn-primary" onclick="goToStep(3)">Avançar →</button>
+      </div>
+    </div>
+
+    <!-- ═══ STEP 3: Anúncio ═══ -->
+    <div class="step-content active" id="step-3">
+
+      <div class="card">
+        <div class="card-title">
+          <div class="card-title-icon">🖼️</div>
+          Mídia
+        </div>
+
+        <div class="media-tabs">
+          <div class="media-tab active" onclick="setMediaTab(this,'img')">🖼 Imagem</div>
+          <div class="media-tab" onclick="setMediaTab(this,'vid')">🎬 Vídeo</div>
+        </div>
+
+        <!-- Uploaded state (shown as example) -->
+        <div class="media-preview">
+          <img src="https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=600&q=80" alt="Preview">
+          <div class="media-preview-info">
+            <span class="media-filename">📷 honda_civic_2024.jpg — 1.4 MB</span>
+            <span class="media-change">Trocar</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <div class="card-title-icon">✍️</div>
+          Texto do Anúncio
+        </div>
+
+        <div class="field">
+          <label class="label">Texto principal</label>
+          <textarea class="input filled">🚗 Honda Civic 2024 chegou na AllCar!
+
+Motor 2.0 turbo, câmbio CVT, bancos em couro. Entrada facilitada e parcelas que cabem no bolso.
+
+📍 Venha conhecer pessoalmente ou fale com a gente pelo WhatsApp 👇</textarea>
+        </div>
+
+        <div class="field">
+          <label class="label">Título <span class="label-note">aparece abaixo da imagem</span></label>
+          <input class="input filled" type="text" value="Honda Civic 2024 — A partir de R$ 1.890/mês">
+        </div>
+
+        <div class="field">
+          <label class="label">Descrição <span class="label-note">opcional</span></label>
+          <input class="input filled" type="text" value="Consulte condições de financiamento">
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <div class="card-title-icon">💬</div>
+          WhatsApp
+        </div>
+        <div class="info-box">
+          <span class="info-icon">ℹ️</span>
+          O botão "Enviar mensagem" abrirá o WhatsApp do cliente configurado no cadastro:
+          <strong style="color:var(--text);display:block;margin-top:4px">+55 99 8821-5838</strong>
+        </div>
+        <div class="field" style="margin-top:16px">
+          <label class="label">Mensagem pré-preenchida <span class="label-note">opcional</span></label>
+          <input class="input" type="text" placeholder="Ex: Olá! Vi o anúncio do Civic e quero saber mais.">
+        </div>
+      </div>
+
+      <!-- Ad preview -->
+      <div class="card">
+        <div class="card-title">
+          <div class="card-title-icon">👁️</div>
+          Preview do anúncio
+        </div>
+        <div class="ad-preview-panel">
+          <div class="ad-preview-header">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3"/></svg>
+            Como vai aparecer no feed
+          </div>
+          <div class="ad-preview-body">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+              <div style="width:32px;height:32px;border-radius:50%;background:var(--primary-subtle);display:flex;align-items:center;justify-content:center;font-size:14px;">🚗</div>
+              <div>
+                <div style="font-size:13px;font-weight:600">AllCar Veículos</div>
+                <div style="font-size:11px;color:var(--muted)">Patrocinado · 🌐</div>
+              </div>
+            </div>
+            <div class="ad-preview-text">🚗 Honda Civic 2024 chegou na AllCar! Motor 2.0 turbo, câmbio CVT...</div>
+            <img src="https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=600&q=80" style="width:100%;height:160px;object-fit:cover;border-radius:8px;display:block;">
+            <div style="margin-top:10px">
+              <div class="ad-preview-headline">Honda Civic 2024 — A partir de R$ 1.890/mês</div>
+              <div class="ad-preview-desc">Consulte condições de financiamento</div>
+            </div>
+            <div class="ad-preview-cta">💬 Enviar mensagem</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="action-bar">
+        <button class="btn btn-ghost" onclick="goToStep(2)">← Voltar</button>
+        <div style="display:flex;gap:10px;align-items:center">
+          <span style="font-size:12px;color:var(--muted)">Será criada como pausada</span>
+          <button class="btn btn-primary" style="padding:11px 24px;font-size:14px">
+            ✦ Criar Campanha
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</main>
+
+<script>
+let currentStep = 3;
+
+function goToStep(step) {
+  // Hide all
+  document.querySelectorAll('.step-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.step-btn').forEach(el => {
+    el.classList.remove('active');
+  });
+
+  // Show target step
+  document.getElementById(`step-${step}`).classList.add('active');
+  currentStep = step;
+
+  // Update step buttons
+  for (let i = 1; i <= 3; i++) {
+    const btn = document.getElementById(`step-btn-${i}`);
+    btn.classList.remove('active', 'done');
+    const num = btn.querySelector('.step-num');
+    if (i < step) {
+      btn.classList.add('done');
+      num.textContent = '✓';
+    } else if (i === step) {
+      btn.classList.add('active');
+      num.textContent = i;
+    } else {
+      num.textContent = i;
+    }
+  }
+
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function setMode(mode) {
+  document.getElementById('mode-dup').classList.toggle('selected', mode === 'dup');
+  document.getElementById('mode-scratch').classList.toggle('selected', mode === 'scratch');
+}
+
+function setMediaTab(el, type) {
+  document.querySelectorAll('.media-tab').forEach(t => t.classList.remove('active'));
+  el.classList.add('active');
+}
+
+// Initialize to show step 3 by default (for demo)
+goToStep(3);
+</script>
+</body>
+</html>

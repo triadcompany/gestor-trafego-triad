@@ -1,0 +1,92 @@
+<h2>Onde fica o gerenciamento de PIX?</h2>
+<p class="subtitle">Escolha a abordagem que faz mais sentido pro seu fluxo de trabalho</p>
+
+<div class="options">
+
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Coluna extra na tabela de Saldos</h3>
+      <p>A tabela atual ganha colunas de <strong>Parcela</strong> e <strong>Próximo PIX</strong>. Clique no cliente abre um painel lateral com o histórico de pagamentos.</p>
+      <div style="margin-top:12px;background:#1a1a2e;border-radius:8px;overflow:hidden;font-size:11px;font-family:monospace;">
+        <div style="display:grid;grid-template-columns:1fr 100px 90px 90px 90px 80px;gap:0;padding:8px 12px;background:#0f0f1a;color:#666;border-bottom:1px solid #222;">
+          <span>Cliente</span><span style="text-align:right">Saldo</span><span style="text-align:right">Gasto</span><span style="text-align:right">Estimativa</span><span style="text-align:right">Parcela PIX</span><span style="text-align:right">Próx. PIX</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 100px 90px 90px 90px 80px;gap:0;padding:10px 12px;border-bottom:1px solid #1a1a2e;align-items:center;">
+          <div style="display:flex;align-items:center;gap:8px;"><div style="width:28px;height:28px;background:#16213e;border:1px solid #0f3460;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#4a9eff;font-size:10px;font-weight:bold;">AL</div><span style="color:#e0e0e0;">AllCar Veículos</span></div>
+          <span style="color:#ef4444;text-align:right;">R$ 87</span>
+          <span style="color:#666;text-align:right;">R$ 180</span>
+          <span style="color:#ef4444;text-align:right;">~0.5d</span>
+          <span style="color:#4a9eff;text-align:right;font-weight:bold;">R$ 750</span>
+          <span style="color:#f59e0b;text-align:right;">Hoje</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 100px 90px 90px 90px 80px;gap:0;padding:10px 12px;align-items:center;">
+          <div style="display:flex;align-items:center;gap:8px;"><div style="width:28px;height:28px;background:#1a2a1a;border:1px solid #1a4a1a;border-radius:6px;display:flex;align-items:center;justify-content:center;color:#22c55e;font-size:10px;font-weight:bold;">IM</div><span style="color:#e0e0e0;">ImóvelCerto</span></div>
+          <span style="color:#22c55e;text-align:right;">R$ 1.240</span>
+          <span style="color:#666;text-align:right;">R$ 95</span>
+          <span style="color:#22c55e;text-align:right;">~13d</span>
+          <span style="color:#4a9eff;text-align:right;font-weight:bold;">R$ 1.500</span>
+          <span style="color:#666;text-align:right;">em 3d</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Página separada /pix</h3>
+      <p>Item novo no menu lateral. Página dedicada ao controle de PIX com tabela própria, histórico completo e chips de resumo (pendentes, vencidos, valor total).</p>
+      <div style="margin-top:12px;background:#1a1a2e;border-radius:8px;padding:12px;font-size:11px;font-family:monospace;">
+        <div style="display:flex;gap:8px;margin-bottom:12px;">
+          <div style="background:#16213e;border:1px solid #1e3a5f;border-radius:6px;padding:6px 10px;color:#4a9eff;font-size:10px;"><strong style="color:#fff;font-size:14px;">2</strong><br>Pendentes</div>
+          <div style="background:#16213e;border:1px solid #1e3a5f;border-radius:6px;padding:6px 10px;color:#f59e0b;font-size:10px;"><strong style="color:#fff;font-size:14px;">1</strong><br>Vencidos</div>
+          <div style="background:#16213e;border:1px solid #1e3a5f;border-radius:6px;padding:6px 10px;color:#22c55e;font-size:10px;"><strong style="color:#fff;font-size:14px;">R$ 3.250</strong><br>A cobrar</div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 80px 80px 70px;gap:0;padding:6px 8px;background:#0f0f1a;color:#666;border-radius:4px 4px 0 0;">
+          <span>Cliente</span><span style="text-align:right">Parcela</span><span style="text-align:right">Vencimento</span><span style="text-align:right">Status</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 80px 80px 70px;gap:0;padding:8px;border-bottom:1px solid #1a1a2e;align-items:center;">
+          <span style="color:#e0e0e0;">AllCar Veículos</span>
+          <span style="color:#4a9eff;text-align:right;font-weight:bold;">R$ 750</span>
+          <span style="color:#ef4444;text-align:right;">Vencido</span>
+          <span style="text-align:right;"><span style="background:#ef4444/20;color:#ef4444;padding:2px 6px;border-radius:4px;font-size:10px;">Pagar</span></span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 80px 80px 70px;gap:0;padding:8px;align-items:center;">
+          <span style="color:#e0e0e0;">ImóvelCerto</span>
+          <span style="color:#4a9eff;text-align:right;font-weight:bold;">R$ 1.500</span>
+          <span style="color:#f59e0b;text-align:right;">Amanhã</span>
+          <span style="text-align:right;"><span style="background:#f59e0b/20;color:#f59e0b;padding:2px 6px;border-radius:4px;font-size:10px;">Pagar</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Seção expandida dentro de Saldos</h3>
+      <p>A página de Saldos ganha uma seção "Cobranças PIX" abaixo da tabela de saldos atual — mesma página, dois blocos distintos.</p>
+      <div style="margin-top:12px;background:#1a1a2e;border-radius:8px;padding:12px;font-size:11px;font-family:monospace;">
+        <div style="color:#666;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">↑ Tabela de Saldos (atual)</div>
+        <div style="border:1px dashed #333;border-radius:6px;padding:8px;margin-bottom:8px;">
+          <div style="color:#888;font-size:10px;">AllCar · R$87 · <span style="color:#ef4444">Crítico</span></div>
+          <div style="color:#888;font-size:10px;margin-top:4px;">ImóvelCerto · R$1.240 · <span style="color:#22c55e">Ok</span></div>
+        </div>
+        <div style="color:#4a9eff;font-size:10px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;margin-top:16px;">Cobranças PIX</div>
+        <div style="border:1px solid #1e3a5f;border-radius:6px;overflow:hidden;">
+          <div style="display:grid;grid-template-columns:1fr 80px 80px 70px;gap:0;padding:6px 8px;background:#0f0f1a;color:#666;">
+            <span>Cliente</span><span style="text-align:right">Parcela</span><span style="text-align:right">Vence</span><span style="text-align:right">Status</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 80px 80px 70px;gap:0;padding:7px 8px;border-top:1px solid #1a1a2e;">
+            <span style="color:#e0e0e0;">AllCar</span>
+            <span style="color:#4a9eff;text-align:right;">R$ 750</span>
+            <span style="color:#ef4444;text-align:right;">Hoje</span>
+            <span style="color:#ef4444;text-align:right;">Vencido</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
