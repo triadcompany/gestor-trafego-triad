@@ -603,8 +603,34 @@ export async function updateMetaObject(
 
 // ── Campaign creation ──────────────────────────────────────────
 
+// Extrai o número WhatsApp do criativo do primeiro anúncio de um conjunto.
+// Esse número é o mesmo que aparece nos anúncios ativos — fonte mais confiável.
+async function fetchWhatsappNumberFromAdSet(adSetId: string, token: string): Promise<string | null> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/${adSetId}/ads?fields=creative{object_story_spec}&limit=1&access_token=${encodeURIComponent(token)}`
+    );
+    const json = (await res.json()) as {
+      data?: Array<{ creative?: { object_story_spec?: { link_data?: { link?: string; call_to_action?: { value?: { whatsapp_number?: string } } } } } }>;
+    };
+    const linkData = json.data?.[0]?.creative?.object_story_spec?.link_data;
+    if (!linkData) return null;
+
+    // Caminho 1: call_to_action.value.whatsapp_number
+    const ctaNum = linkData.call_to_action?.value?.whatsapp_number;
+    if (ctaNum) return `+${ctaNum.replace(/\D/g, "")}`;
+
+    // Caminho 2: link wa.me/551199999999
+    const waMatch = (linkData.link ?? "").match(/wa\.me\/(\d+)/);
+    if (waMatch) return `+${waMatch[1]}`;
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 // Busca o número WhatsApp Business vinculado à Página via API da Meta.
-// Retorna no formato E.164 (+5511999999999) ou null se não encontrar.
 async function fetchPageWhatsappNumber(pageId: string, token: string): Promise<string | null> {
   try {
     const res = await fetch(
@@ -612,8 +638,7 @@ async function fetchPageWhatsappNumber(pageId: string, token: string): Promise<s
     );
     const json = (await res.json()) as { whatsapp_number?: string; error?: unknown };
     if (!json.whatsapp_number) return null;
-    const digits = json.whatsapp_number.replace(/\D/g, "");
-    return `+${digits}`;
+    return `+${json.whatsapp_number.replace(/\D/g, "")}`;
   } catch {
     return null;
   }
@@ -1018,13 +1043,17 @@ export async function duplicateCampaign(
     if (effectiveDestinationType) adSetParams.destination_type = effectiveDestinationType;
 
     // whatsapp_phone_number é obrigatório no promoted_object para destino WHATSAPP (error 100.2446885).
-    // Prioridade: campo do promoted_object original → cadastro do cliente → busca na Página via API.
+    // Prioridade: promoted_object original → cadastro do cliente → criativo do primeiro anúncio.
     if (adSet.promoted_object || effectiveDestinationType === "WHATSAPP") {
       const po: Record<string, string> = { ...(adSet.promoted_object ?? {}) };
+
       if (effectiveDestinationType === "WHATSAPP" && !po.whatsapp_phone_number) {
-        const resolved = whatsappNumber ?? (po.page_id ? await fetchPageWhatsappNumber(po.page_id, token) : null);
+        // Tenta extrair do criativo do primeiro anúncio do conjunto original
+        const waFromCreative = await fetchWhatsappNumberFromAdSet(adSet.id, token);
+        const resolved = whatsappNumber ?? waFromCreative;
         if (resolved) po.whatsapp_phone_number = resolved;
       }
+
       if (Object.keys(po).length > 0) adSetParams.promoted_object = JSON.stringify(po);
     }
 
@@ -1116,12 +1145,18 @@ export async function createCampaignFromScratch(
   if (instagram_positions.length) targeting.instagram_positions = instagram_positions;
 
   // whatsapp_phone_number é obrigatório no promoted_object para destination_type=WHATSAPP (error 100.2446885).
-  // Usa o número do cadastro do cliente; se não estiver cadastrado, busca da Página via API.
-  const resolvedWhatsappNumber =
-    opts.whatsappNumber ?? (await fetchPageWhatsappNumber(opts.pageId, opts.token));
+  // whatsapp_phone_number obrigatório para destino WHATSAPP.
+  // Na criação do zero, vem do cadastro do cliente (meta_whatsapp_number).
+  if (!opts.whatsappNumber) {
+    throw new Error(
+      "Número WhatsApp Business não cadastrado para este cliente. Edite o cliente em Configurações e preencha o campo \"WhatsApp Business (+55...)\"."
+    );
+  }
 
-  const promotedObject: Record<string, string> = { page_id: opts.pageId };
-  if (resolvedWhatsappNumber) promotedObject.whatsapp_phone_number = resolvedWhatsappNumber;
+  const promotedObject: Record<string, string> = {
+    page_id: opts.pageId,
+    whatsapp_phone_number: opts.whatsappNumber,
+  };
   const destinationType = "WHATSAPP";
 
   const adSet = await postMeta(`${opts.adAccountId}/adsets`, {
