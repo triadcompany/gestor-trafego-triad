@@ -212,6 +212,10 @@ function ClientFormDialog({
   const [cplMin, setCplMin] = useState(client?.cpl_min ?? 6);
   const [cplMax, setCplMax] = useState(client?.cpl_max ?? 12);
   const [paymentMethod, setPaymentMethod] = useState<"pix" | "cartao">(client?.payment_method ?? "pix");
+  const [pixActive, setPixActive] = useState(client?.pix_active ?? false);
+  const [monthlyBudget, setMonthlyBudget] = useState<string>(client?.monthly_budget != null ? String(client.monthly_budget) : "");
+  const [pixCycle, setPixCycle] = useState<"semanal" | "quinzenal" | "mensal">(client?.pix_cycle ?? "mensal");
+  const [pixRefDay, setPixRefDay] = useState<string>(client?.pix_reference_day != null ? String(client.pix_reference_day) : "1");
 
   const handleSegmentChange = (val: "popular" | "premium") => {
     setSegment(val);
@@ -231,6 +235,10 @@ function ClientFormDialog({
       cpl_min: cplMin,
       cpl_max: cplMax,
       payment_method: paymentMethod,
+      pix_active: pixActive,
+      monthly_budget: monthlyBudget !== "" ? Number(monthlyBudget) : null,
+      pix_cycle: pixActive ? pixCycle : null,
+      pix_reference_day: pixActive ? Number(pixRefDay) : null,
     });
   };
 
@@ -322,6 +330,85 @@ function ClientFormDialog({
             />
           </div>
         </div>
+        {/* PIX */}
+        <div className="space-y-3 rounded-lg border border-border p-3">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">Cobrança PIX (honorários)</Label>
+            <button
+              type="button"
+              onClick={() => setPixActive((v) => !v)}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${pixActive ? "bg-primary" : "bg-muted"}`}
+            >
+              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${pixActive ? "translate-x-4" : "translate-x-0"}`} />
+            </button>
+          </div>
+
+          {pixActive && (
+            <>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">Investimento mensal (R$)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={50}
+                  value={monthlyBudget}
+                  onChange={(e) => setMonthlyBudget(e.target.value)}
+                  placeholder="Ex: 2000"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Ciclo</Label>
+                  <Select value={pixCycle} onValueChange={(v) => { setPixCycle(v as typeof pixCycle); setPixRefDay("1"); }}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="mensal">Mensal</SelectItem>
+                      <SelectItem value="quinzenal">Quinzenal</SelectItem>
+                      <SelectItem value="semanal">Semanal</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">
+                    {pixCycle === "semanal" ? "Dia da semana" : pixCycle === "quinzenal" ? "Dia ref. (e +15)" : "Dia do mês"}
+                  </Label>
+                  {pixCycle === "semanal" ? (
+                    <Select value={pixRefDay} onValueChange={setPixRefDay}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {["Segunda","Terça","Quarta","Quinta","Sexta","Sábado","Domingo"].map((d, i) => (
+                          <SelectItem key={i + 1} value={String(i + 1)}>{d}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Select value={pixRefDay} onValueChange={setPixRefDay}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {Array.from({ length: pixCycle === "quinzenal" ? 16 : 28 }, (_, i) => i + 1).map((d) => (
+                          <SelectItem key={d} value={String(d)}>
+                            {pixCycle === "quinzenal" ? `${d} e ${d + 15}` : `Dia ${d}`}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+              </div>
+              {monthlyBudget && (
+                <p className="text-xs text-muted-foreground">
+                  Parcela:{" "}
+                  <strong className="text-foreground">
+                    {(Number(monthlyBudget) / (pixCycle === "semanal" ? 4 : pixCycle === "quinzenal" ? 2 : 1)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                  </strong>
+                </p>
+              )}
+            </>
+          )}
+        </div>
+
         <DialogFooter>
           <Button type="submit" disabled={saving}>
             {saving ? "Salvando..." : "Salvar"}

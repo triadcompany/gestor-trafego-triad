@@ -143,6 +143,10 @@ export async function upsertClient(data: {
   cpl_min: number;
   cpl_max: number;
   payment_method?: "pix" | "cartao";
+  pix_active?: boolean;
+  monthly_budget?: number | null;
+  pix_cycle?: "semanal" | "quinzenal" | "mensal" | null;
+  pix_reference_day?: number | null;
 }) {
   const { error } = await supabase.from("clients").upsert({
     ...data,
