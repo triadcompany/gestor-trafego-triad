@@ -930,174 +930,26 @@ export async function runMetaDiagnostics(): Promise<MetaDiagnostics> {
   };
 }
 
-/**
- * Duplica uma campanha via cópia manual: cria nova campanha + copia cada ad set + copia cada ad.
- * Cada operação toca exatamente 1 objeto, evitando o limite de 3 objetos por chamada da Meta API.
- */
+// Duplica uma campanha usando o endpoint nativo da Meta /{campaign_id}/copies.
+// Preserva toda a estrutura original (conjuntos, anúncios, criativos, targeting, orçamento).
 export async function duplicateCampaign(
   campaignId: string,
-  adAccountId: string,
+  _adAccountId: string,
   newName: string,
   token: string,
   onProgress?: (msg: string) => void,
-  whatsappNumber?: string // número WhatsApp Business do cliente, injeta no promoted_object se estiver faltando
+  _whatsappNumber?: string
 ): Promise<string> {
-  onProgress?.("Buscando estrutura da campanha...");
+  onProgress?.("Duplicando campanha...");
 
-  // 1. Busca campos da campanha original incluindo orçamento (para detectar CBO)
-  const srcRes = await fetch(
-    `${BASE_URL}/${campaignId}?fields=objective,special_ad_categories,daily_budget&access_token=${encodeURIComponent(token)}`
-  );
-  const srcJson = (await srcRes.json()) as {
-    objective?: string;
-    special_ad_categories?: string[];
-    daily_budget?: string;
-    error?: MetaApiError;
-  };
-  if (srcJson.error) throw new Error(srcJson.error.message);
-
-  // 2. Busca conjuntos com seus orçamentos (para calcular budget total se não for CBO)
-  const adSetsRes = await fetch(
-    `${BASE_URL}/${campaignId}/adsets?fields=id,name,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,targeting,destination_type,promoted_object&limit=50&access_token=${encodeURIComponent(token)}`
-  );
-  const adSetsJson = (await adSetsRes.json()) as {
-    data?: Array<{
-      id: string;
-      name: string;
-      daily_budget?: string;
-      lifetime_budget?: string;
-      billing_event?: string;
-      optimization_goal?: string;
-      bid_strategy?: string;
-      bid_amount?: string;
-      targeting?: MetaTargeting;
-      destination_type?: string;
-      promoted_object?: Record<string, string>;
-    }>;
-    error?: MetaApiError;
-  };
-  if (adSetsJson.error) throw new Error(adSetsJson.error.message);
-  const adSets = adSetsJson.data ?? [];
-
-  // 3. Determina o orçamento da nova campanha (CBO elimina is_adset_budget_sharing_enabled nos conjuntos)
-  //    Fonte: orçamento da campanha original (se CBO) ou soma dos conjuntos
-  let campaignDailyBudget = srcJson.daily_budget
-    ? parseInt(srcJson.daily_budget, 10)
-    : adSets.reduce((sum, s) => sum + (s.daily_budget ? parseInt(s.daily_budget, 10) : 0), 0);
-
-  if (!campaignDailyBudget || campaignDailyBudget < 100) campaignDailyBudget = 5000; // mínimo R$ 50
-
-  onProgress?.(`${adSets.length} conjunto(s) encontrado(s). Criando nova campanha com orçamento de campanha...`);
-
-  // 4. Cria a nova campanha com daily_budget (CBO) — conjuntos não precisam de orçamento próprio
-  // Campanha CBO sem bid_strategy explícita — ad sets herdam budget sem exigir is_adset_budget_sharing_enabled
-  const newCampaign = (await postMeta(`${adAccountId}/campaigns`, {
+  const result = (await postMeta(`${campaignId}/copies`, {
+    deep_copy: "true",
+    status_option: "PAUSED",
     name: newName,
-    objective: srcJson.objective ?? "OUTCOME_ENGAGEMENT",
-    status: "PAUSED",
-    special_ad_categories: "[]",
-    daily_budget: String(campaignDailyBudget),
     access_token: token,
-  })) as { id: string };
+  })) as { copied_campaign_id: string };
 
-  const newCampaignId = newCampaign.id;
-
-  // 5. Cria cada conjunto do zero no modo CBO:
-  //    - Sem daily_budget próprio (herda da campanha)
-  //    - Sem is_adset_budget_sharing_enabled (não exigido em CBO)
-  //    - Com bid_amount padrão de R$15 para satisfazer qualquer exigência de lance
-  for (let i = 0; i < adSets.length; i++) {
-    const adSet = adSets[i];
-    onProgress?.(`Criando conjunto ${i + 1}/${adSets.length}: ${adSet.name}...`);
-
-    // ── Corrige targeting ──────────────────────────────────────
-    const targeting = adSet.targeting ?? { geo_locations: { countries: ["BR"] } };
-    // explore_home exige explore junto (regra Meta)
-    if (targeting.instagram_positions?.includes("explore_home") && !targeting.instagram_positions.includes("explore")) {
-      targeting.instagram_positions = [...targeting.instagram_positions, "explore"];
-    }
-    // Remove posicionamentos de search que causam conflito com outros
-    if (targeting.instagram_positions) {
-      targeting.instagram_positions = targeting.instagram_positions.filter(
-        (p) => !["ig_search"].includes(p)
-      );
-    }
-
-    // ── Compatibilidade objetivo × meta de desempenho ──────────
-    const effectiveDestinationType = adSet.destination_type ?? "";
-
-    const optimizationGoal = "CONVERSATIONS";
-    const billingEvent = "IMPRESSIONS";
-
-    const adSetParams: Record<string, string> = {
-      name: adSet.name,
-      campaign_id: newCampaignId,
-      billing_event: billingEvent,
-      optimization_goal: optimizationGoal,
-      targeting: JSON.stringify(targeting),
-      bid_amount: "1500",
-      status: "PAUSED",
-      access_token: token,
-    };
-
-    if (effectiveDestinationType) adSetParams.destination_type = effectiveDestinationType;
-
-    // whatsapp_phone_number é obrigatório no promoted_object para destino WHATSAPP (error 100.2446885).
-    // Prioridade: promoted_object original → cadastro do cliente → criativo do primeiro anúncio.
-    if (adSet.promoted_object || effectiveDestinationType === "WHATSAPP") {
-      const po: Record<string, string> = { ...(adSet.promoted_object ?? {}) };
-
-      if (effectiveDestinationType === "WHATSAPP" && !po.whatsapp_phone_number) {
-        // Tenta extrair do criativo do primeiro anúncio do conjunto original
-        const waFromCreative = await fetchWhatsappNumberFromAdSet(adSet.id, token);
-        const resolved = whatsappNumber ?? waFromCreative;
-        if (resolved) po.whatsapp_phone_number = resolved;
-      }
-
-      if (Object.keys(po).length > 0) adSetParams.promoted_object = JSON.stringify(po);
-    }
-
-    // ── Validação obrigatória antes de enviar à Meta ───────────
-    if (adSetParams.optimization_goal !== "CONVERSATIONS") {
-      throw new Error(
-        `Validação falhou: optimization_goal do conjunto "${adSet.name}" deveria ser CONVERSATIONS, mas é "${adSetParams.optimization_goal}".`
-      );
-    }
-
-    let newAdSetRes: { id: string };
-    try {
-      newAdSetRes = (await postMeta(`${adAccountId}/adsets`, adSetParams)) as { id: string };
-    } catch (err) {
-      const baseMsg = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `Falha ao duplicar o conjunto "${adSet.name}" (meta=CONVERSATIONS, destino=${effectiveDestinationType || "—"}): ${baseMsg}`
-      );
-    }
-    const newAdSetId = newAdSetRes.id;
-
-    // Busca anúncios do conjunto original
-    const adsRes = await fetch(
-      `${BASE_URL}/${adSet.id}/ads?fields=id,name&limit=50&access_token=${encodeURIComponent(token)}`
-    );
-    const adsJson = (await adsRes.json()) as {
-      data?: Array<{ id: string; name: string }>;
-      error?: MetaApiError;
-    };
-    if (adsJson.error) throw new Error(adsJson.error.message);
-    const ads = adsJson.data ?? [];
-
-    for (let j = 0; j < ads.length; j++) {
-      const ad = ads[j];
-      onProgress?.(`Copiando anúncio ${j + 1}/${ads.length} (conjunto ${i + 1})...`);
-      await postMeta(`${ad.id}/copies`, {
-        adset_id: newAdSetId,
-        status_option: "PAUSED",
-        access_token: token,
-      });
-    }
-  }
-
-  return newCampaignId;
+  return result.copied_campaign_id;
 }
 
 export interface CreateFromScratchOptions {
