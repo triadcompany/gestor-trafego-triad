@@ -4,6 +4,7 @@ export type SyncStatus = "success" | "error";
 export type PeriodType = "semanal" | "mensal";
 export type ReportStatus = "pendente" | "enviado";
 export type PixCycle = "semanal" | "quinzenal" | "mensal";
+export type TaskStatus = "pendente" | "em_andamento" | "concluida";
 
 export interface Database {
   public: {
@@ -134,6 +135,50 @@ export interface Database {
           name?: string;
           greeting?: string | null;
           pre_message?: string | null;
+        };
+      };
+      profiles: {
+        Row: {
+          id: string;
+          full_name: string;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          full_name: string;
+          created_at?: string;
+        };
+        Update: {
+          full_name?: string;
+        };
+      };
+      tasks: {
+        Row: {
+          id: string;
+          title: string;
+          status: TaskStatus;
+          due_date: string | null;
+          client_id: string | null;
+          assigned_to: string | null;
+          created_by: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          title: string;
+          status?: TaskStatus;
+          due_date?: string | null;
+          client_id?: string | null;
+          assigned_to?: string | null;
+          created_by?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          title?: string;
+          status?: TaskStatus;
+          due_date?: string | null;
+          client_id?: string | null;
+          assigned_to?: string | null;
         };
       };
     };

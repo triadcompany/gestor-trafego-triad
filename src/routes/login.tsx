@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { saveMetaToken, getMetaToken } from "@/lib/meta";
+import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -15,44 +15,36 @@ export const Route = createFileRoute("/login")({
 
 function Login() {
   const navigate = useNavigate();
-  const [token, setToken] = useState("");
-  const [saving, setSaving] = useState(false);
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Se já tem token válido, vai direto pro dashboard
   useEffect(() => {
-    getMetaToken().then((t) => {
-      if (t) navigate({ to: "/" });
+    supabase.auth.getSession().then(({ data }) => {
+      if (data.session) navigate({ to: "/" });
     });
   }, [navigate]);
 
-  const handleSave = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!token.trim()) return;
+    if (!email.trim() || !password) return;
 
-    setSaving(true);
+    setLoading(true);
     setError("");
 
-    try {
-      // Valida o token chamando /me
-      const res = await fetch(
-        `https://graph.facebook.com/v21.0/me?access_token=${token.trim()}`
-      );
-      const json = await res.json() as { name?: string; error?: { message: string } };
+    const { error: authError } = await supabase.auth.signInWithPassword({
+      email: email.trim(),
+      password,
+    });
 
-      if (json.error || !json.name) {
-        throw new Error(json.error?.message ?? "Token inválido");
-      }
-
-      // Salva com 60 dias de validade
-      const expiresAt = new Date(Date.now() + 60 * 24 * 3600 * 1000);
-      await saveMetaToken(token.trim(), expiresAt);
-      navigate({ to: "/" });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao validar token");
-    } finally {
-      setSaving(false);
+    if (authError) {
+      setError("Email ou senha incorretos.");
+      setLoading(false);
+      return;
     }
+
+    navigate({ to: "/" });
   };
 
   return (
@@ -64,31 +56,38 @@ function Login() {
           </div>
           <h1 className="text-xl font-semibold">Gestor de Tráfego</h1>
           <p className="text-sm text-muted-foreground mt-1">
-            Cole seu token de acesso Meta Ads
+            Entre com seu email e senha
           </p>
         </div>
 
-        <form onSubmit={handleSave} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <Label>Token de acesso</Label>
+            <Label>Email</Label>
             <Input
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder="EAASR9J..."
-              className="font-mono text-xs"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="voce@exemplo.com"
+              autoComplete="email"
+              required
             />
-            <p className="text-[11px] text-muted-foreground">
-              Gere em developers.facebook.com → Graph API Explorer com permissões{" "}
-              <code>ads_read</code> e <code>ads_management</code>
-            </p>
+          </div>
+          <div className="space-y-1">
+            <Label>Senha</Label>
+            <Input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              required
+            />
           </div>
 
-          {error && (
-            <p className="text-sm text-destructive">{error}</p>
-          )}
+          {error && <p className="text-sm text-destructive">{error}</p>}
 
-          <Button type="submit" className="w-full" disabled={saving || !token.trim()}>
-            {saving ? "Validando..." : "Entrar"}
+          <Button type="submit" className="w-full" disabled={loading || !email.trim() || !password}>
+            {loading ? "Entrando..." : "Entrar"}
           </Button>
         </form>
       </Card>

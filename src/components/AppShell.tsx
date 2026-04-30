@@ -1,6 +1,9 @@
-import { Link, useLocation } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode } from "lucide-react";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
+import { useQuery } from "@tanstack/react-query";
+import { fetchCurrentProfile } from "@/lib/queries";
 
 const navItems = [
   { to: "/", label: "Dashboard", shortLabel: "Início", icon: LayoutDashboard, exact: true },
@@ -15,10 +18,22 @@ const navItems = [
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const path = location.pathname;
+
+  const { data: profile } = useQuery({
+    queryKey: ["current-profile"],
+    queryFn: fetchCurrentProfile,
+    staleTime: Infinity,
+  });
 
   const isActive = (to: string, exact: boolean) =>
     exact ? path === to : path === to || path.startsWith(to + "/") || path.startsWith(to);
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate({ to: "/login" });
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -56,8 +71,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
-        <div className="p-3 border-t border-sidebar-border text-xs text-muted-foreground">
-          v0.1 · Interno
+        <div className="p-3 border-t border-sidebar-border">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs text-muted-foreground truncate">
+              {profile?.full_name ?? "—"}
+            </span>
+            <button
+              onClick={handleLogout}
+              className="text-muted-foreground hover:text-foreground transition-colors shrink-0"
+              title="Sair"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       </aside>
 

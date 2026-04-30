@@ -1,0 +1,109 @@
+<h2>Onde ficam as tarefas na página?</h2>
+<p class="subtitle">A página atual já tem "Anotações" e "Relatórios". Como encaixar as tarefas?</p>
+
+<div class="options">
+  <div class="option" data-choice="a" onclick="toggleSelect(this)">
+    <div class="letter">A</div>
+    <div class="content">
+      <h3>Nova aba "Tarefas"</h3>
+      <p>Adiciona uma terceira aba na mesma página. Fica junto com Anotações e Relatórios.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">Tarefas</div>
+        <div class="mockup-body" style="padding:0">
+          <div style="display:flex;border-bottom:1px solid #333;padding:0 16px">
+            <span style="padding:10px 16px;font-size:13px;color:#888;border-bottom:2px solid transparent">Anotações</span>
+            <span style="padding:10px 16px;font-size:13px;color:#888;border-bottom:2px solid transparent">Relatórios</span>
+            <span style="padding:10px 16px;font-size:13px;color:#e2e8f0;border-bottom:2px solid #818cf8;font-weight:600">Tarefas</span>
+          </div>
+          <div style="padding:16px;display:flex;flex-direction:column;gap:8px">
+            <div style="background:#1e293b;border-radius:8px;padding:12px;display:flex;align-items:center;gap:10px">
+              <div style="width:16px;height:16px;border-radius:50%;border:2px solid #64748b;flex-shrink:0"></div>
+              <div>
+                <div style="font-size:13px;font-weight:500">Criar campanha Black Friday — Auto Center Silva</div>
+                <div style="font-size:11px;color:#f59e0b;margin-top:2px">Vence 05/05</div>
+              </div>
+            </div>
+            <div style="background:#1e293b;border-radius:8px;padding:12px;display:flex;align-items:center;gap:10px">
+              <div style="width:16px;height:16px;border-radius:50%;background:#22c55e;flex-shrink:0;display:flex;align-items:center;justify-content:center">
+                <span style="color:white;font-size:9px">✓</span>
+              </div>
+              <div style="opacity:0.5">
+                <div style="font-size:13px;font-weight:500;text-decoration:line-through">Enviar relatório mensal</div>
+                <div style="font-size:11px;color:#64748b;margin-top:2px">Concluída</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="b" onclick="toggleSelect(this)">
+    <div class="letter">B</div>
+    <div class="content">
+      <h3>Renomear para "Tarefas" e reorganizar</h3>
+      <p>A página vira "Tarefas" de verdade. Anotações e Relatórios viram sub-abas dentro dela. Tarefas fica em destaque no topo.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">Tarefas</div>
+        <div class="mockup-body" style="padding:16px;display:flex;flex-direction:column;gap:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between">
+            <div>
+              <div style="font-size:14px;font-weight:600;color:#e2e8f0">Tarefas</div>
+              <div style="font-size:11px;color:#64748b">2 pendentes</div>
+            </div>
+            <button style="background:#818cf8;color:white;border:none;border-radius:6px;padding:5px 12px;font-size:12px">+ Nova tarefa</button>
+          </div>
+          <div style="background:#1e293b;border-radius:8px;padding:10px;display:flex;gap:8px;align-items:center">
+            <div style="width:14px;height:14px;border-radius:50%;border:2px solid #64748b;flex-shrink:0"></div>
+            <span style="font-size:12px">Criar campanha Black Friday</span>
+            <span style="margin-left:auto;font-size:11px;color:#f59e0b">05/05</span>
+          </div>
+          <div style="border-top:1px solid #333;padding-top:10px">
+            <div style="display:flex;gap:0;margin-bottom:8px">
+              <span style="padding:5px 12px;font-size:11px;color:#818cf8;border-bottom:1px solid #818cf8">Anotações</span>
+              <span style="padding:5px 12px;font-size:11px;color:#64748b">Relatórios</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="option" data-choice="c" onclick="toggleSelect(this)">
+    <div class="letter">C</div>
+    <div class="content">
+      <h3>Página separada na sidebar</h3>
+      <p>Tarefas ganha seu próprio item no menu lateral, independente da página de Anotações/Relatórios.</p>
+      <div class="mockup" style="margin-top:12px">
+        <div class="mockup-header">Sidebar + Página Tarefas</div>
+        <div class="mockup-body" style="padding:0;display:flex">
+          <div style="width:120px;background:#0f172a;padding:12px;border-right:1px solid #1e293b;font-size:11px;color:#64748b;display:flex;flex-direction:column;gap:8px">
+            <span>Dashboard</span>
+            <span>Campanhas</span>
+            <span>Clientes</span>
+            <span>Saldos</span>
+            <span>PIX</span>
+            <span style="color:#818cf8;font-weight:600">✓ Tarefas</span>
+            <span>Anotações</span>
+            <span>Relatórios</span>
+            <span>Config</span>
+          </div>
+          <div style="flex:1;padding:16px">
+            <div style="font-size:13px;font-weight:600;margin-bottom:10px">Tarefas</div>
+            <div style="display:flex;flex-direction:column;gap:6px;font-size:11px">
+              <div style="background:#1e293b;border-radius:6px;padding:8px;display:flex;gap:6px;align-items:center">
+                <div style="width:12px;height:12px;border-radius:50%;border:1.5px solid #64748b"></div>
+                <span>Criar campanha BF</span>
+                <span style="margin-left:auto;color:#f59e0b">05/05</span>
+              </div>
+              <div style="background:#1e293b;border-radius:6px;padding:8px;display:flex;gap:6px;align-items:center">
+                <div style="width:12px;height:12px;border-radius:50%;border:1.5px solid #64748b"></div>
+                <span>Reunião de equipe</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

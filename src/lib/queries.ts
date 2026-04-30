@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import type { ClientStatus, PeriodType, ReportStatus } from "./database.types";
+import type { ClientStatus, PeriodType, ReportStatus, TaskStatus } from "./database.types";
 
 export type { ClientStatus, PeriodType, ReportStatus };
 
@@ -420,5 +420,107 @@ export async function updateClientPix(
   }
 ): Promise<void> {
   const { error } = await supabase.from("clients").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+// ── Profiles ─────────────────────────────────────────────────────────────────
+
+export interface Profile {
+  id: string;
+  full_name: string;
+}
+
+export async function fetchCurrentProfile(): Promise<Profile | null> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return null;
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .eq("id", user.id)
+    .single();
+  if (error) return null;
+  return data as Profile;
+}
+
+export async function fetchProfiles(): Promise<Profile[]> {
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name")
+    .order("full_name");
+  if (error) throw error;
+  return (data ?? []) as Profile[];
+}
+
+// ── Tasks ─────────────────────────────────────────────────────────────────────
+
+export interface TaskRow {
+  id: string;
+  title: string;
+  status: TaskStatus;
+  due_date: string | null;
+  client_id: string | null;
+  client_name: string | null;
+  assigned_to: string | null;
+  assignee_name: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export async function fetchTasks(): Promise<TaskRow[]> {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select(`
+      id, title, status, due_date, client_id, assigned_to, created_by, created_at,
+      clients:client_id (name),
+      assignee:assigned_to (full_name)
+    `)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+
+  return ((data ?? []) as any[]).map((r) => ({
+    id: r.id,
+    title: r.title,
+    status: r.status as TaskStatus,
+    due_date: r.due_date,
+    client_id: r.client_id,
+    client_name: r.clients?.name ?? null,
+    assigned_to: r.assigned_to,
+    assignee_name: r.assignee?.full_name ?? null,
+    created_by: r.created_by,
+    created_at: r.created_at,
+  }));
+}
+
+export async function createTask(fields: {
+  title: string;
+  status: TaskStatus;
+  due_date?: string | null;
+  client_id?: string | null;
+  assigned_to?: string | null;
+}): Promise<void> {
+  const { data: { user } } = await supabase.auth.getUser();
+  const { error } = await supabase.from("tasks").insert({
+    ...fields,
+    created_by: user?.id ?? null,
+  });
+  if (error) throw error;
+}
+
+export async function updateTask(
+  id: string,
+  fields: {
+    title?: string;
+    status?: TaskStatus;
+    due_date?: string | null;
+    client_id?: string | null;
+    assigned_to?: string | null;
+  }
+): Promise<void> {
+  const { error } = await supabase.from("tasks").update(fields).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteTask(id: string): Promise<void> {
+  const { error } = await supabase.from("tasks").delete().eq("id", id);
   if (error) throw error;
 }

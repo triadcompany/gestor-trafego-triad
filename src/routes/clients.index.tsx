@@ -32,7 +32,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Power } from "lucide-react";
+import { Plus, Pencil, Power, Search } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -58,6 +58,7 @@ function ClientsList() {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ClientRow | null>(null);
+  const [search, setSearch] = useState("");
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ["clients-all"],
@@ -113,6 +114,16 @@ function ClientsList() {
           </Dialog>
         </div>
 
+        <div className="relative mb-4">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            className="pl-9"
+            placeholder="Buscar cliente..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+        </div>
+
         <Card className="overflow-hidden">
           <Table>
             <TableHeader>
@@ -134,7 +145,11 @@ function ClientsList() {
                       </TableCell>
                     </TableRow>
                   ))
-                : clients.map((c) => (
+                : clients
+                  .filter((c) =>
+                    c.name.toLowerCase().includes(search.toLowerCase())
+                  )
+                  .map((c) => (
                     <TableRow
                       key={c.id}
                       className={`cursor-pointer hover:bg-muted/50 ${c.active ? "" : "opacity-50"}`}
