@@ -321,6 +321,59 @@ export type Database = {
           },
         ]
       }
+      agent_conversations: {
+        Row: {
+          id: string
+          title: string | null
+          created_by: string | null
+          created_at: string
+          last_msg_at: string
+        }
+        Insert: {
+          id?: string
+          title?: string | null
+          created_by?: string | null
+          created_at?: string
+          last_msg_at?: string
+        }
+        Update: {
+          title?: string | null
+          last_msg_at?: string
+        }
+        Relationships: []
+      }
+      agent_messages: {
+        Row: {
+          id: string
+          conversation_id: string
+          role: string
+          content: string | null
+          tool_calls: Json | null
+          tool_results: Json | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          conversation_id: string
+          role: string
+          content?: string | null
+          tool_calls?: Json | null
+          tool_results?: Json | null
+          created_at?: string
+        }
+        Update: {
+          content?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_messages_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "agent_conversations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never

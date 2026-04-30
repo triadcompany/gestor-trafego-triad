@@ -116,6 +116,30 @@ export interface Database {
           sent_at?: string | null;
         };
       };
+      agent_conversations: {
+        Row: {
+          id: string;
+          title: string | null;
+          created_by: string | null;
+          created_at: string;
+          last_msg_at: string;
+        };
+        Insert: { id?: string; title?: string | null; created_by?: string | null; created_at?: string; last_msg_at?: string };
+        Update: { title?: string | null; last_msg_at?: string };
+      };
+      agent_messages: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          role: "user" | "assistant" | "tool";
+          content: string | null;
+          tool_calls: unknown | null;
+          tool_results: unknown | null;
+          created_at: string;
+        };
+        Insert: { id?: string; conversation_id: string; role: "user" | "assistant" | "tool"; content?: string | null; tool_calls?: unknown | null; tool_results?: unknown | null; created_at?: string };
+        Update: { content?: string | null };
+      };
       conversation_templates: {
         Row: {
           id: string;

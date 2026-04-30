@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut } from "lucide-react";
+import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
@@ -11,6 +11,7 @@ const navItems = [
   { to: "/saldos", label: "Saldos", shortLabel: "Saldos", icon: Wallet, exact: false },
   { to: "/pix", label: "PIX", shortLabel: "PIX", icon: QrCode, exact: false },
   { to: "/tarefas", label: "Tarefas", shortLabel: "Tarefas", icon: ClipboardList, exact: false },
+  { to: "/agente", label: "Agente IA", shortLabel: "Agente", icon: Bot, exact: false },
   { to: "/campaigns/new", label: "Nova Campanha", shortLabel: "Campanha", icon: PlusSquare, exact: false },
   { to: "/diagnostico-meta", label: "Diagnóstico", shortLabel: "Diagnóst.", icon: Stethoscope, exact: false },
   { to: "/settings", label: "Configurações", shortLabel: "Config.", icon: Settings, exact: false },
@@ -88,6 +89,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       <main className="md:pl-60 pb-20 md:pb-0">{children}</main>
+
+      {/* Botão flutuante do agente (visível em todas as páginas exceto /agente) */}
+      {!isActive("/agente", false) && (
+        <Link
+          to="/agente"
+          className="fixed bottom-24 right-4 md:bottom-6 md:right-6 z-50 flex items-center gap-2 bg-primary text-primary-foreground px-3 py-2 md:px-4 rounded-full shadow-lg hover:bg-primary/90 transition-colors text-sm font-medium"
+        >
+          <Bot className="h-4 w-4" />
+          <span className="hidden md:inline">Agente IA</span>
+        </Link>
+      )}
 
       {/* Mobile bottom tab bar */}
       <nav className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-sidebar border-t border-sidebar-border flex">
