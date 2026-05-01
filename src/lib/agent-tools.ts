@@ -1,6 +1,6 @@
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { fetchCampaigns, fetchAdSets, getMetaToken, updateMetaObject } from "./meta";
-import { fetchClients, fetchTasks, createTask, updateTask, createNote } from "./queries";
+import { fetchClients, fetchTasks, createTask, updateTask, createNote, updateClientPix } from "./queries";
 
 export type JsonArgs = Record<string, string | number | boolean | null | undefined>;
 
@@ -167,6 +167,29 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "update_client_pix",
+      description: "Configura ou atualiza a cobrança PIX de um cliente (orçamento mensal, ciclo e dia de referência). SEMPRE requer confirmação do usuário antes de executar.",
+      parameters: {
+        type: "object",
+        properties: {
+          client_id: { type: "string", description: "ID do cliente" },
+          client_name: { type: "string", description: "Nome do cliente (para exibir na confirmação)" },
+          pix_active: { type: "boolean", description: "Ativar ou desativar cobrança PIX" },
+          monthly_budget: { type: "number", description: "Orçamento mensal em R$" },
+          pix_cycle: {
+            type: "string",
+            enum: ["semanal", "quinzenal", "mensal"],
+            description: "Ciclo de cobrança PIX",
+          },
+          pix_reference_day: { type: "number", description: "Dia de referência para cobrança (1-31)" },
+        },
+        required: ["client_id", "client_name", "pix_active"],
+      },
+    },
+  },
 ];
 
 // ── Write tools — actions que precisam de confirmação ─────────────────────────
@@ -178,6 +201,7 @@ export const WRITE_TOOLS = new Set([
   "create_task",
   "update_task_status",
   "create_note",
+  "update_client_pix",
 ]);
 
 // ── Tool execution ────────────────────────────────────────────────────────────
@@ -303,6 +327,16 @@ export async function executeConfirmedAction(
         return { type: "result", data: { success: true } };
       }
 
+      case "update_client_pix": {
+        await updateClientPix(args.client_id as string, {
+          pix_active: args.pix_active as boolean,
+          monthly_budget: args.monthly_budget as number ?? null,
+          pix_cycle: (args.pix_cycle as "semanal" | "quinzenal" | "mensal") ?? null,
+          pix_reference_day: args.pix_reference_day as number ?? null,
+        });
+        return { type: "result", data: { success: true } };
+      }
+
       default:
         return { type: "error", message: `Ação desconhecida: ${name}` };
     }
@@ -326,6 +360,13 @@ export function describeAction(name: string, args: JsonArgs): string {
       return `Atualizar tarefa "${args.task_title}" → ${args.new_status}`;
     case "create_note":
       return `Criar anotação em ${args.client_name}: "${String(args.content).slice(0, 80)}${String(args.content).length > 80 ? "..." : ""}"`;
+    case "update_client_pix": {
+      const status = args.pix_active ? "ativar" : "desativar";
+      const details = args.pix_active
+        ? ` · R$ ${args.monthly_budget}/mês · ciclo ${args.pix_cycle} · dia ${args.pix_reference_day}`
+        : "";
+      return `${status.charAt(0).toUpperCase() + status.slice(1)} PIX de ${args.client_name}${details}`;
+    }
     default:
       return `Executar: ${name}`;
   }
