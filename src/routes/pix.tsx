@@ -164,6 +164,11 @@ function PixRowItem({ row }: { row: PixRow }) {
         <CycleBadge cycle={row.client.pix_cycle} />
       </div>
 
+      {/* mensal */}
+      <div className="hidden sm:block text-sm tabular-nums text-muted-foreground shrink-0 min-w-[80px] text-right">
+        {brl(row.client.monthly_budget)}
+      </div>
+
       {/* parcela */}
       <div className="text-sm font-bold text-primary tabular-nums shrink-0 min-w-[80px] text-right">
         {brl(row.parcela)}
@@ -238,9 +243,10 @@ function PixPage() {
         {/* table */}
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           {/* column headers */}
-          <div className="hidden sm:grid grid-cols-[1fr_100px_90px_140px] gap-4 px-5 py-2.5 bg-muted/20 border-b border-border text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+          <div className="hidden sm:grid grid-cols-[1fr_100px_90px_90px_140px] gap-4 px-5 py-2.5 bg-muted/20 border-b border-border text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
             <span>Cliente</span>
             <span className="text-right">Ciclo</span>
+            <span className="text-right">Mensal</span>
             <span className="text-right">Parcela</span>
             <span className="text-right">Próximo PIX</span>
           </div>
