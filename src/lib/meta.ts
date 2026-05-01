@@ -51,6 +51,15 @@ export async function getMetaToken(): Promise<string | null> {
   return token;
 }
 
+export async function getOpenAIKey(): Promise<string | null> {
+  const { data } = await supabase
+    .from("app_config")
+    .select("value")
+    .eq("key", "openai_api_key")
+    .maybeSingle();
+  return data?.value ?? null;
+}
+
 export async function getLastSyncedAt(): Promise<Date | null> {
   const { data } = await supabase
     .from("app_config")

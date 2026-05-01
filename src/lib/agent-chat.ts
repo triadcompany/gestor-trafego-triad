@@ -5,6 +5,7 @@ import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { supabase } from "./supabase";
 import { fetchClients } from "./queries";
+import { getOpenAIKey } from "./meta";
 import { TOOL_DEFINITIONS, WRITE_TOOLS, executeTool, executeConfirmedAction, describeAction, type JsonArgs } from "./agent-tools";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -139,7 +140,7 @@ async function updateConversationTitle(conversationId: string, firstUserMessage:
 export const agentSendMessage = createServerFn({ method: "POST" })
   .inputValidator(sendMessageSchema)
   .handler(async ({ data }): Promise<AgentResponse> => {
-    const openaiKey = process.env["OPENAI_API_KEY"];
+    const openaiKey = await getOpenAIKey();
     if (!openaiKey) return { type: "error", message: "Chave OpenAI não configurada." };
 
     const openai = new OpenAI({ apiKey: openaiKey });
@@ -223,7 +224,7 @@ export const agentSendMessage = createServerFn({ method: "POST" })
 export const agentExecuteAction = createServerFn({ method: "POST" })
   .inputValidator(executeActionSchema)
   .handler(async ({ data }): Promise<AgentResponse> => {
-    const openaiKey = process.env["OPENAI_API_KEY"];
+    const openaiKey = await getOpenAIKey();
     if (!openaiKey) return { type: "error", message: "Chave OpenAI não configurada." };
 
     const openai = new OpenAI({ apiKey: openaiKey });
