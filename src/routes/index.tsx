@@ -62,9 +62,10 @@ function Dashboard() {
     staleTime: 1000 * 60,
   });
 
-  const { data: clients = [], isLoading, isRefetching } = useQuery({
+  const { data: clients = [], isLoading, isFetching } = useQuery({
     queryKey: ["clients-dashboard", period],
     queryFn: () => fetchClients(period),
+    staleTime: 0,
   });
 
   const syncMutation = useMutation({
@@ -140,7 +141,7 @@ function Dashboard() {
                 size="sm"
                 className="gap-2"
                 onClick={() => syncMutation.mutate()}
-                disabled={syncMutation.isPending || isRefetching}
+                disabled={syncMutation.isPending || isFetching}
               >
                 <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
                 <span className="hidden sm:inline">
@@ -161,11 +162,11 @@ function Dashboard() {
 
         {/* Summary */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-          <SummaryCard label="Total" value={clients.length} loading={isLoading} active={filter === "all"} onClick={() => setFilter("all")} />
-          <SummaryCard label="No alvo" value={counts["on-target"]} dotStatus="on-target" loading={isLoading} active={filter === "on-target"} onClick={() => setFilter("on-target")} />
-          <SummaryCard label="Atenção" value={counts.attention} dotStatus="attention" loading={isLoading} active={filter === "attention"} onClick={() => setFilter("attention")} />
-          <SummaryCard label="Crítico" value={counts.critical} dotStatus="critical" loading={isLoading} active={filter === "critical"} onClick={() => setFilter("critical")} />
-          <SummaryCard label="Sem dados" value={counts["no-data"]} dotStatus="no-data" loading={isLoading} active={false} onClick={() => setFilter("all")} />
+          <SummaryCard label="Total" value={clients.length} loading={isFetching} active={filter === "all"} onClick={() => setFilter("all")} />
+          <SummaryCard label="No alvo" value={counts["on-target"]} dotStatus="on-target" loading={isFetching} active={filter === "on-target"} onClick={() => setFilter("on-target")} />
+          <SummaryCard label="Atenção" value={counts.attention} dotStatus="attention" loading={isFetching} active={filter === "attention"} onClick={() => setFilter("attention")} />
+          <SummaryCard label="Crítico" value={counts.critical} dotStatus="critical" loading={isFetching} active={filter === "critical"} onClick={() => setFilter("critical")} />
+          <SummaryCard label="Sem dados" value={counts["no-data"]} dotStatus="no-data" loading={isFetching} active={false} onClick={() => setFilter("all")} />
         </div>
 
         <Tabs value={filter} onValueChange={(v) => setFilter(v as "all" | ClientStatus)} className="mb-5">
@@ -178,7 +179,7 @@ function Dashboard() {
           </TabsList>
         </Tabs>
 
-        {isLoading ? (
+        {isFetching ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-40 rounded-xl" />
