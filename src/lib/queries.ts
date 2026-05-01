@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import type { ClientStatus, PeriodType, ReportStatus, TaskStatus } from "./database.types";
+import { getMetaToken, fetchAccountInsightsForRange } from "./meta";
 
 export type { ClientStatus, PeriodType, ReportStatus };
 
@@ -56,9 +57,20 @@ function computeStatus(
   return "critical";
 }
 
-export type DashboardPeriod = "today" | "yesterday" | "last_7d" | "last_30d" | "this_month";
+export type DashboardPeriod =
+  | "today"
+  | "yesterday"
+  | "last_7d"
+  | "last_30d"
+  | "this_month"
+  | "last_month"
+  | "maximum"
+  | "custom";
 
-function periodDateRange(period: DashboardPeriod): { start: string; end: string } {
+function periodDateRange(
+  period: DashboardPeriod,
+  customRange?: { since: string; until: string },
+): { start: string; end: string } {
   const now = new Date();
   const iso = (d: Date) => d.toISOString().slice(0, 10);
   const today = iso(now);
@@ -69,12 +81,24 @@ function periodDateRange(period: DashboardPeriod): { start: string; end: string 
     case "last_7d":    return { start: daysAgo(6), end: today };
     case "last_30d":   return { start: daysAgo(29), end: today };
     case "this_month": return { start: iso(new Date(now.getFullYear(), now.getMonth(), 1)), end: today };
+    case "last_month": {
+      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const last  = new Date(now.getFullYear(), now.getMonth(), 0);
+      return { start: iso(first), end: iso(last) };
+    }
+    case "maximum":    return { start: "2000-01-01", end: today };
+    case "custom":
+      return customRange
+        ? { start: customRange.since, end: customRange.until }
+        : { start: today, end: today };
   }
 }
 
-export async function fetchClients(period: DashboardPeriod = "today"): Promise<ClientWithToday[]> {
-  const { start, end } = periodDateRange(period);
-  const today = new Date().toISOString().slice(0, 10);
+export async function fetchClients(
+  period: DashboardPeriod = "today",
+  customRange?: { since: string; until: string },
+): Promise<ClientWithToday[]> {
+  const { start, end } = periodDateRange(period, customRange);
 
   const { data: clients, error } = await supabase
     .from("clients")
@@ -83,37 +107,49 @@ export async function fetchClients(period: DashboardPeriod = "today"): Promise<C
     .order("name");
 
   if (error) throw error;
+  const clientRows = clients as ClientRow[];
 
-  type PeriodRow = { client_id: string; spend: number; leads: number; cpl: number | null };
+  // Single-day (today / yesterday): use metrics_daily cache — fast and always fresh from auto-sync
+  if (start === end) {
+    type PeriodRow = { client_id: string; spend: number; leads: number; cpl: number | null };
+    const { data: rows } = await (
+      supabase.from("metrics_daily").select("client_id, spend, leads, cpl").eq("date", start)
+    ) as { data: PeriodRow[] | null };
 
-  const { data: rows } = await (
-    supabase.from("metrics_daily").select("client_id, spend, leads, cpl").gte("date", start).lte("date", end)
-  ) as { data: PeriodRow[] | null };
-
-  // For single-day periods the row already has the CPL; for multi-day aggregate
-  const isSingleDay = start === end;
-  const metricsMap = new Map<string, { spend: number; leads: number; cpl: number | null }>();
-  for (const m of rows ?? []) {
-    if (isSingleDay) {
+    const metricsMap = new Map<string, { spend: number; leads: number; cpl: number | null }>();
+    for (const m of rows ?? []) {
       metricsMap.set(m.client_id, { spend: m.spend, leads: m.leads, cpl: m.cpl });
-    } else {
-      const cur = metricsMap.get(m.client_id) ?? { spend: 0, leads: 0, cpl: null };
-      metricsMap.set(m.client_id, { spend: cur.spend + m.spend, leads: cur.leads + m.leads, cpl: null });
     }
+
+    return clientRows.map((c) => {
+      const agg = metricsMap.get(c.id);
+      const spend = agg?.spend ?? 0;
+      const leads = agg?.leads ?? 0;
+      const cpl = agg?.cpl ?? (leads > 0 ? spend / leads : null);
+      return { ...c, spendToday: spend, leadsToday: leads, cplToday: cpl, status: computeStatus(cpl, spend, c.cpl_max) };
+    });
   }
 
-  return (clients as ClientRow[]).map((c) => {
-    const agg = metricsMap.get(c.id);
-    const spend = agg?.spend ?? 0;
-    const leads = agg?.leads ?? 0;
-    const cpl = isSingleDay ? (agg?.cpl ?? null) : (leads > 0 ? spend / leads : null);
-    return {
-      ...c,
-      spendToday: spend,
-      leadsToday: leads,
-      cplToday: cpl,
-      status: computeStatus(cpl, spend, c.cpl_max),
-    };
+  // Multi-day: fetch aggregated totals directly from Meta API (metrics_daily only has current-day data)
+  const token = await getMetaToken();
+
+  if (!token) {
+    // No token configured — return clients with no data
+    return clientRows.map((c) => ({ ...c, spendToday: 0, leadsToday: 0, cplToday: null, status: "no-data" as ClientStatus }));
+  }
+
+  const results = await Promise.allSettled(
+    clientRows.map((c) => fetchAccountInsightsForRange(c.meta_ad_account_id, token, start, end))
+  );
+
+  return clientRows.map((c, i) => {
+    const result = results[i];
+    if (result.status === "rejected") {
+      return { ...c, spendToday: 0, leadsToday: 0, cplToday: null, status: "no-data" as ClientStatus };
+    }
+    const { spend, leads } = result.value;
+    const cpl = leads > 0 ? spend / leads : null;
+    return { ...c, spendToday: spend, leadsToday: leads, cplToday: cpl, status: computeStatus(cpl, spend, c.cpl_max) };
   });
 }
 
@@ -492,18 +528,10 @@ export interface TaskRow {
   created_at: string;
 }
 
-export async function fetchTasks(): Promise<TaskRow[]> {
-  const { data, error } = await supabase
-    .from("tasks")
-    .select(`
-      id, title, status, due_date, client_id, assigned_to, created_by, created_at,
-      clients:client_id (name),
-      assignee:assigned_to (full_name)
-    `)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
+const TASK_SELECT = `id, title, status, due_date, client_id, assigned_to, created_by, created_at, clients:client_id (name), assignee:assigned_to (full_name)`;
 
-  return ((data ?? []) as any[]).map((r) => ({
+function mapTask(r: any): TaskRow {
+  return {
     id: r.id,
     title: r.title,
     status: r.status as TaskStatus,
@@ -514,7 +542,26 @@ export async function fetchTasks(): Promise<TaskRow[]> {
     assignee_name: r.assignee?.full_name ?? null,
     created_by: r.created_by,
     created_at: r.created_at,
-  }));
+  };
+}
+
+export async function fetchTasks(): Promise<TaskRow[]> {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select(TASK_SELECT)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return ((data ?? []) as any[]).map(mapTask);
+}
+
+export async function fetchTasksByClient(clientId: string): Promise<TaskRow[]> {
+  const { data, error } = await supabase
+    .from("tasks")
+    .select(TASK_SELECT)
+    .eq("client_id", clientId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return ((data ?? []) as any[]).map(mapTask);
 }
 
 export async function createTask(fields: {

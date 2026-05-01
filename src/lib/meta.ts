@@ -204,6 +204,43 @@ export async function syncClientMetrics(
   return { spend, leads };
 }
 
+export async function fetchAccountInsightsForRange(
+  adAccountId: string,
+  token: string,
+  since: string,
+  until: string,
+): Promise<{ spend: number; leads: number }> {
+  const params = new URLSearchParams({
+    fields: "spend,actions",
+    time_range: JSON.stringify({ since, until }),
+    level: "account",
+    access_token: token,
+  });
+
+  const res = await fetch(`${BASE_URL}/${adAccountId}/insights?${params}`);
+  const json = await res.json() as {
+    data?: Array<{
+      spend?: string;
+      actions?: Array<{ action_type: string; value: string }>;
+    }>;
+    error?: { message: string };
+  };
+
+  if (json.error) return { spend: 0, leads: 0 };
+
+  const row = json.data?.[0];
+  const spend = parseFloat(row?.spend ?? "0");
+  const leadsAction = row?.actions?.find(
+    (a) =>
+      a.action_type === "onsite_conversion.total_messaging_connection" ||
+      a.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
+      a.action_type === "messaging_first_reply"
+  );
+  const leads = leadsAction ? parseInt(leadsAction.value, 10) : 0;
+
+  return { spend, leads };
+}
+
 export async function syncAllClients(token: string): Promise<MetaSyncResult> {
   const { data: clients } = await supabase
     .from("clients")

@@ -38,9 +38,10 @@ import {
   ResponsiveContainer,
   ReferenceArea,
 } from "recharts";
-import { fetchClientDetail, updateClientGoal, updateClientPix, fetchNotes, createNote, updateNote, deleteNote } from "@/lib/queries";
+import { fetchClientDetail, updateClientGoal, updateClientPix, fetchNotes, createNote, updateNote, deleteNote, fetchTasksByClient, createTask, updateTask, deleteTask, type TaskRow } from "@/lib/queries";
 import { NoteCard } from "@/components/NoteCard";
 import { NoteComposer } from "@/components/NoteComposer";
+import type { TaskStatus } from "@/lib/database.types";
 import { CampaignSheet } from "@/components/CampaignSheet";
 import {
   fetchCampaigns,
@@ -310,10 +311,10 @@ function ClientDetail() {
                     min={0}
                     step={0.5}
                   />
-                  <Button size="icon" variant="ghost" onClick={() => goalMutation.mutate()} disabled={goalMutation.isPending}>
+                  <Button size="icon" variant="ghost" aria-label="Salvar meta" onClick={() => goalMutation.mutate()} disabled={goalMutation.isPending}>
                     <Check className="h-4 w-4" />
                   </Button>
-                  <Button size="icon" variant="ghost" onClick={() => { setEditingGoal(false); setCplMin(null); setCplMax(null); }}>
+                  <Button size="icon" variant="ghost" aria-label="Cancelar" onClick={() => { setEditingGoal(false); setCplMin(null); setCplMax(null); }}>
                     <X className="h-4 w-4" />
                   </Button>
                 </div>
@@ -324,7 +325,7 @@ function ClientDetail() {
                   </span>
                   <UITooltip>
                     <TooltipTrigger asChild>
-                      <Button size="icon" variant="ghost" onClick={() => setEditingGoal(true)}>
+                      <Button size="icon" variant="ghost" aria-label="Editar meta de CPL" onClick={() => setEditingGoal(true)}>
                         <Pencil className="h-4 w-4" />
                       </Button>
                     </TooltipTrigger>
@@ -441,10 +442,10 @@ function ClientDetail() {
           <CampaignsTotals campaigns={campaigns} cplMax={client.cpl_max} />
         )}
 
-        <Card className="overflow-hidden">
-          <div className="overflow-x-auto">
+        <Card className="overflow-hidden mb-8">
+          <div className="overflow-x-auto overflow-y-auto max-h-[480px]">
             <Table>
-              <TableHeader>
+              <TableHeader className="sticky top-0 bg-card z-10">
                 <TableRow>
                   <TableHead>Campanha</TableHead>
                   <TableHead>Status</TableHead>
@@ -485,6 +486,15 @@ function ClientDetail() {
             </Table>
           </div>
         </Card>
+
+        {/* Tarefas + Anotações lado a lado */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+          <ClientTasks clientId={id} />
+          <ClientNotes clientId={id} clientName={client.name} />
+        </div>
+
+        {/* PIX */}
+        <ClientPixSettings client={client} />
       </div>
 
       <CampaignSheet
@@ -495,9 +505,6 @@ function ClientDetail() {
         open={sheetOpen}
         onOpenChange={setSheetOpen}
       />
-
-      <ClientPixSettings client={client} />
-      <ClientNotes clientId={id} clientName={client.name} />
     </AppShell>
   );
 }
@@ -527,16 +534,18 @@ function ClientPixSettings({ client }: { client: import("@/lib/queries").ClientD
   const maxRefDay = cycle === "semanal" ? 7 : cycle === "quinzenal" ? 16 : 28;
 
   return (
-    <div className="px-4 md:px-8 pb-0 max-w-4xl mx-auto">
-      <div className="border-t border-border pt-6 pb-6">
+    <div className="border-t border-border pt-6 pb-8">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Cobrança PIX</h2>
+          <h2 className="text-base font-semibold">Cobrança PIX</h2>
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">{active ? "Ativo" : "Inativo"}</span>
             <button
               type="button"
+              role="switch"
+              aria-checked={active}
+              aria-label="Ativar cobrança PIX"
               onClick={() => setActive((v) => !v)}
-              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:outline-none ${active ? "bg-primary" : "bg-muted"}`}
+              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none ${active ? "bg-primary" : "bg-muted"}`}
             >
               <span
                 className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${active ? "translate-x-4" : "translate-x-0"}`}
@@ -635,6 +644,151 @@ function ClientPixSettings({ client }: { client: import("@/lib/queries").ClientD
           <span className="ml-3 text-xs text-green-500">Salvo!</span>
         )}
       </div>
+  );
+}
+
+const TASK_STATUS_CONFIG: Record<TaskStatus, { label: string; next: TaskStatus; classes: string }> = {
+  pendente:     { label: "Pendente",    next: "em_andamento", classes: "bg-muted text-muted-foreground hover:bg-yellow-500/20 hover:text-yellow-400" },
+  em_andamento: { label: "Em andamento", next: "concluida",   classes: "bg-yellow-500/15 text-yellow-400 hover:bg-green-500/20 hover:text-green-400" },
+  concluida:    { label: "Concluída",   next: "pendente",     classes: "bg-green-500/15 text-green-400 hover:bg-muted hover:text-muted-foreground" },
+};
+
+function ClientTasks({ clientId }: { clientId: string }) {
+  const qc = useQueryClient();
+  const [adding, setAdding] = useState(false);
+  const [newTitle, setNewTitle] = useState("");
+
+  const { data: tasks = [], isLoading } = useQuery({
+    queryKey: ["tasks", "client", clientId],
+    queryFn: () => fetchTasksByClient(clientId),
+  });
+
+  const createMutation = useMutation({
+    mutationFn: (title: string) => createTask({ title, status: "pendente", client_id: clientId }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks", "client", clientId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      setNewTitle("");
+      setAdding(false);
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: TaskStatus }) => updateTask(id, { status }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks", "client", clientId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteTask,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["tasks", "client", clientId] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+    },
+  });
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" && newTitle.trim()) createMutation.mutate(newTitle.trim());
+    if (e.key === "Escape") { setAdding(false); setNewTitle(""); }
+  };
+
+  const pending = tasks.filter((t) => t.status === "pendente");
+  const inProgress = tasks.filter((t) => t.status === "em_andamento");
+  const done = tasks.filter((t) => t.status === "concluida");
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold">Tarefas</h2>
+          {tasks.length > 0 && (
+            <span className="text-xs bg-muted text-muted-foreground rounded-full px-2 py-0.5 tabular-nums">
+              {tasks.filter((t) => t.status !== "concluida").length} abertas
+            </span>
+          )}
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          className="gap-1.5 h-8 text-xs"
+          onClick={() => { setAdding(true); }}
+          aria-label="Nova tarefa"
+        >
+          <Plus className="h-3 w-3" />
+          Nova
+        </Button>
+      </div>
+
+      {adding && (
+        <div className="flex gap-2 mb-3">
+          <Input
+            autoFocus
+            placeholder="Título da tarefa…"
+            value={newTitle}
+            onChange={(e) => setNewTitle(e.target.value)}
+            onKeyDown={handleKeyDown}
+            className="h-8 text-sm"
+          />
+          <Button
+            size="sm"
+            className="h-8 px-3"
+            disabled={!newTitle.trim() || createMutation.isPending}
+            onClick={() => newTitle.trim() && createMutation.mutate(newTitle.trim())}
+          >
+            <Check className="h-3.5 w-3.5" />
+          </Button>
+          <Button size="sm" variant="ghost" className="h-8 px-2" onClick={() => { setAdding(false); setNewTitle(""); }}>
+            <X className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex flex-col gap-2">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-9 w-full rounded-lg" />
+          ))}
+        </div>
+      ) : tasks.length === 0 && !adding ? (
+        <p className="text-sm text-muted-foreground py-6 text-center">Nenhuma tarefa.</p>
+      ) : (
+        <div className="flex flex-col gap-1">
+          {[...pending, ...inProgress, ...done].map((task) => {
+            const cfg = TASK_STATUS_CONFIG[task.status];
+            return (
+              <div
+                key={task.id}
+                className="group flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-muted/40 transition-colors"
+              >
+                <button
+                  aria-label={`Status: ${cfg.label}. Clique para avançar`}
+                  onClick={() => updateMutation.mutate({ id: task.id, status: cfg.next })}
+                  className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border border-transparent transition-colors ${cfg.classes}`}
+                >
+                  {cfg.label}
+                </button>
+                <span className={`flex-1 text-sm leading-snug ${task.status === "concluida" ? "line-through text-muted-foreground" : ""}`}>
+                  {task.title}
+                </span>
+                {task.due_date && (
+                  <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
+                    {new Date(task.due_date + "T00:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
+                  </span>
+                )}
+                <button
+                  aria-label="Excluir tarefa"
+                  onClick={() => deleteMutation.mutate(task.id)}
+                  className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-destructive"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
@@ -676,48 +830,46 @@ function ClientNotes({ clientId, clientName }: { clientId: string; clientName: s
   const fakeClient = [{ id: clientId, name: clientName } as any];
 
   return (
-    <div className="px-4 md:px-8 pb-8 max-w-4xl mx-auto">
-      <div className="border-t border-border pt-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Anotações</h2>
-          <Button size="sm" variant="outline" onClick={() => setShowComposer((v) => !v)} className="gap-2">
-            <Plus className="h-3.5 w-3.5" />
-            Nova anotação
-          </Button>
-        </div>
-
-        {showComposer && (
-          <div className="mb-4">
-            <NoteComposer
-              clients={fakeClient}
-              fixedClientId={clientId}
-              onSave={async (payload) => { await createNoteMutation.mutateAsync(payload); }}
-              onCancel={() => setShowComposer(false)}
-            />
-          </div>
-        )}
-
-        {isLoading ? (
-          <div className="flex flex-col gap-3">
-            {Array.from({ length: 2 }).map((_, i) => (
-              <div key={i} className="rounded-xl border border-border bg-card h-20 animate-pulse" />
-            ))}
-          </div>
-        ) : notes.length === 0 && !showComposer ? (
-          <p className="text-sm text-muted-foreground py-4">Nenhuma anotação para este cliente.</p>
-        ) : (
-          <div className="flex flex-col gap-3">
-            {notes.map((note) => (
-              <NoteCard
-                key={note.id}
-                note={note}
-                onUpdate={async (id, content) => { await updateNoteMutation.mutateAsync({ id, content }); }}
-                onDelete={(id) => deleteNoteMutation.mutate(id)}
-              />
-            ))}
-          </div>
-        )}
+    <div className="rounded-xl border border-border bg-card p-4">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-base font-semibold">Anotações</h2>
+        <Button size="sm" variant="outline" onClick={() => setShowComposer((v) => !v)} className="gap-1.5 h-8 text-xs">
+          <Plus className="h-3 w-3" />
+          Nova
+        </Button>
       </div>
+
+      {showComposer && (
+        <div className="mb-4">
+          <NoteComposer
+            clients={fakeClient}
+            fixedClientId={clientId}
+            onSave={async (payload) => { await createNoteMutation.mutateAsync(payload); }}
+            onCancel={() => setShowComposer(false)}
+          />
+        </div>
+      )}
+
+      {isLoading ? (
+        <div className="flex flex-col gap-3">
+          {Array.from({ length: 2 }).map((_, i) => (
+            <div key={i} className="rounded-lg border border-border bg-muted/30 h-16 animate-pulse" />
+          ))}
+        </div>
+      ) : notes.length === 0 && !showComposer ? (
+        <p className="text-sm text-muted-foreground py-6 text-center">Nenhuma anotação.</p>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {notes.map((note) => (
+            <NoteCard
+              key={note.id}
+              note={note}
+              onUpdate={async (id, content) => { await updateNoteMutation.mutateAsync({ id, content }); }}
+              onDelete={(id) => deleteNoteMutation.mutate(id)}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

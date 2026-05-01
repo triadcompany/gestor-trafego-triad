@@ -26,7 +26,9 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreHorizontal, Pencil, Trash2 } from "lucide-react";
+import { Plus, Search, MoreHorizontal, Pencil, Trash2, ChevronsUpDown, Check as CheckIcon } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
 import { NoteCard } from "@/components/NoteCard";
 import { NoteComposer } from "@/components/NoteComposer";
@@ -482,6 +484,7 @@ function TaskDialog({
   const [dueDate, setDueDate] = useState(editing?.due_date ?? "");
   const [clientId, setClientId] = useState(editing?.client_id ?? "");
   const [assignedTo, setAssignedTo] = useState(editing?.assigned_to ?? "");
+  const [clientPopoverOpen, setClientPopoverOpen] = useState(false);
 
   // Sync when editing changes
   useMemo(() => {
@@ -543,15 +546,45 @@ function TaskDialog({
           </div>
           <div className="space-y-1">
             <Label>Cliente (opcional)</Label>
-            <Select value={clientId || "none"} onValueChange={(v) => setClientId(v === "none" ? "" : v)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Nenhum</SelectItem>
-                {clients.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={clientPopoverOpen} onOpenChange={setClientPopoverOpen}>
+              <PopoverTrigger asChild>
+                <button
+                  type="button"
+                  role="combobox"
+                  aria-expanded={clientPopoverOpen}
+                  className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <span className={clientId ? "" : "text-muted-foreground"}>
+                    {clientId ? clients.find((c) => c.id === clientId)?.name : "Nenhum"}
+                  </span>
+                  <ChevronsUpDown className="h-4 w-4 shrink-0 opacity-50" />
+                </button>
+              </PopoverTrigger>
+              <PopoverContent className="w-full p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Buscar cliente..." />
+                  <CommandList>
+                    <CommandEmpty>Nenhum cliente encontrado.</CommandEmpty>
+                    <CommandGroup>
+                      <CommandItem value="none" onSelect={() => { setClientId(""); setClientPopoverOpen(false); }}>
+                        <CheckIcon className={`mr-2 h-4 w-4 ${!clientId ? "opacity-100" : "opacity-0"}`} />
+                        Nenhum
+                      </CommandItem>
+                      {clients.map((c) => (
+                        <CommandItem
+                          key={c.id}
+                          value={c.name}
+                          onSelect={() => { setClientId(c.id); setClientPopoverOpen(false); }}
+                        >
+                          <CheckIcon className={`mr-2 h-4 w-4 ${clientId === c.id ? "opacity-100" : "opacity-0"}`} />
+                          {c.name}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
           </div>
           {profiles.length > 0 && (
             <div className="space-y-1">

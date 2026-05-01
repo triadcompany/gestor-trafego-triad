@@ -6,10 +6,10 @@ import { StatusDot } from "@/components/StatusDot";
 import { TokenExpiryBanner } from "@/components/TokenExpiryBanner";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RefreshCw } from "lucide-react";
+import { RefreshCw, CalendarRange } from "lucide-react";
+import { Input } from "@/components/ui/input";
 import { fetchClients, type ClientStatus, type DashboardPeriod } from "@/lib/queries";
 import { brl } from "@/lib/mock-data";
 import { triggerMetaSync } from "@/server/meta-sync";
@@ -25,20 +25,15 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-const filters: ("all" | ClientStatus)[] = ["all", "on-target", "attention", "critical"];
-const filterLabels: Record<string, string> = {
-  all: "Todos",
-  "on-target": "No alvo",
-  attention: "Atenção",
-  critical: "Crítico",
-};
-
 const periodOptions: { value: DashboardPeriod; label: string }[] = [
   { value: "today",      label: "Hoje" },
   { value: "yesterday",  label: "Ontem" },
   { value: "last_7d",    label: "7 dias" },
   { value: "last_30d",   label: "30 dias" },
   { value: "this_month", label: "Mês" },
+  { value: "last_month", label: "Mês passado" },
+  { value: "maximum",    label: "Máximo" },
+  { value: "custom",     label: "Período" },
 ];
 
 const cplLabel: Record<DashboardPeriod, string> = {
@@ -47,14 +42,42 @@ const cplLabel: Record<DashboardPeriod, string> = {
   last_7d:    "CPL 7d",
   last_30d:   "CPL 30d",
   this_month: "CPL mês",
+  last_month: "CPL mês ant.",
+  maximum:    "CPL total",
+  custom:     "CPL período",
 };
 
+const STATUS_META: Record<ClientStatus, { label: string; accent: string }> = {
+  "on-target": { label: "No alvo",   accent: "bg-green-500" },
+  attention:   { label: "Atenção",   accent: "bg-yellow-500" },
+  critical:    { label: "Crítico",   accent: "bg-red-500" },
+  "no-data":   { label: "Sem dados", accent: "bg-border" },
+};
+
+function cplStatusClass(cpl: number | null, cplMax: number): string {
+  if (cpl === null) return "";
+  if (cpl <= cplMax) return "text-green-500";
+  if (cpl <= cplMax * 1.3) return "text-yellow-500";
+  return "text-red-500";
+}
+
 function Dashboard() {
-  const [filter, setFilter] = useState<"all" | ClientStatus>("all");
   const [period, setPeriod] = useState<DashboardPeriod>("today");
+  const [filter, setFilter] = useState<"all" | ClientStatus>("all");
+  const [customSince, setCustomSince] = useState("");
+  const [customUntil, setCustomUntil] = useState("");
   const queryClient = useQueryClient();
 
   useAutoSync();
+
+  const toggleFilter = (f: ClientStatus) =>
+    setFilter((prev) => (prev === f ? "all" : f));
+
+  const customRange =
+    period === "custom" && customSince && customUntil
+      ? { since: customSince, until: customUntil }
+      : undefined;
+  const customReady = period !== "custom" || !!customRange;
 
   const { data: lastSyncedAt } = useQuery({
     queryKey: ["last-synced-at"],
@@ -62,10 +85,11 @@ function Dashboard() {
     staleTime: 1000 * 60,
   });
 
-  const { data: clients = [], isLoading, isFetching } = useQuery({
-    queryKey: ["clients-dashboard", period],
-    queryFn: () => fetchClients(period),
+  const { data: clients = [], isFetching } = useQuery({
+    queryKey: ["clients-dashboard", period, customSince, customUntil],
+    queryFn: () => fetchClients(period, customRange),
     staleTime: 0,
+    enabled: customReady,
   });
 
   const syncMutation = useMutation({
@@ -97,55 +121,87 @@ function Dashboard() {
 
   const [today, setToday] = useState<string>("");
   useEffect(() => {
-    setToday(
-      new Date().toLocaleDateString("pt-BR", {
-        weekday: "long",
-        day: "2-digit",
-        month: "long",
-      })
-    );
+    const raw = new Date().toLocaleDateString("pt-BR", {
+      weekday: "long",
+      day: "2-digit",
+      month: "long",
+    });
+    setToday(raw.charAt(0).toUpperCase() + raw.slice(1));
   }, []);
-
-  const handleRefresh = () => {
-    queryClient.invalidateQueries({ queryKey: ["clients-dashboard"] });
-  };
 
   return (
     <AppShell>
       <TokenExpiryBanner />
       <div className="px-4 md:px-8 py-6 max-w-7xl mx-auto">
+
+        {/* Header */}
         <div className="flex items-center justify-between gap-4 mb-6">
           <div>
             <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Dashboard</h1>
-            <p className="text-sm text-muted-foreground capitalize">{today}</p>
+            <p className="text-sm text-muted-foreground">{today}</p>
           </div>
+
           <div className="flex items-center gap-3">
-            <div className="flex rounded-md border border-border overflow-hidden text-xs">
-              {periodOptions.map((opt) => (
-                <button
-                  key={opt.value}
-                  onClick={() => setPeriod(opt.value)}
-                  className={`px-3 py-1.5 transition-colors ${
-                    period === opt.value
-                      ? "bg-primary text-primary-foreground font-medium"
-                      : "text-muted-foreground hover:bg-muted"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            {/* Period selector */}
+            <div className="flex flex-col items-end gap-1.5">
+              <div
+                role="group"
+                aria-label="Selecionar período"
+                className="flex flex-wrap rounded-md border border-border overflow-hidden text-xs"
+              >
+                {periodOptions.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => setPeriod(opt.value)}
+                    aria-pressed={period === opt.value}
+                    className={`flex items-center gap-1 px-3 py-1.5 touch-manipulation transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                      period === opt.value
+                        ? "bg-primary text-primary-foreground font-medium"
+                        : "text-muted-foreground hover:bg-muted"
+                    }`}
+                  >
+                    {opt.value === "custom" && <CalendarRange className="h-3 w-3" />}
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Inputs de data para período personalizado */}
+              {period === "custom" && (
+                <div className="flex items-center gap-1.5 text-xs">
+                  <Input
+                    type="date"
+                    aria-label="Data inicial"
+                    value={customSince}
+                    onChange={(e) => setCustomSince(e.target.value)}
+                    className="h-7 w-32 text-xs px-2"
+                  />
+                  <span className="text-muted-foreground">–</span>
+                  <Input
+                    type="date"
+                    aria-label="Data final"
+                    value={customUntil}
+                    onChange={(e) => setCustomUntil(e.target.value)}
+                    className="h-7 w-32 text-xs px-2"
+                  />
+                </div>
+              )}
             </div>
+
+            {/* Sync button */}
             <div className="flex flex-col items-end gap-0.5">
               <Button
                 variant="outline"
                 size="sm"
                 className="gap-2"
+                aria-label={syncMutation.isPending ? "Sincronizando dados" : "Sincronizar dados"}
                 onClick={() => syncMutation.mutate()}
                 disabled={syncMutation.isPending || isFetching}
               >
-                <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+                <RefreshCw className={`h-4 w-4 ${syncMutation.isPending ? "motion-safe:animate-spin" : ""}`} />
                 <span className="hidden sm:inline">
-                  {syncMutation.isPending ? "Sincronizando..." : "Atualizar"}
+                  {syncMutation.isPending ? "Sincronizando…" : "Atualizar"}
                 </span>
               </Button>
               {lastSyncedAt && (
@@ -154,58 +210,106 @@ function Dashboard() {
                 </span>
               )}
             </div>
+
             <Avatar className="h-9 w-9">
               <AvatarFallback className="bg-primary/20 text-primary text-sm">GT</AvatarFallback>
             </Avatar>
           </div>
         </div>
 
-        {/* Summary */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
-          <SummaryCard label="Total" value={clients.length} loading={isFetching} active={filter === "all"} onClick={() => setFilter("all")} />
-          <SummaryCard label="No alvo" value={counts["on-target"]} dotStatus="on-target" loading={isFetching} active={filter === "on-target"} onClick={() => setFilter("on-target")} />
-          <SummaryCard label="Atenção" value={counts.attention} dotStatus="attention" loading={isFetching} active={filter === "attention"} onClick={() => setFilter("attention")} />
-          <SummaryCard label="Crítico" value={counts.critical} dotStatus="critical" loading={isFetching} active={filter === "critical"} onClick={() => setFilter("critical")} />
-          <SummaryCard label="Sem dados" value={counts["no-data"]} dotStatus="no-data" loading={isFetching} active={false} onClick={() => setFilter("all")} />
+        {/* Summary cards — também atuam como filtros */}
+        <div
+          role="group"
+          aria-label="Filtrar clientes por status"
+          className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6"
+        >
+          <SummaryCard
+            label="Total"
+            value={clients.length}
+            loading={isFetching}
+            active={filter === "all"}
+            onClick={() => setFilter("all")}
+          />
+          {(["on-target", "attention", "critical", "no-data"] as ClientStatus[]).map((s) => (
+            <SummaryCard
+              key={s}
+              label={STATUS_META[s].label}
+              value={counts[s]}
+              dotStatus={s}
+              loading={isFetching}
+              active={filter === s}
+              onClick={() => toggleFilter(s)}
+            />
+          ))}
         </div>
 
-        <Tabs value={filter} onValueChange={(v) => setFilter(v as "all" | ClientStatus)} className="mb-5">
-          <TabsList>
-            {filters.map((f) => (
-              <TabsTrigger key={f} value={f}>
-                {filterLabels[f]}
-              </TabsTrigger>
-            ))}
-          </TabsList>
-        </Tabs>
-
+        {/* Client grid */}
         {isFetching ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-40 rounded-xl" />
+            {Array.from({ length: 8 }).map((_, i) => (
+              <div key={i} className="rounded-xl border border-border p-4 space-y-3">
+                <div className="flex items-start justify-between gap-2">
+                  <Skeleton className="h-4 w-28 rounded" />
+                  <Skeleton className="h-3 w-3 rounded-full shrink-0" />
+                </div>
+                <div>
+                  <Skeleton className="h-3 w-16 mb-2 rounded" />
+                  <Skeleton className="h-7 w-24 rounded" />
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Skeleton className="h-3 w-10 rounded" />
+                    <Skeleton className="h-4 w-14 rounded" />
+                  </div>
+                  <div className="space-y-1">
+                    <Skeleton className="h-3 w-10 rounded" />
+                    <Skeleton className="h-4 w-8 rounded" />
+                  </div>
+                </div>
+                <Skeleton className="h-3 w-32 rounded" />
+              </div>
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="text-center py-16 text-muted-foreground">
-            {clients.length === 0
-              ? "Nenhum cliente cadastrado ainda."
-              : "Nenhum cliente nesse status."}
+          <div className="text-center py-20 text-muted-foreground">
+            <p className="text-sm">
+              {clients.length === 0
+                ? "Nenhum cliente cadastrado ainda."
+                : "Nenhum cliente com esse status."}
+            </p>
+            {filter !== "all" && (
+              <button
+                type="button"
+                onClick={() => setFilter("all")}
+                className="mt-2 text-xs text-primary underline underline-offset-2 hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded"
+              >
+                Ver todos os clientes
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {filtered.map((c) => (
-              <Link key={c.id} to="/clients/$id" params={{ id: c.id }} className="block group">
-                <Card className="p-4 h-full transition-all hover:border-primary/50 hover:shadow-lg cursor-pointer">
+              <Link
+                key={c.id}
+                to="/clients/$id"
+                params={{ id: c.id }}
+                className="block group rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <Card className="p-4 h-full transition-all group-hover:border-primary/50 group-hover:shadow-md cursor-pointer overflow-hidden relative">
+                  {/* Barra de status no topo */}
+                  <div className={`absolute inset-x-0 top-0 h-0.5 ${STATUS_META[c.status].accent}`} />
+
                   <div className="flex items-start justify-between gap-2 mb-3">
-                    <h3 className="font-semibold text-sm leading-tight group-hover:text-primary transition-colors">
+                    <h3 className="font-semibold text-sm leading-tight line-clamp-2 group-hover:text-primary transition-colors">
                       {c.name}
                     </h3>
-                    <StatusDot status={c.status} className="mt-1 shrink-0" />
+                    <StatusDot status={c.status} className="mt-0.5 shrink-0" />
                   </div>
 
                   <div className="mb-3">
                     <div className="text-xs text-muted-foreground mb-1">{cplLabel[period]}</div>
-                    <div className="text-2xl font-bold tabular-nums">
+                    <div className={`text-2xl font-bold tabular-nums ${cplStatusClass(c.cplToday, c.cpl_max)}`}>
                       {c.cplToday !== null ? brl(c.cplToday) : "—"}
                     </div>
                   </div>
@@ -221,8 +325,8 @@ function Dashboard() {
                     </div>
                   </div>
 
-                  <div className="text-xs text-muted-foreground pt-2 border-t border-border">
-                    Meta: {brl(c.cpl_min)} – {brl(c.cpl_max)}
+                  <div className="text-xs text-muted-foreground pt-2 border-t border-border tabular-nums">
+                    Meta: {brl(c.cpl_min)}{" – "}{brl(c.cpl_max)}
                   </div>
                 </Card>
               </Link>
@@ -251,12 +355,21 @@ function SummaryCard({
 }) {
   return (
     <Card
-      className={`p-3 cursor-pointer transition-all select-none ${
+      role="button"
+      tabIndex={0}
+      aria-pressed={active}
+      className={`p-3 cursor-pointer transition-all select-none touch-manipulation focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${
         active
           ? "ring-2 ring-primary border-primary/50"
           : "hover:border-primary/30 hover:shadow-sm"
       }`}
       onClick={onClick}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
     >
       <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
         {dotStatus && <StatusDot status={dotStatus} />}
@@ -265,7 +378,9 @@ function SummaryCard({
       {loading ? (
         <Skeleton className="h-8 w-10" />
       ) : (
-        <div className={`text-2xl font-semibold tabular-nums ${active ? "text-primary" : ""}`}>{value}</div>
+        <div className={`text-2xl font-semibold tabular-nums ${active ? "text-primary" : ""}`}>
+          {value}
+        </div>
       )}
     </Card>
   );

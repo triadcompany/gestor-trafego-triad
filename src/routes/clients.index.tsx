@@ -114,6 +114,15 @@ function ClientsList() {
           </Dialog>
         </div>
 
+        <div className="flex gap-4 mb-4 text-sm text-muted-foreground">
+          <span>
+            <strong className="text-foreground tabular-nums">{clients.length}</strong> cadastrados
+          </span>
+          <span>
+            <strong className="text-foreground tabular-nums">{clients.filter((c) => c.active).length}</strong> ativos
+          </span>
+        </div>
+
         <div className="relative mb-4">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -345,6 +354,18 @@ function ClientFormDialog({
             />
           </div>
         </div>
+        <div className="space-y-1">
+          <Label>Orçamento mensal (R$)</Label>
+          <Input
+            type="number"
+            min={0}
+            step={50}
+            value={monthlyBudget}
+            onChange={(e) => setMonthlyBudget(e.target.value)}
+            placeholder="Ex: 2000"
+          />
+        </div>
+
         {/* PIX */}
         <div className="space-y-3 rounded-lg border border-border p-3">
           <div className="flex items-center justify-between">
@@ -360,17 +381,6 @@ function ClientFormDialog({
 
           {pixActive && (
             <>
-              <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">Investimento mensal (R$)</Label>
-                <Input
-                  type="number"
-                  min={0}
-                  step={50}
-                  value={monthlyBudget}
-                  onChange={(e) => setMonthlyBudget(e.target.value)}
-                  placeholder="Ex: 2000"
-                />
-              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
                   <Label className="text-xs text-muted-foreground">Ciclo</Label>
