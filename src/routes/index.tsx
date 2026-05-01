@@ -10,7 +10,7 @@ import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
 import { RefreshCw } from "lucide-react";
-import { fetchClients, type ClientStatus } from "@/lib/queries";
+import { fetchClients, type ClientStatus, type DashboardPeriod } from "@/lib/queries";
 import { brl } from "@/lib/mock-data";
 import { triggerMetaSync } from "@/server/meta-sync";
 import { getLastSyncedAt } from "@/lib/meta";
@@ -33,8 +33,25 @@ const filterLabels: Record<string, string> = {
   critical: "Crítico",
 };
 
+const periodOptions: { value: DashboardPeriod; label: string }[] = [
+  { value: "today",      label: "Hoje" },
+  { value: "yesterday",  label: "Ontem" },
+  { value: "last_7d",    label: "7 dias" },
+  { value: "last_30d",   label: "30 dias" },
+  { value: "this_month", label: "Mês" },
+];
+
+const cplLabel: Record<DashboardPeriod, string> = {
+  today:      "CPL hoje",
+  yesterday:  "CPL ontem",
+  last_7d:    "CPL 7d",
+  last_30d:   "CPL 30d",
+  this_month: "CPL mês",
+};
+
 function Dashboard() {
   const [filter, setFilter] = useState<"all" | ClientStatus>("all");
+  const [period, setPeriod] = useState<DashboardPeriod>("today");
   const queryClient = useQueryClient();
 
   useAutoSync();
@@ -46,8 +63,8 @@ function Dashboard() {
   });
 
   const { data: clients = [], isLoading, isRefetching } = useQuery({
-    queryKey: ["clients-dashboard"],
-    queryFn: fetchClients,
+    queryKey: ["clients-dashboard", period],
+    queryFn: () => fetchClients(period),
   });
 
   const syncMutation = useMutation({
@@ -102,6 +119,21 @@ function Dashboard() {
             <p className="text-sm text-muted-foreground capitalize">{today}</p>
           </div>
           <div className="flex items-center gap-3">
+            <div className="flex rounded-md border border-border overflow-hidden text-xs">
+              {periodOptions.map((opt) => (
+                <button
+                  key={opt.value}
+                  onClick={() => setPeriod(opt.value)}
+                  className={`px-3 py-1.5 transition-colors ${
+                    period === opt.value
+                      ? "bg-primary text-primary-foreground font-medium"
+                      : "text-muted-foreground hover:bg-muted"
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
             <div className="flex flex-col items-end gap-0.5">
               <Button
                 variant="outline"
@@ -171,7 +203,7 @@ function Dashboard() {
                   </div>
 
                   <div className="mb-3">
-                    <div className="text-xs text-muted-foreground mb-1">CPL hoje</div>
+                    <div className="text-xs text-muted-foreground mb-1">{cplLabel[period]}</div>
                     <div className="text-2xl font-bold tabular-nums">
                       {c.cplToday !== null ? brl(c.cplToday) : "—"}
                     </div>

@@ -56,7 +56,24 @@ function computeStatus(
   return "critical";
 }
 
-export async function fetchClients(): Promise<ClientWithToday[]> {
+export type DashboardPeriod = "today" | "yesterday" | "last_7d" | "last_30d" | "this_month";
+
+function periodDateRange(period: DashboardPeriod): { start: string; end: string } {
+  const now = new Date();
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const today = iso(now);
+  const daysAgo = (n: number) => iso(new Date(Date.now() - n * 86400000));
+  switch (period) {
+    case "today":      return { start: today, end: today };
+    case "yesterday":  return { start: daysAgo(1), end: daysAgo(1) };
+    case "last_7d":    return { start: daysAgo(6), end: today };
+    case "last_30d":   return { start: daysAgo(29), end: today };
+    case "this_month": return { start: iso(new Date(now.getFullYear(), now.getMonth(), 1)), end: today };
+  }
+}
+
+export async function fetchClients(period: DashboardPeriod = "today"): Promise<ClientWithToday[]> {
+  const { start, end } = periodDateRange(period);
   const today = new Date().toISOString().slice(0, 10);
 
   const { data: clients, error } = await supabase
@@ -67,26 +84,53 @@ export async function fetchClients(): Promise<ClientWithToday[]> {
 
   if (error) throw error;
 
-  const { data: metrics } = await supabase
+  const periodQuery = supabase
     .from("metrics_daily")
     .select("client_id, spend, leads, cpl")
-    .eq("date", today);
+    .gte("date", start)
+    .lte("date", end);
 
-  const metricsMap = new Map(
-    (metrics ?? []).map((m) => [m.client_id, m])
-  );
+  type PeriodRow = { client_id: string; spend: number; leads: number; cpl: number | null };
+  type TodayRow  = { client_id: string; spend: number; cpl: number | null };
+
+  if (period === "today") {
+    const { data: metrics } = await periodQuery as { data: PeriodRow[] | null };
+    const metricsMap = new Map<string, PeriodRow>();
+    for (const m of metrics ?? []) metricsMap.set(m.client_id, m);
+
+    return (clients as ClientRow[]).map((c) => {
+      const m = metricsMap.get(c.id);
+      const spend = m?.spend ?? 0;
+      const leads = m?.leads ?? 0;
+      const cpl = m?.cpl ?? null;
+      return { ...c, spendToday: spend, leadsToday: leads, cplToday: cpl, status: computeStatus(cpl, spend, c.cpl_max) };
+    });
+  }
+
+  const [{ data: periodRows }, { data: todayRows }] = await Promise.all([
+    periodQuery as unknown as Promise<{ data: PeriodRow[] | null }>,
+    supabase.from("metrics_daily").select("client_id, spend, cpl").eq("date", today) as unknown as Promise<{ data: TodayRow[] | null }>,
+  ]);
+
+  const metricsMap = new Map<string, { spend: number; leads: number }>();
+  for (const m of periodRows ?? []) {
+    const cur = metricsMap.get(m.client_id) ?? { spend: 0, leads: 0 };
+    metricsMap.set(m.client_id, { spend: cur.spend + m.spend, leads: cur.leads + m.leads });
+  }
+  const todayMap = new Map((todayRows ?? []).map((m) => [m.client_id, m]));
 
   return (clients as ClientRow[]).map((c) => {
-    const m = metricsMap.get(c.id);
-    const spend = m?.spend ?? 0;
-    const leads = m?.leads ?? 0;
-    const cpl = m?.cpl ?? null;
+    const agg = metricsMap.get(c.id);
+    const spend = agg?.spend ?? 0;
+    const leads = agg?.leads ?? 0;
+    const cpl = leads > 0 ? spend / leads : null;
+    const td = todayMap.get(c.id);
     return {
       ...c,
       spendToday: spend,
       leadsToday: leads,
       cplToday: cpl,
-      status: computeStatus(cpl, spend, c.cpl_max),
+      status: computeStatus(td?.cpl ?? null, td?.spend ?? 0, c.cpl_max),
     };
   });
 }
