@@ -1,5 +1,5 @@
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
-import { fetchCampaigns, fetchAdSets, getMetaToken, updateMetaObject } from "./meta";
+import { fetchCampaigns, fetchAdSets, getMetaToken, updateMetaObject, createCampaignFromScratch } from "./meta";
 import { fetchClients, fetchTasks, createTask, updateTask, createNote, updateClientPix } from "./queries";
 
 export type JsonArgs = Record<string, string | number | boolean | null | undefined>;
@@ -190,6 +190,40 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "create_campaign",
+      description: "Cria uma campanha Meta Ads (campanha + ad set, pausados) para um cliente. O criativo deve ser adicionado depois no Ads Manager. SEMPRE requer confirmação do usuário antes de executar.",
+      parameters: {
+        type: "object",
+        properties: {
+          client_id: { type: "string", description: "ID do cliente no sistema" },
+          client_name: { type: "string", description: "Nome do cliente (para exibir na confirmação)" },
+          campaign_name: { type: "string", description: "Nome da campanha" },
+          daily_budget_brl: { type: "number", description: "Orçamento diário em R$" },
+          campaign_type: {
+            type: "string",
+            enum: ["engagement", "sales"],
+            description: "Tipo: engagement (OUTCOME_ENGAGEMENT) ou sales (OUTCOME_SALES). Padrão: engagement.",
+          },
+          placements: {
+            type: "string",
+            enum: ["facebook", "instagram", "ambos"],
+            description: "Onde veicular os anúncios. Padrão: ambos.",
+          },
+          age_min: { type: "number", description: "Idade mínima do público (padrão: 18)" },
+          age_max: { type: "number", description: "Idade máxima do público (padrão: 65)" },
+          gender: {
+            type: "string",
+            enum: ["all", "male", "female"],
+            description: "Gênero do público. Padrão: all.",
+          },
+        },
+        required: ["client_id", "client_name", "campaign_name", "daily_budget_brl"],
+      },
+    },
+  },
 ];
 
 // ── Write tools — actions que precisam de confirmação ─────────────────────────
@@ -202,6 +236,7 @@ export const WRITE_TOOLS = new Set([
   "update_task_status",
   "create_note",
   "update_client_pix",
+  "create_campaign",
 ]);
 
 // ── Tool execution ────────────────────────────────────────────────────────────
@@ -327,6 +362,37 @@ export async function executeConfirmedAction(
         return { type: "result", data: { success: true } };
       }
 
+      case "create_campaign": {
+        const token = await getMetaToken();
+        if (!token) return { type: "error", message: "Token Meta não configurado." };
+        const clients = await fetchClients();
+        const client = clients.find((c) => c.id === args.client_id);
+        if (!client) return { type: "error", message: "Cliente não encontrado." };
+        if (!client.meta_page_id) return { type: "error", message: `Cliente "${client.name}" não tem Page ID configurado. Edite o cadastro do cliente.` };
+        if (!client.meta_whatsapp_number) return { type: "error", message: `Cliente "${client.name}" não tem WhatsApp Business configurado. Edite o cadastro do cliente.` };
+
+        const placements = (args.placements as string | undefined) ?? "ambos";
+        const result = await createCampaignFromScratch({
+          name: args.campaign_name as string,
+          adAccountId: client.meta_ad_account_id,
+          pageId: client.meta_page_id,
+          whatsappNumber: client.meta_whatsapp_number,
+          dailyBudget: args.daily_budget_brl as number,
+          campaignType: (args.campaign_type as "engagement" | "sales") ?? "engagement",
+          placements: {
+            facebook: placements === "facebook" || placements === "ambos",
+            instagram: placements === "instagram" || placements === "ambos",
+          },
+          targeting: {
+            ageMin: args.age_min as number | undefined,
+            ageMax: args.age_max as number | undefined,
+            genderMode: (args.gender as "all" | "male" | "female") ?? "all",
+          },
+          token,
+        });
+        return { type: "result", data: { campaignId: result.campaignId, adSetId: result.adSetId } };
+      }
+
       case "update_client_pix": {
         await updateClientPix(args.client_id as string, {
           pix_active: args.pix_active as boolean,
@@ -360,6 +426,11 @@ export function describeAction(name: string, args: JsonArgs): string {
       return `Atualizar tarefa "${args.task_title}" → ${args.new_status}`;
     case "create_note":
       return `Criar anotação em ${args.client_name}: "${String(args.content).slice(0, 80)}${String(args.content).length > 80 ? "..." : ""}"`;
+    case "create_campaign": {
+      const placements = args.placements ?? "ambos";
+      const type = args.campaign_type === "sales" ? "Vendas" : "Engajamento";
+      return `Criar campanha "${args.campaign_name}" para ${args.client_name} · R$ ${args.daily_budget_brl}/dia · ${type} · ${placements} (pausada, sem criativo)`;
+    }
     case "update_client_pix": {
       const status = args.pix_active ? "ativar" : "desativar";
       const details = args.pix_active

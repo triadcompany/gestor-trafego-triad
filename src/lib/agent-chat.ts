@@ -233,7 +233,10 @@ export const agentExecuteAction = createServerFn({ method: "POST" })
       const result = await executeConfirmedAction(data.pending_action.tool, data.pending_action.args);
       if (result.type === "error") return { type: "error", message: result.message };
 
-      const confirmationPrompt = `O usuário confirmou e a seguinte ação foi executada com sucesso: "${data.pending_action.description}". Informe o usuário de forma direta em português.`;
+      const resultSummary = result.data && typeof result.data === "object" && result.data !== null
+        ? ` Dados retornados: ${JSON.stringify(result.data)}`
+        : "";
+      const confirmationPrompt = `O usuário confirmou e a seguinte ação foi executada com sucesso: "${data.pending_action.description}".${resultSummary} Informe o usuário de forma direta em português, incluindo quaisquer IDs ou informações relevantes retornadas.`;
       const response = await openai.chat.completions.create({
         model: "gpt-4o",
         messages: [{ role: "user", content: confirmationPrompt }],
