@@ -84,53 +84,35 @@ export async function fetchClients(period: DashboardPeriod = "today"): Promise<C
 
   if (error) throw error;
 
-  const periodQuery = supabase
-    .from("metrics_daily")
-    .select("client_id, spend, leads, cpl")
-    .gte("date", start)
-    .lte("date", end);
-
   type PeriodRow = { client_id: string; spend: number; leads: number; cpl: number | null };
-  type TodayRow  = { client_id: string; spend: number; cpl: number | null };
 
-  if (period === "today") {
-    const { data: metrics } = await periodQuery as { data: PeriodRow[] | null };
-    const metricsMap = new Map<string, PeriodRow>();
-    for (const m of metrics ?? []) metricsMap.set(m.client_id, m);
+  const { data: rows } = await (
+    supabase.from("metrics_daily").select("client_id, spend, leads, cpl").gte("date", start).lte("date", end)
+  ) as { data: PeriodRow[] | null };
 
-    return (clients as ClientRow[]).map((c) => {
-      const m = metricsMap.get(c.id);
-      const spend = m?.spend ?? 0;
-      const leads = m?.leads ?? 0;
-      const cpl = m?.cpl ?? null;
-      return { ...c, spendToday: spend, leadsToday: leads, cplToday: cpl, status: computeStatus(cpl, spend, c.cpl_max) };
-    });
+  // For single-day periods the row already has the CPL; for multi-day aggregate
+  const isSingleDay = start === end;
+  const metricsMap = new Map<string, { spend: number; leads: number; cpl: number | null }>();
+  for (const m of rows ?? []) {
+    if (isSingleDay) {
+      metricsMap.set(m.client_id, { spend: m.spend, leads: m.leads, cpl: m.cpl });
+    } else {
+      const cur = metricsMap.get(m.client_id) ?? { spend: 0, leads: 0, cpl: null };
+      metricsMap.set(m.client_id, { spend: cur.spend + m.spend, leads: cur.leads + m.leads, cpl: null });
+    }
   }
-
-  const [{ data: periodRows }, { data: todayRows }] = await Promise.all([
-    periodQuery as unknown as Promise<{ data: PeriodRow[] | null }>,
-    supabase.from("metrics_daily").select("client_id, spend, cpl").eq("date", today) as unknown as Promise<{ data: TodayRow[] | null }>,
-  ]);
-
-  const metricsMap = new Map<string, { spend: number; leads: number }>();
-  for (const m of periodRows ?? []) {
-    const cur = metricsMap.get(m.client_id) ?? { spend: 0, leads: 0 };
-    metricsMap.set(m.client_id, { spend: cur.spend + m.spend, leads: cur.leads + m.leads });
-  }
-  const todayMap = new Map((todayRows ?? []).map((m) => [m.client_id, m]));
 
   return (clients as ClientRow[]).map((c) => {
     const agg = metricsMap.get(c.id);
     const spend = agg?.spend ?? 0;
     const leads = agg?.leads ?? 0;
-    const cpl = leads > 0 ? spend / leads : null;
-    const td = todayMap.get(c.id);
+    const cpl = isSingleDay ? (agg?.cpl ?? null) : (leads > 0 ? spend / leads : null);
     return {
       ...c,
       spendToday: spend,
       leadsToday: leads,
       cplToday: cpl,
-      status: computeStatus(td?.cpl ?? null, td?.spend ?? 0, c.cpl_max),
+      status: computeStatus(cpl, spend, c.cpl_max),
     };
   });
 }
