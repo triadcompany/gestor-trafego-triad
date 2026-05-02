@@ -18,9 +18,10 @@ import {
   KeyRound,
   RefreshCw,
   Stethoscope,
+  Bot,
 } from "lucide-react";
 import { toast } from "sonner";
-import { getTokenInfo, saveMetaToken } from "@/lib/meta";
+import { getTokenInfo, saveMetaToken, getOpenAIKey, saveOpenAIKey } from "@/lib/meta";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -32,6 +33,7 @@ export const Route = createFileRoute("/settings")({
 function SettingsPage() {
   const queryClient = useQueryClient();
   const [newToken, setNewToken] = useState("");
+  const [newOpenAIKey, setNewOpenAIKey] = useState("");
   const [copied, setCopied] = useState(false);
 
   const { data: tokenInfo, isLoading } = useQuery({
@@ -65,6 +67,24 @@ function SettingsPage() {
     },
     onError: (e) => {
       toast.error(e instanceof Error ? e.message : "Erro ao salvar token");
+    },
+  });
+
+  const { data: openAIKey, isLoading: isLoadingOpenAI } = useQuery({
+    queryKey: ["openai-key"],
+    queryFn: getOpenAIKey,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const saveOpenAIMutation = useMutation({
+    mutationFn: saveOpenAIKey,
+    onSuccess: () => {
+      toast.success("Chave do agente salva com sucesso!");
+      setNewOpenAIKey("");
+      queryClient.invalidateQueries({ queryKey: ["openai-key"] });
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : "Erro ao salvar chave");
     },
   });
 
@@ -284,6 +304,72 @@ function SettingsPage() {
                   {`https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id={APP_ID}&client_secret={APP_SECRET}&fb_exchange_token={TOKEN_CURTO}`}
                 </code>
               </div>
+            </div>
+          </Card>
+        </section>
+
+        {/* OpenAI Key section */}
+        <section className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Bot className="h-4 w-4 text-muted-foreground" />
+            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+              API Key do Agente (OpenAI)
+            </h2>
+          </div>
+
+          <Card className="overflow-hidden">
+            <div className="px-5 py-4 flex items-center gap-4 border-b border-border bg-muted/10">
+              <KeyRound className="h-5 w-5 text-muted-foreground shrink-0" />
+              <div className="flex-1 min-w-0">
+                {isLoadingOpenAI ? (
+                   <p className="text-sm text-muted-foreground">Verificando...</p>
+                ) : openAIKey ? (
+                  <>
+                    <p className="text-sm font-medium text-green-500">Chave configurada</p>
+                    <p className="text-xs text-muted-foreground mt-0.5 font-mono">
+                      {openAIKey.slice(0, 6)}...{openAIKey.slice(-4)}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-destructive">Sem chave configurada</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      O agente de IA não poderá funcionar.
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="openai-input">
+                  {!openAIKey ? "Cole a nova chave API" : "Atualizar chave API"}
+                </Label>
+                <Textarea
+                  id="openai-input"
+                  value={newOpenAIKey}
+                  onChange={(e) => setNewOpenAIKey(e.target.value)}
+                  placeholder="sk-..."
+                  className="font-mono text-xs resize-none h-12 leading-relaxed"
+                  spellCheck={false}
+                />
+              </div>
+
+              <Button
+                onClick={() => saveOpenAIMutation.mutate(newOpenAIKey.trim())}
+                disabled={!newOpenAIKey.trim() || saveOpenAIMutation.isPending}
+                className="w-full sm:w-auto"
+              >
+                {saveOpenAIMutation.isPending ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  "Salvar chave"
+                )}
+              </Button>
             </div>
           </Card>
         </section>

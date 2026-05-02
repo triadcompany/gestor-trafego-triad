@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchPixClients, type PixClient } from "@/lib/queries";
-import { Settings } from "lucide-react";
+import { Settings, CreditCard } from "lucide-react";
 
 export const Route = createFileRoute("/pix")({
   head: () => ({
@@ -142,6 +142,9 @@ function SummaryCard({
 
 function PixRowItem({ row }: { row: PixRow }) {
   const isToday = row.daysUntil === 0;
+  const actId = row.client.meta_ad_account_id.replace("act_", "");
+  const billingUrl = `https://business.facebook.com/billing_hub/accounts/details/?business_id=1034484698873057&asset_id=${actId}&payment_account_id=${actId}&placement=ads_manager&entrypoint=ads_ecosystem_navigation_ads_billing_tool_plugin&payment_account_id_from_jsmodule=${actId}`;
+
   return (
     <div
       className={`flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-0 transition-colors hover:bg-muted/30 ${
@@ -175,8 +178,19 @@ function PixRowItem({ row }: { row: PixRow }) {
       </div>
 
       {/* due */}
-      <div className="text-sm tabular-nums shrink-0 min-w-[130px] text-right">
-        <DueLabel days={row.daysUntil} date={row.nextDate} />
+      <div className="flex items-center gap-3 shrink-0 min-w-[150px] justify-end">
+        <div className="text-sm tabular-nums text-right">
+          <DueLabel days={row.daysUntil} date={row.nextDate} />
+        </div>
+        <a
+          href={billingUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="p-1.5 rounded-md bg-muted/50 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors flex-shrink-0"
+          title="Ir para página de cobrança"
+        >
+          <CreditCard className="w-4 h-4" />
+        </a>
       </div>
     </div>
   );
@@ -243,7 +257,7 @@ function PixPage() {
         {/* table */}
         <div className="rounded-xl border border-border bg-card overflow-hidden">
           {/* column headers */}
-          <div className="hidden sm:grid grid-cols-[1fr_100px_90px_90px_140px] gap-4 px-5 py-2.5 bg-muted/20 border-b border-border text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
+          <div className="hidden sm:grid grid-cols-[1fr_100px_90px_90px_160px] gap-4 px-5 py-2.5 bg-muted/20 border-b border-border text-[10px] font-mono uppercase tracking-widest text-muted-foreground">
             <span>Cliente</span>
             <span className="text-right">Ciclo</span>
             <span className="text-right">Mensal</span>

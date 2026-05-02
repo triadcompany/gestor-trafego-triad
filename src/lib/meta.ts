@@ -60,6 +60,14 @@ export async function getOpenAIKey(): Promise<string | null> {
   return data?.value ?? null;
 }
 
+export async function saveOpenAIKey(key: string): Promise<void> {
+  const { error } = await supabase.from("app_config").upsert(
+    { key: "openai_api_key", value: key },
+    { onConflict: "key" }
+  );
+  if (error) throw error;
+}
+
 export async function getLastSyncedAt(): Promise<Date | null> {
   const { data } = await supabase
     .from("app_config")

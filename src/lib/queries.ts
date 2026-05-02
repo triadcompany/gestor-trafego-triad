@@ -457,12 +457,13 @@ export interface PixClient {
   monthly_budget: number;
   pix_cycle: "semanal" | "quinzenal" | "mensal";
   pix_reference_day: number;
+  meta_ad_account_id: string;
 }
 
 export async function fetchPixClients(): Promise<PixClient[]> {
   const { data, error } = await supabase
     .from("clients")
-    .select("id, name, monthly_budget, pix_cycle, pix_reference_day")
+    .select("id, name, monthly_budget, pix_cycle, pix_reference_day, meta_ad_account_id")
     .eq("pix_active", true)
     .eq("active", true)
     .order("name");
