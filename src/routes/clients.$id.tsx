@@ -39,6 +39,7 @@ import {
   ReferenceArea,
 } from "recharts";
 import { fetchClientDetail, updateClientGoal, updateClientPix, fetchNotes, createNote, updateNote, deleteNote, fetchTasksByClient, createTask, updateTask, deleteTask, type TaskRow } from "@/lib/queries";
+import { TagBadge } from "@/components/TagBadge";
 import { NoteCard } from "@/components/NoteCard";
 import { NoteComposer } from "@/components/NoteComposer";
 import type { TaskStatus } from "@/lib/database.types";
@@ -245,6 +246,11 @@ function ClientDetail() {
             <p className="text-sm text-muted-foreground mt-1 capitalize">
               {client.meta_ad_account_id} · {client.segment}
             </p>
+            {(client.tags ?? []).length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-2">
+                {(client.tags ?? []).map((t) => <TagBadge key={t.id} tag={t} />)}
+              </div>
+            )}
           </div>
 
           {/* Period selector + Meta link */}

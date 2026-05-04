@@ -4,6 +4,12 @@ import { getMetaToken, fetchAccountInsightsForRange } from "./meta";
 
 export type { ClientStatus, PeriodType, ReportStatus };
 
+export interface TagRow {
+  id: string;
+  name: string;
+  color: string;
+}
+
 export interface ClientRow {
   id: string;
   name: string;
@@ -21,6 +27,7 @@ export interface ClientRow {
   pix_cycle: "semanal" | "quinzenal" | "mensal" | null;
   pix_reference_day: number | null;
   pix_active: boolean;
+  tags?: TagRow[];
 }
 
 export interface MetricRow {
@@ -156,10 +163,13 @@ export async function fetchClients(
 export async function fetchAllClients(): Promise<ClientRow[]> {
   const { data, error } = await supabase
     .from("clients")
-    .select("*")
+    .select("*, client_tags(tags(id, name, color))")
     .order("name");
   if (error) throw error;
-  return data as ClientRow[];
+  return (data ?? []).map((c: any) => ({
+    ...c,
+    tags: (c.client_tags ?? []).map((ct: any) => ct.tags).filter(Boolean),
+  }));
 }
 
 export async function fetchClientDetail(id: string): Promise<ClientDetail> {
@@ -169,7 +179,7 @@ export async function fetchClientDetail(id: string): Promise<ClientDetail> {
     .slice(0, 10);
 
   const [{ data: client, error }, { data: history }] = await Promise.all([
-    supabase.from("clients").select("*").eq("id", id).single(),
+    supabase.from("clients").select("*, client_tags(tags(id, name, color))").eq("id", id).single(),
     supabase
       .from("metrics_daily")
       .select("date, spend, leads, cpl")
@@ -185,8 +195,11 @@ export async function fetchClientDetail(id: string): Promise<ClientDetail> {
   const leads = todayMetric?.leads ?? 0;
   const cpl = todayMetric?.cpl ?? null;
 
+  const tags = ((client as any).client_tags ?? []).map((ct: any) => ct.tags).filter(Boolean);
+
   return {
     ...(client as ClientRow),
+    tags,
     spendToday: spend,
     leadsToday: leads,
     cplToday: cpl,
@@ -209,11 +222,40 @@ export async function upsertClient(data: {
   monthly_budget?: number | null;
   pix_cycle?: "semanal" | "quinzenal" | "mensal" | null;
   pix_reference_day?: number | null;
-}) {
-  const { error } = await supabase.from("clients").upsert({
-    ...data,
-    active: true,
-  });
+}): Promise<{ id: string }> {
+  const { data: row, error } = await supabase
+    .from("clients")
+    .upsert({ ...data, active: true })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return { id: (row as any).id };
+}
+
+// ── Tags ──────────────────────────────────────────────────────────────────────
+
+export async function fetchTags(): Promise<TagRow[]> {
+  const { data, error } = await supabase.from("tags").select("id, name, color").order("name");
+  if (error) throw error;
+  return (data ?? []) as TagRow[];
+}
+
+export async function createTag(name: string, color: string): Promise<TagRow> {
+  const { data, error } = await supabase
+    .from("tags")
+    .insert({ name, color })
+    .select("id, name, color")
+    .single();
+  if (error) throw error;
+  return data as TagRow;
+}
+
+export async function setClientTags(clientId: string, tagIds: string[]): Promise<void> {
+  await supabase.from("client_tags").delete().eq("client_id", clientId);
+  if (tagIds.length === 0) return;
+  const { error } = await supabase
+    .from("client_tags")
+    .insert(tagIds.map((tag_id) => ({ client_id: clientId, tag_id })));
   if (error) throw error;
 }
 
@@ -596,5 +638,72 @@ export async function updateTask(
 
 export async function deleteTask(id: string): Promise<void> {
   const { error } = await supabase.from("tasks").delete().eq("id", id);
+  if (error) throw error;
+}
+
+// ── Vendas ────────────────────────────────────────────────────────────────────
+
+export interface SaleRow {
+  id: string;
+  client_id: string;
+  date: string;
+  value: number | null;
+  obs: string | null;
+  created_at: string;
+}
+
+export interface SalesGoalRow {
+  id: string;
+  client_id: string;
+  month: string;
+  goal: number;
+}
+
+export async function fetchSales(since: string, until: string): Promise<SaleRow[]> {
+  const { data, error } = await supabase
+    .from("sales")
+    .select("*")
+    .gte("date", since)
+    .lte("date", until)
+    .order("date", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as SaleRow[];
+}
+
+export async function fetchSalesByClient(clientId: string, since: string, until: string): Promise<SaleRow[]> {
+  const { data, error } = await supabase
+    .from("sales")
+    .select("*")
+    .eq("client_id", clientId)
+    .gte("date", since)
+    .lte("date", until)
+    .order("date", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as SaleRow[];
+}
+
+export async function createSale(payload: { client_id: string; date: string; value?: number | null; obs?: string | null }): Promise<void> {
+  const { error } = await supabase.from("sales").insert(payload);
+  if (error) throw error;
+}
+
+export async function deleteSale(id: string): Promise<void> {
+  const { error } = await supabase.from("sales").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function fetchSalesGoals(month: string): Promise<SalesGoalRow[]> {
+  const { data, error } = await supabase
+    .from("sales_goals")
+    .select("id, client_id, month, goal")
+    .eq("month", month);
+  if (error) throw error;
+  return (data ?? []) as SalesGoalRow[];
+}
+
+export async function upsertSalesGoal(clientId: string, month: string, goal: number): Promise<void> {
+  const { error } = await supabase
+    .from("sales_goals")
+    .upsert({ client_id: clientId, month, goal }, { onConflict: "client_id,month" });
   if (error) throw error;
 }

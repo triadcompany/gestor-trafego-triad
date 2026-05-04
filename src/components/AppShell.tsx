@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays } from "lucide-react";
+import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
@@ -11,6 +11,7 @@ const navItems = [
   { to: "/saldos", label: "Saldos", shortLabel: "Saldos", icon: Wallet, exact: false },
   { to: "/pix", label: "PIX", shortLabel: "PIX", icon: QrCode, exact: false },
   { to: "/tarefas", label: "Tarefas", shortLabel: "Tarefas", icon: ClipboardList, exact: false },
+  { to: "/vendas", label: "Vendas", shortLabel: "Vendas", icon: TrendingUp, exact: false },
   { to: "/agente", label: "Agente IA", shortLabel: "Agente", icon: Bot, exact: false },
   { to: "/campaigns/new", label: "Nova Campanha", shortLabel: "Campanha", icon: PlusSquare, exact: false },
   { to: "/agenda", label: "Agenda", shortLabel: "Agenda", icon: CalendarDays, exact: false },

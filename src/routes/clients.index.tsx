@@ -32,14 +32,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Power, Search } from "lucide-react";
+import { Plus, Pencil, Power, Search, X, Check } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { fetchAllClients, upsertClient, toggleClientActive, type ClientRow } from "@/lib/queries";
+import { fetchAllClients, upsertClient, toggleClientActive, fetchTags, createTag, setClientTags, type ClientRow, type TagRow } from "@/lib/queries";
+import { TagBadge, TAG_COLORS } from "@/components/TagBadge";
 import { brl } from "@/lib/mock-data";
+import { useRef, useEffect } from "react";
 
 export const Route = createFileRoute("/clients/")({
   head: () => ({
@@ -66,7 +68,10 @@ function ClientsList() {
   });
 
   const saveMutation = useMutation({
-    mutationFn: upsertClient,
+    mutationFn: async ({ clientData, tagIds }: { clientData: Parameters<typeof upsertClient>[0]; tagIds: string[] }) => {
+      const { id } = await upsertClient(clientData);
+      await setClientTags(id, tagIds);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clients-all"] });
       queryClient.invalidateQueries({ queryKey: ["clients-dashboard"] });
@@ -108,7 +113,7 @@ function ClientsList() {
             <ClientFormDialog
               key={editing?.id ?? "new"}
               client={editing}
-              onSave={(data) => saveMutation.mutate(data)}
+              onSave={(clientData, tagIds) => saveMutation.mutate({ clientData, tagIds })}
               saving={saveMutation.isPending}
             />
           </Dialog>
@@ -138,9 +143,10 @@ function ClientsList() {
             <TableHeader>
               <TableRow>
                 <TableHead>Nome</TableHead>
-                <TableHead className="hidden md:table-cell">Conta Meta</TableHead>
+                <TableHead className="hidden lg:table-cell">Conta Meta</TableHead>
+                <TableHead className="hidden md:table-cell">Tags</TableHead>
                 <TableHead>Segmento</TableHead>
-                <TableHead>Meta CPL</TableHead>
+                <TableHead className="hidden sm:table-cell">Meta CPL</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>
@@ -165,15 +171,20 @@ function ClientsList() {
                       onClick={() => navigate({ to: "/clients/$id", params: { id: c.id } })}
                     >
                       <TableCell className="font-medium">{c.name}</TableCell>
-                      <TableCell className="hidden md:table-cell text-muted-foreground text-sm">
+                      <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">
                         {c.meta_ad_account_id}
+                      </TableCell>
+                      <TableCell className="hidden md:table-cell">
+                        <div className="flex flex-wrap gap-1">
+                          {(c.tags ?? []).map((t) => <TagBadge key={t.id} tag={t} />)}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="capitalize">
                           {c.segment}
                         </Badge>
                       </TableCell>
-                      <TableCell className="tabular-nums text-sm">
+                      <TableCell className="hidden sm:table-cell tabular-nums text-sm">
                         {brl(c.cpl_min)} – {brl(c.cpl_max)}
                       </TableCell>
                       <TableCell>
@@ -225,7 +236,7 @@ function ClientFormDialog({
   saving,
 }: {
   client: ClientRow | null;
-  onSave: (data: Parameters<typeof upsertClient>[0]) => void;
+  onSave: (data: Parameters<typeof upsertClient>[0], tagIds: string[]) => void;
   saving: boolean;
 }) {
   const [name, setName] = useState(client?.name ?? "");
@@ -240,6 +251,17 @@ function ClientFormDialog({
   const [monthlyBudget, setMonthlyBudget] = useState<string>(client?.monthly_budget != null ? String(client.monthly_budget) : "");
   const [pixCycle, setPixCycle] = useState<"semanal" | "quinzenal" | "mensal">(client?.pix_cycle ?? "mensal");
   const [pixRefDay, setPixRefDay] = useState<string>(client?.pix_reference_day != null ? String(client.pix_reference_day) : "1");
+  const [selectedTagIds, setSelectedTagIds] = useState<string[]>((client?.tags ?? []).map((t) => t.id));
+
+  const queryClient = useQueryClient();
+  const { data: allTags = [] } = useQuery({ queryKey: ["tags"], queryFn: fetchTags });
+  const createTagMutation = useMutation({
+    mutationFn: ({ name, color }: { name: string; color: string }) => createTag(name, color),
+    onSuccess: (tag) => {
+      queryClient.invalidateQueries({ queryKey: ["tags"] });
+      setSelectedTagIds((prev) => [...prev, tag.id]);
+    },
+  });
 
   const handleSegmentChange = (val: "popular" | "premium") => {
     setSegment(val);
@@ -249,21 +271,24 @@ function ClientFormDialog({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    onSave({
-      ...(client?.id ? { id: client.id } : {}),
-      name,
-      meta_ad_account_id: adAccountId,
-      ...(pageId ? { meta_page_id: pageId } : {}),
-      ...(whatsappNumber ? { meta_whatsapp_number: whatsappNumber } : {}),
-      segment,
-      cpl_min: cplMin,
-      cpl_max: cplMax,
-      payment_method: paymentMethod,
-      pix_active: pixActive,
-      monthly_budget: monthlyBudget !== "" ? Number(monthlyBudget) : null,
-      pix_cycle: pixActive ? pixCycle : null,
-      pix_reference_day: pixActive ? Number(pixRefDay) : null,
-    });
+    onSave(
+      {
+        ...(client?.id ? { id: client.id } : {}),
+        name,
+        meta_ad_account_id: adAccountId,
+        ...(pageId ? { meta_page_id: pageId } : {}),
+        ...(whatsappNumber ? { meta_whatsapp_number: whatsappNumber } : {}),
+        segment,
+        cpl_min: cplMin,
+        cpl_max: cplMax,
+        payment_method: paymentMethod,
+        pix_active: pixActive,
+        monthly_budget: monthlyBudget !== "" ? Number(monthlyBudget) : null,
+        pix_cycle: pixActive ? pixCycle : null,
+        pix_reference_day: pixActive ? Number(pixRefDay) : null,
+      },
+      selectedTagIds,
+    );
   };
 
   return (
@@ -366,6 +391,18 @@ function ClientFormDialog({
           />
         </div>
 
+        {/* Tags */}
+        <div className="space-y-2">
+          <Label>Tags</Label>
+          <TagSelector
+            allTags={allTags}
+            selectedIds={selectedTagIds}
+            onChange={setSelectedTagIds}
+            onCreateTag={(name, color) => createTagMutation.mutate({ name, color })}
+            creating={createTagMutation.isPending}
+          />
+        </div>
+
         {/* PIX */}
         <div className="space-y-3 rounded-lg border border-border p-3">
           <div className="flex items-center justify-between">
@@ -441,5 +478,128 @@ function ClientFormDialog({
         </DialogFooter>
       </form>
     </DialogContent>
+  );
+}
+
+function TagSelector({
+  allTags,
+  selectedIds,
+  onChange,
+  onCreateTag,
+  creating,
+}: {
+  allTags: TagRow[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  onCreateTag: (name: string, color: string) => void;
+  creating: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newColor, setNewColor] = useState("blue");
+  const [showCreate, setShowCreate] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const toggle = (id: string) =>
+    onChange(selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
+
+  const handleCreate = () => {
+    if (!newName.trim()) return;
+    onCreateTag(newName.trim(), newColor);
+    setNewName("");
+    setNewColor("blue");
+    setShowCreate(false);
+  };
+
+  const selected = allTags.filter((t) => selectedIds.includes(t.id));
+
+  return (
+    <div className="relative" ref={ref}>
+      <div
+        className="min-h-9 flex flex-wrap gap-1 items-center px-3 py-1.5 rounded-md border border-input bg-background cursor-pointer"
+        onClick={() => setOpen((v) => !v)}
+      >
+        {selected.length === 0 && (
+          <span className="text-sm text-muted-foreground">Selecionar tags...</span>
+        )}
+        {selected.map((t) => (
+          <span key={t.id} className="flex items-center gap-1">
+            <TagBadge tag={t} />
+            <button
+              type="button"
+              className="text-muted-foreground hover:text-foreground"
+              onClick={(e) => { e.stopPropagation(); toggle(t.id); }}
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </span>
+        ))}
+      </div>
+
+      {open && (
+        <div className="absolute z-50 mt-1 w-full rounded-md border border-border bg-popover shadow-md p-1">
+          {allTags.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className="flex items-center gap-2 w-full px-2 py-1.5 rounded hover:bg-muted text-sm"
+              onClick={() => toggle(t.id)}
+            >
+              <Check className={`h-3.5 w-3.5 shrink-0 ${selectedIds.includes(t.id) ? "opacity-100" : "opacity-0"}`} />
+              <TagBadge tag={t} />
+            </button>
+          ))}
+
+          {showCreate ? (
+            <div className="mt-1 border-t border-border pt-2 px-1 space-y-2">
+              <Input
+                autoFocus
+                placeholder="Nome da tag"
+                value={newName}
+                onChange={(e) => setNewName(e.target.value)}
+                className="h-7 text-xs"
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); handleCreate(); } }}
+              />
+              <div className="flex gap-1 flex-wrap">
+                {TAG_COLORS.map((c) => (
+                  <button
+                    key={c.value}
+                    type="button"
+                    title={c.label}
+                    className={`w-5 h-5 rounded-full ${c.bg} ${c.ring} ring-1 ring-inset ${newColor === c.value ? "ring-2 ring-offset-1" : ""}`}
+                    onClick={() => setNewColor(c.value)}
+                  />
+                ))}
+              </div>
+              <div className="flex gap-1">
+                <Button size="sm" type="button" className="h-7 text-xs" onClick={handleCreate} disabled={creating || !newName.trim()}>
+                  {creating ? "..." : "Criar"}
+                </Button>
+                <Button size="sm" type="button" variant="ghost" className="h-7 text-xs" onClick={() => setShowCreate(false)}>
+                  Cancelar
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="flex items-center gap-1.5 w-full px-2 py-1.5 rounded hover:bg-muted text-xs text-muted-foreground mt-1 border-t border-border"
+              onClick={() => setShowCreate(true)}
+            >
+              <Plus className="h-3.5 w-3.5" /> Nova tag
+            </button>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

@@ -176,6 +176,43 @@ export interface Database {
           full_name?: string;
         };
       };
+      sales: {
+        Row: { id: string; client_id: string; date: string; value: number | null; obs: string | null; created_at: string };
+        Insert: { id?: string; client_id: string; date: string; value?: number | null; obs?: string | null; created_at?: string };
+        Update: { date?: string; value?: number | null; obs?: string | null };
+      };
+      sales_goals: {
+        Row: { id: string; client_id: string; month: string; goal: number; created_at: string };
+        Insert: { id?: string; client_id: string; month: string; goal: number; created_at?: string };
+        Update: { goal?: number };
+      };
+      google_calendar_tokens: {
+        Row: {
+          id: string;
+          user_id: string;
+          access_token: string;
+          refresh_token: string | null;
+          expires_at: string;
+          created_at: string;
+        };
+        Insert: { id?: string; user_id: string; access_token: string; refresh_token?: string | null; expires_at: string; created_at?: string };
+        Update: { access_token?: string; refresh_token?: string | null; expires_at?: string };
+      };
+      tags: {
+        Row: {
+          id: string;
+          name: string;
+          color: string;
+          created_at: string;
+        };
+        Insert: { id?: string; name: string; color?: string; created_at?: string };
+        Update: { name?: string; color?: string };
+      };
+      client_tags: {
+        Row: { client_id: string; tag_id: string };
+        Insert: { client_id: string; tag_id: string };
+        Update: never;
+      };
       tasks: {
         Row: {
           id: string;

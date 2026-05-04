@@ -61,6 +61,91 @@ export type Database = {
           },
         ]
       }
+      sales: {
+        Row: { id: string; client_id: string; date: string; value: number | null; obs: string | null; created_at: string }
+        Insert: { id?: string; client_id: string; date: string; value?: number | null; obs?: string | null; created_at?: string }
+        Update: { date?: string; value?: number | null; obs?: string | null }
+        Relationships: [{ foreignKeyName: "sales_client_id_fkey"; columns: ["client_id"]; isOneToOne: false; referencedRelation: "clients"; referencedColumns: ["id"] }]
+      }
+      sales_goals: {
+        Row: { id: string; client_id: string; month: string; goal: number; created_at: string }
+        Insert: { id?: string; client_id: string; month: string; goal: number; created_at?: string }
+        Update: { goal?: number }
+        Relationships: [{ foreignKeyName: "sales_goals_client_id_fkey"; columns: ["client_id"]; isOneToOne: false; referencedRelation: "clients"; referencedColumns: ["id"] }]
+      }
+      google_calendar_tokens: {
+        Row: {
+          id: string
+          user_id: string
+          access_token: string
+          refresh_token: string | null
+          expires_at: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          access_token: string
+          refresh_token?: string | null
+          expires_at: string
+          created_at?: string
+        }
+        Update: {
+          access_token?: string
+          refresh_token?: string | null
+          expires_at?: string
+        }
+        Relationships: []
+      }
+      tags: {
+        Row: {
+          id: string
+          name: string
+          color: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          color?: string
+          created_at?: string
+        }
+        Update: {
+          name?: string
+          color?: string
+        }
+        Relationships: []
+      }
+      client_tags: {
+        Row: {
+          client_id: string
+          tag_id: string
+        }
+        Insert: {
+          client_id: string
+          tag_id: string
+        }
+        Update: {
+          client_id?: string
+          tag_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_tags_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_tags_tag_id_fkey"
+            columns: ["tag_id"]
+            isOneToOne: false
+            referencedRelation: "tags"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       report_log: {
         Row: {
           id: string

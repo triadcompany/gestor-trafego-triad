@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as VendasRouteImport } from './routes/vendas'
 import { Route as TarefasRouteImport } from './routes/tarefas'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SaldosRouteImport } from './routes/saldos'
@@ -22,7 +23,13 @@ import { Route as ClientsIndexRouteImport } from './routes/clients.index'
 import { Route as ClientsIdRouteImport } from './routes/clients.$id'
 import { Route as CampaignsNewRouteImport } from './routes/campaigns.new'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as AuthGoogleCallbackRouteImport } from './routes/auth.google.callback'
 
+const VendasRoute = VendasRouteImport.update({
+  id: '/vendas',
+  path: '/vendas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TarefasRoute = TarefasRouteImport.update({
   id: '/tarefas',
   path: '/tarefas',
@@ -88,6 +95,11 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthGoogleCallbackRoute = AuthGoogleCallbackRouteImport.update({
+  id: '/auth/google/callback',
+  path: '/auth/google/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -99,10 +111,12 @@ export interface FileRoutesByFullPath {
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
+  '/vendas': typeof VendasRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
   '/clients/$id': typeof ClientsIdRoute
   '/clients/': typeof ClientsIndexRoute
+  '/auth/google/callback': typeof AuthGoogleCallbackRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -114,10 +128,12 @@ export interface FileRoutesByTo {
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
+  '/vendas': typeof VendasRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
   '/clients/$id': typeof ClientsIdRoute
   '/clients': typeof ClientsIndexRoute
+  '/auth/google/callback': typeof AuthGoogleCallbackRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -130,10 +146,12 @@ export interface FileRoutesById {
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
+  '/vendas': typeof VendasRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
   '/clients/$id': typeof ClientsIdRoute
   '/clients/': typeof ClientsIndexRoute
+  '/auth/google/callback': typeof AuthGoogleCallbackRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -147,10 +165,12 @@ export interface FileRouteTypes {
     | '/saldos'
     | '/settings'
     | '/tarefas'
+    | '/vendas'
     | '/auth/callback'
     | '/campaigns/new'
     | '/clients/$id'
     | '/clients/'
+    | '/auth/google/callback'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -162,10 +182,12 @@ export interface FileRouteTypes {
     | '/saldos'
     | '/settings'
     | '/tarefas'
+    | '/vendas'
     | '/auth/callback'
     | '/campaigns/new'
     | '/clients/$id'
     | '/clients'
+    | '/auth/google/callback'
   id:
     | '__root__'
     | '/'
@@ -177,10 +199,12 @@ export interface FileRouteTypes {
     | '/saldos'
     | '/settings'
     | '/tarefas'
+    | '/vendas'
     | '/auth/callback'
     | '/campaigns/new'
     | '/clients/$id'
     | '/clients/'
+    | '/auth/google/callback'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -193,14 +217,23 @@ export interface RootRouteChildren {
   SaldosRoute: typeof SaldosRoute
   SettingsRoute: typeof SettingsRoute
   TarefasRoute: typeof TarefasRoute
+  VendasRoute: typeof VendasRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   CampaignsNewRoute: typeof CampaignsNewRoute
   ClientsIdRoute: typeof ClientsIdRoute
   ClientsIndexRoute: typeof ClientsIndexRoute
+  AuthGoogleCallbackRoute: typeof AuthGoogleCallbackRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/vendas': {
+      id: '/vendas'
+      path: '/vendas'
+      fullPath: '/vendas'
+      preLoaderRoute: typeof VendasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tarefas': {
       id: '/tarefas'
       path: '/tarefas'
@@ -292,6 +325,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth/google/callback': {
+      id: '/auth/google/callback'
+      path: '/auth/google/callback'
+      fullPath: '/auth/google/callback'
+      preLoaderRoute: typeof AuthGoogleCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -305,10 +345,12 @@ const rootRouteChildren: RootRouteChildren = {
   SaldosRoute: SaldosRoute,
   SettingsRoute: SettingsRoute,
   TarefasRoute: TarefasRoute,
+  VendasRoute: VendasRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   CampaignsNewRoute: CampaignsNewRoute,
   ClientsIdRoute: ClientsIdRoute,
   ClientsIndexRoute: ClientsIndexRoute,
+  AuthGoogleCallbackRoute: AuthGoogleCallbackRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
