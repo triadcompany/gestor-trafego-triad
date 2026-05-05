@@ -1,5 +1,5 @@
-import { createFileRoute, Link, useParams } from "@tanstack/react-router";
-import { useState } from "react";
+import { createFileRoute, Link, useParams, useSearch } from "@tanstack/react-router";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -46,6 +46,7 @@ import type { TaskStatus } from "@/lib/database.types";
 import { CampaignSheet } from "@/components/CampaignSheet";
 import {
   fetchCampaigns,
+  fetchCampaignById,
   fetchDailyInsights,
   getMetaToken,
   type MetaCampaign,
@@ -57,6 +58,9 @@ import { brl } from "@/lib/mock-data";
 export const Route = createFileRoute("/clients/$id")({
   head: () => ({
     meta: [{ title: "Cliente — Gestor de Tráfego" }],
+  }),
+  validateSearch: (search: Record<string, unknown>) => ({
+    openCampaignId: typeof search.openCampaignId === "string" ? search.openCampaignId : undefined,
   }),
   component: ClientDetail,
 });
@@ -127,6 +131,7 @@ function getDateRange(preset: DatePreset | "custom", customSince: string, custom
 
 function ClientDetail() {
   const { id } = useParams({ from: "/clients/$id" });
+  const { openCampaignId } = useSearch({ from: "/clients/$id" });
   const queryClient = useQueryClient();
   const [editingGoal, setEditingGoal] = useState(false);
   const [cplMin, setCplMin] = useState<number | null>(null);
@@ -186,6 +191,26 @@ function ClientDetail() {
     },
     enabled: !!client && periodReady,
   });
+
+  const { data: autoOpenCampaign } = useQuery({
+    queryKey: ["campaign-auto-open", openCampaignId],
+    queryFn: async () => {
+      if (!openCampaignId) return null;
+      const token = await getMetaToken();
+      if (!token) return null;
+      return fetchCampaignById(openCampaignId, token);
+    },
+    enabled: !!openCampaignId,
+    staleTime: 0,
+    retry: 3,
+    retryDelay: 1500,
+  });
+
+  useEffect(() => {
+    if (!autoOpenCampaign) return;
+    setSelectedCampaign(autoOpenCampaign);
+    setSheetOpen(true);
+  }, [autoOpenCampaign]);
 
   const goalMin = cplMin ?? client?.cpl_min ?? 0;
   const goalMax = cplMax ?? client?.cpl_max ?? 0;
@@ -508,6 +533,7 @@ function ClientDetail() {
         clientId={id}
         adAccountId={client.meta_ad_account_id}
         cplMax={client.cpl_max}
+        whatsappNumber={client.meta_whatsapp_number ?? undefined}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
       />

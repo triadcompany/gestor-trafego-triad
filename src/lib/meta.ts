@@ -372,6 +372,38 @@ export interface MetaCampaign {
   cpm: number | null;
 }
 
+export async function fetchCampaignById(
+  campaignId: string,
+  token: string
+): Promise<MetaCampaign> {
+  const res = await fetch(
+    `${BASE_URL}/${campaignId}?fields=id,name,status,daily_budget,objective&access_token=${encodeURIComponent(token)}`
+  );
+  const json = (await res.json()) as {
+    id: string;
+    name: string;
+    status: string;
+    daily_budget?: string;
+    objective: string;
+    error?: MetaApiError;
+  };
+  if (json.error) throw new Error(formatMetaError(json.error));
+  return {
+    id: json.id,
+    name: json.name,
+    status: json.status,
+    daily_budget: json.daily_budget ? parseFloat(json.daily_budget) / 100 : null,
+    objective: json.objective,
+    spend: 0,
+    leads: 0,
+    cpl: null,
+    impressions: 0,
+    link_clicks: 0,
+    ctr: null,
+    cpm: null,
+  };
+}
+
 export async function fetchCampaigns(
   adAccountId: string,
   token: string,
@@ -494,21 +526,28 @@ export interface MetaTargeting {
 
 export interface MetaAdCreative {
   id: string;
+  actor_id?: string; // page_id
+  video_id?: string; // direct field exposed on some creative types
+  whatsapp_number?: string; // fetched from page when available
   body?: string;
   title?: string;
   description?: string;
   thumbnail_url?: string;
   object_story_spec?: {
+    page_id?: string;
     link_data?: {
       message?: string;
       name?: string;
       description?: string;
+      link?: string;
+      image_hash?: string;
       call_to_action?: {
         type: string;
         value?: { app_destination?: string; whatsapp_number?: string; message?: string; link?: string };
       };
     };
     video_data?: {
+      video_id?: string;
       message?: string;
       title?: string;
       description?: string;
@@ -517,6 +556,16 @@ export interface MetaAdCreative {
         value?: { app_destination?: string; whatsapp_number?: string };
       };
     };
+  };
+  asset_feed_spec?: {
+    bodies?: Array<{ text: string }>;
+    titles?: Array<{ text: string }>;
+    descriptions?: Array<{ text: string }>;
+    images?: Array<{ hash: string }>;
+    videos?: Array<{ video_id: string; thumbnail_hash?: string }>;
+    call_to_action_types?: string[];
+    call_to_actions?: Array<{ type: string; value?: Record<string, string> }>;
+    page_ids?: string[];
   };
 }
 
@@ -554,26 +603,318 @@ export async function updateAdSetTargeting(adSetId: string, targeting: MetaTarge
 }
 
 export async function fetchAdWithCreative(adId: string, token: string): Promise<MetaAdCreative> {
-  const params = new URLSearchParams({
-    fields: "creative{id,body,title,description,thumbnail_url,object_story_spec}",
-    access_token: token,
-  });
+  const get = async (fields: string) => {
+    const res = await fetch(`${BASE_URL}/${adId}?${new URLSearchParams({ fields, access_token: token })}`);
+    return res.json() as Promise<{ creative?: Record<string, unknown>; error?: { message: string } }>;
+  };
+
+  // Step 1: safe base fetch — fields we know work for all creative types
+  let base: Record<string, unknown> = {};
+  for (const fields of [
+    "creative{id,actor_id,body,title,description,thumbnail_url}",
+    "creative{id,actor_id,body,title,thumbnail_url}",
+    "creative{id,body,title,thumbnail_url}",
+  ]) {
+    const json = await get(fields);
+    if (!json.error && json.creative && json.creative["id"]) { base = json.creative; break; }
+  }
+  if (!base["id"]) throw new Error("Não foi possível carregar o criativo.");
+
+  const creative: MetaAdCreative = base as unknown as MetaAdCreative;
+
+  // Fetch directly from the creative's own endpoint (different fields available)
+  const creativeId = creative.id;
+  const getCreative = async (fields: string) => {
+    const res = await fetch(`${BASE_URL}/${creativeId}?${new URLSearchParams({ fields, access_token: token })}`);
+    return res.json() as Promise<Record<string, unknown> & { error?: { message: string } }>;
+  };
+
+  // Step 2: get object_story_spec — try via ad endpoint (different access than creative endpoint)
+  for (const fields of [
+    "creative{object_story_spec{page_id,video_data{video_id,message,title,description,call_to_action}}}",
+    "creative{object_story_spec{page_id,link_data{image_hash,link,message,name,description,call_to_action}}}",
+  ]) {
+    try {
+      const json = await get(fields);
+      const spec = json.creative?.["object_story_spec"] as MetaAdCreative["object_story_spec"] | undefined;
+      const hasVideo = !!(spec?.video_data?.video_id);
+      const hasLink = !!(spec?.link_data?.image_hash || spec?.link_data?.link);
+      if (spec && (hasVideo || hasLink)) { creative.object_story_spec = spec; break; }
+    } catch { /* ignore */ }
+  }
+
+  // Step 3: get video_id and image_hash directly from creative endpoint
+  if (!creative.video_id && !creative.object_story_spec?.video_data?.video_id) {
+    try {
+      const json = await getCreative("video_id,image_hash");
+      if (!json.error) {
+        if (json["video_id"]) creative.video_id = json["video_id"] as string;
+      }
+    } catch { /* ignore */ }
+    if (!creative.video_id) {
+      try {
+        const json = await getCreative("video_id");
+        if (!json.error && json["video_id"]) creative.video_id = json["video_id"] as string;
+      } catch { /* ignore */ }
+    }
+  }
+
+  // Step 4: get real page_id and whatsapp_phone_number from ad set's promoted_object
+  try {
+    const adRes = await fetch(`${BASE_URL}/${adId}?${new URLSearchParams({ fields: "adset_id", access_token: token })}`);
+    const adJson = await adRes.json() as { adset_id?: string };
+    if (adJson.adset_id) {
+      const adsetRes = await fetch(`${BASE_URL}/${adJson.adset_id}?${new URLSearchParams({ fields: "promoted_object", access_token: token })}`);
+      const adsetJson = await adsetRes.json() as { promoted_object?: { page_id?: string; application_id?: string; whatsapp_phone_number?: string } };
+      const pageId = adsetJson.promoted_object?.page_id;
+      const waNum = adsetJson.promoted_object?.whatsapp_phone_number;
+      if (pageId) creative.actor_id = pageId;
+      if (waNum && !creative.whatsapp_number) creative.whatsapp_number = waNum.replace(/\D/g, "");
+    }
+  } catch { /* ignore */ }
+
+  // Step 5: get WhatsApp number from page (required for CTA in CONVERSATIONS ads)
+  if (creative.actor_id && !creative.whatsapp_number) {
+    try {
+      const res = await fetch(`${BASE_URL}/${creative.actor_id}?${new URLSearchParams({ fields: "whatsapp_number", access_token: token })}`);
+      const json = await res.json() as { whatsapp_number?: string };
+      if (json.whatsapp_number) creative.whatsapp_number = json.whatsapp_number.replace(/\D/g, "");
+    } catch { /* ignore */ }
+  }
+
+  // Step 7: asset_feed_spec (Advantage+ / dynamic creative)
+  if (!creative.object_story_spec && !creative.asset_feed_spec) {
+    try {
+      const json = await getCreative("asset_feed_spec");
+      const feed = json["asset_feed_spec"] as MetaAdCreative["asset_feed_spec"] | undefined;
+      if (feed && !json.error) creative.asset_feed_spec = feed;
+    } catch { /* ignore */ }
+  }
+
+  console.log("[AdCreative]", creativeId, JSON.stringify({
+    page_id: creative.actor_id,
+    video_id: creative.video_id ?? creative.object_story_spec?.video_data?.video_id,
+    whatsapp_number: creative.whatsapp_number ?? "(not found)",
+    has_video_data: !!creative.object_story_spec?.video_data?.video_id,
+    has_link_data: !!(creative.object_story_spec?.link_data?.image_hash || creative.object_story_spec?.link_data?.link),
+    has_cta: !!(creative.object_story_spec?.video_data?.call_to_action ?? creative.object_story_spec?.link_data?.call_to_action),
+    has_feed: !!creative.asset_feed_spec,
+  }));
+  return creative;
+}
+
+async function fetchAdAccountId(adId: string, token: string): Promise<string> {
+  const params = new URLSearchParams({ fields: "account_id", access_token: token });
   const res = await fetch(`${BASE_URL}/${adId}?${params}`);
-  const json = await res.json() as { creative?: MetaAdCreative; error?: { message: string } };
+  const json = await res.json() as { account_id?: string; error?: { message: string } };
   if (json.error) throw new Error(json.error.message);
-  return json.creative ?? { id: "" };
+  if (!json.account_id) throw new Error("account_id não encontrado");
+  const id = json.account_id;
+  return id.startsWith("act_") ? id : `act_${id}`;
+}
+
+export async function waitForVideoReady(
+  videoId: string,
+  token: string,
+  onProgress?: (msg: string) => void
+): Promise<string | null> {
+  for (let i = 0; i < 40; i++) {
+    await new Promise<void>((r) => setTimeout(r, 3000));
+    try {
+      const res = await fetch(
+        `${BASE_URL}/${videoId}?fields=picture,status&access_token=${encodeURIComponent(token)}`
+      );
+      const json = await res.json() as {
+        picture?: string;
+        status?: { video_status?: string; processing_progress?: number };
+        error?: MetaApiError;
+      };
+      if (json.error) break;
+      const pct = json.status?.processing_progress ?? 0;
+      const st = json.status?.video_status;
+      onProgress?.(`Processando vídeo... ${pct}%`);
+      if (st === "ready" || st === "complete") return json.picture ?? null;
+      if (st === "error") throw new Error("A Meta não conseguiu processar o vídeo. Tente outro arquivo.");
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("processar")) throw err;
+    }
+  }
+  throw new Error("Timeout: o vídeo demorou mais que 2 minutos para processar. Tente novamente.");
+}
+
+export async function swapAdCreativeMedia(
+  adId: string,
+  creative: MetaAdCreative,
+  mediaFile: File,
+  token: string,
+  clientWhatsappNumber?: string,
+  onProgress?: (msg: string) => void
+): Promise<void> {
+  const accountId = await fetchAdAccountId(adId, token);
+  const isVideo = !!(creative.video_id || creative.object_story_spec?.video_data?.video_id);
+  const pageId = creative.actor_id ?? creative.object_story_spec?.page_id;
+  const resolvedWa = (clientWhatsappNumber ?? creative.whatsapp_number ?? "").replace(/\D/g, "");
+  const primaryText = creative.body ?? creative.object_story_spec?.video_data?.message ?? creative.object_story_spec?.link_data?.message ?? "";
+  const title = creative.title ?? creative.object_story_spec?.video_data?.title ?? creative.object_story_spec?.link_data?.name ?? "";
+  const description = creative.description ?? "";
+
+  if (!pageId) throw new Error("page_id não encontrado no criativo.");
+
+  if (isVideo) {
+    onProgress?.("Enviando vídeo...");
+    const videoId = await uploadAdVideo(accountId, mediaFile, token);
+    const thumbUrl = (await waitForVideoReady(videoId, token, onProgress)) ?? creative.thumbnail_url;
+    if (!resolvedWa) throw new Error("Número WhatsApp não encontrado. Cadastre o número em Configurações do cliente.");
+    onProgress?.("Criando criativo...");
+    const newCreative = (await postMeta(`${accountId}/adcreatives`, {
+      name: `media_swap_${Date.now()}`,
+      object_story_spec: JSON.stringify({
+        page_id: pageId,
+        video_data: {
+          video_id: videoId,
+          message: primaryText,
+          title,
+          ...(description ? { description } : {}),
+          ...(thumbUrl ? { image_url: thumbUrl } : {}),
+          call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: resolvedWa } },
+        },
+      }),
+      access_token: token,
+    })) as { id: string };
+    await updateMetaObject(adId, { creative: JSON.stringify({ creative_id: newCreative.id }) }, token);
+    return;
+  }
+
+  onProgress?.("Enviando imagem...");
+  const imageHash = await uploadAdImage(accountId, mediaFile, token);
+  onProgress?.("Criando criativo...");
+  const waLink = resolvedWa ? `https://wa.me/${resolvedWa}` : undefined;
+  const newCreative = (await postMeta(`${accountId}/adcreatives`, {
+    name: `media_swap_${Date.now()}`,
+    object_story_spec: JSON.stringify({
+      page_id: pageId,
+      link_data: {
+        image_hash: imageHash,
+        message: primaryText,
+        name: title,
+        ...(description ? { description } : {}),
+        ...(waLink
+          ? { link: waLink, call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: resolvedWa } } }
+          : {}),
+      },
+    }),
+    access_token: token,
+  })) as { id: string };
+  await updateMetaObject(adId, { creative: JSON.stringify({ creative_id: newCreative.id }) }, token);
 }
 
 export async function updateAdCreative(
-  creativeId: string,
-  fields: { body?: string; title?: string; description?: string },
-  token: string
+  adId: string,
+  creative: MetaAdCreative,
+  updates: { body?: string; title?: string; description?: string },
+  token: string,
+  clientWhatsappNumber?: string // from client record in Supabase — most reliable source
 ): Promise<void> {
-  const params: Record<string, string> = {};
-  if (fields.body !== undefined) params.body = fields.body;
-  if (fields.title !== undefined) params.title = fields.title;
-  if (fields.description !== undefined) params.description = fields.description;
-  await updateMetaObject(creativeId, params, token);
+  // Try direct update on the creative first (works for drafts)
+  try {
+    const params: Record<string, string> = {};
+    if (updates.body !== undefined) params.body = updates.body;
+    if (updates.title !== undefined) params.title = updates.title;
+    if (updates.description !== undefined) params.description = updates.description;
+    await updateMetaObject(creative.id, params, token);
+    return;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (!msg.includes("100")) throw err;
+  }
+
+  const accountId = await fetchAdAccountId(adId, token);
+
+  // Try via object_story_spec — only if we have the required media reference
+  const spec = creative.object_story_spec;
+  const specPageId = spec?.page_id ?? creative.actor_id;
+  const hasValidVideoData = !!(spec?.video_data?.video_id);
+  const hasValidLinkData = !!(spec?.link_data && (spec.link_data.image_hash || spec.link_data.link));
+
+  if (specPageId && (hasValidVideoData || hasValidLinkData)) {
+    const baseSpec = { ...spec, page_id: specPageId };
+    const updatedSpec = hasValidVideoData
+      ? {
+          ...baseSpec,
+          video_data: {
+            ...spec!.video_data,
+            ...(updates.body !== undefined ? { message: updates.body } : {}),
+            ...(updates.title !== undefined ? { title: updates.title } : {}),
+            ...(updates.description !== undefined ? { description: updates.description } : {}),
+          },
+        }
+      : {
+          ...baseSpec,
+          link_data: {
+            ...spec!.link_data,
+            ...(updates.body !== undefined ? { message: updates.body } : {}),
+            ...(updates.title !== undefined ? { name: updates.title } : {}),
+            ...(updates.description !== undefined ? { description: updates.description } : {}),
+          },
+        };
+
+    const newCreative = (await postMeta(`${accountId}/adcreatives`, {
+      name: `edited_${Date.now()}`,
+      object_story_spec: JSON.stringify(updatedSpec),
+      access_token: token,
+    })) as { id: string };
+    await updateMetaObject(adId, { creative: JSON.stringify({ creative_id: newCreative.id }) }, token);
+    return;
+  }
+
+  // Try via asset_feed_spec (dynamic/advantage+ ads)
+  const feed = creative.asset_feed_spec;
+  const feedPageId = feed?.page_ids?.[0] ?? creative.actor_id;
+  if (feedPageId && feed) {
+    const updatedFeed = {
+      ...feed,
+      page_ids: [feedPageId],
+      ...(updates.body !== undefined ? { bodies: [{ text: updates.body }] } : {}),
+      ...(updates.title !== undefined ? { titles: [{ text: updates.title }] } : {}),
+      ...(updates.description !== undefined ? { descriptions: [{ text: updates.description }] } : {}),
+    };
+    const newCreative = (await postMeta(`${accountId}/adcreatives`, {
+      name: `edited_${Date.now()}`,
+      asset_feed_spec: JSON.stringify(updatedFeed),
+      access_token: token,
+    })) as { id: string };
+    await updateMetaObject(adId, { creative: JSON.stringify({ creative_id: newCreative.id }) }, token);
+    return;
+  }
+
+  // Strategy D: reconstruct spec from video_id + page_id (CONVERSATIONS/OUTCOME_SALES video ads)
+  // Used when object_story_spec is not accessible (Meta blocks it for some campaign types)
+  const videoId = creative.video_id ?? creative.object_story_spec?.video_data?.video_id;
+  const pageId2 = creative.actor_id ?? creative.object_story_spec?.page_id;
+  if (videoId && pageId2) {
+    const resolvedWa = (clientWhatsappNumber ?? creative.whatsapp_number ?? "").replace(/\D/g, "");
+    if (!resolvedWa) throw new Error("Número WhatsApp não encontrado. Cadastre o número em Configurações do cliente.");
+
+    const newCreative = (await postMeta(`${accountId}/adcreatives`, {
+      name: `edited_${Date.now()}`,
+      object_story_spec: JSON.stringify({
+        page_id: pageId2,
+        video_data: {
+          video_id: videoId,
+          message: updates.body ?? creative.body ?? "",
+          title: updates.title ?? creative.title ?? "",
+          ...(updates.description ? { description: updates.description } : {}),
+          ...(creative.thumbnail_url ? { image_url: creative.thumbnail_url } : {}),
+          call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: resolvedWa } },
+        },
+      }),
+      access_token: token,
+    })) as { id: string };
+    await updateMetaObject(adId, { creative: JSON.stringify({ creative_id: newCreative.id }) }, token);
+    return;
+  }
+
+  throw new Error("ACTIVE_CREATIVE_NO_SPEC");
 }
 
 export async function searchMetaInterests(query: string, token: string): Promise<MetaInterest[]> {
@@ -745,6 +1086,8 @@ async function recordMetaApiError(endpoint: string, status: number, error: MetaA
 
 function formatMetaError(e: MetaApiError): string {
   const parts = [e.message];
+  if (e.error_user_title) parts.push(`— ${e.error_user_title}`);
+  if (e.error_user_msg) parts.push(`| ${e.error_user_msg}`);
   if (e.code) parts.push(`[code ${e.code}${e.error_subcode ? `.${e.error_subcode}` : ""}]`);
   if (e.fbtrace_id) parts.push(`(trace: ${e.fbtrace_id})`);
   return parts.join(" ");
@@ -1021,7 +1364,7 @@ export async function duplicateCampaign(
 
   // 2. Busca conjuntos com seus orçamentos (para calcular budget total se não for CBO)
   const adSetsRes = await fetch(
-    `${BASE_URL}/${campaignId}/adsets?fields=id,name,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,targeting,destination_type,promoted_object&limit=50&access_token=${encodeURIComponent(token)}`
+    `${BASE_URL}/${campaignId}/adsets?fields=id,name,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,targeting,destination_type,promoted_object,instagram_actor_id&limit=50&access_token=${encodeURIComponent(token)}`
   );
   const adSetsJson = (await adSetsRes.json()) as {
     data?: Array<{
@@ -1036,6 +1379,7 @@ export async function duplicateCampaign(
       targeting?: MetaTargeting;
       destination_type?: string;
       promoted_object?: Record<string, string>;
+      instagram_actor_id?: string;
     }>;
     error?: MetaApiError;
   };
@@ -1106,6 +1450,7 @@ export async function duplicateCampaign(
     };
 
     if (effectiveDestinationType) adSetParams.destination_type = effectiveDestinationType;
+    if (adSet.instagram_actor_id) adSetParams.instagram_actor_id = adSet.instagram_actor_id;
 
     // whatsapp_phone_number é obrigatório no promoted_object para destino WHATSAPP (error 100.2446885).
     // Prioridade: promoted_object original → cadastro do cliente → criativo do primeiro anúncio.
@@ -1154,15 +1499,187 @@ export async function duplicateCampaign(
     for (let j = 0; j < ads.length; j++) {
       const ad = ads[j];
       onProgress?.(`Copiando anúncio ${j + 1}/${ads.length} (conjunto ${i + 1})...`);
-      await postMeta(`${ad.id}/copies`, {
+
+      // Busca o creative_id do anúncio original (evita /copies que exige permissão extra)
+      const adDetailRes = await fetch(
+        `${BASE_URL}/${ad.id}?fields=creative&access_token=${encodeURIComponent(token)}`
+      );
+      const adDetailJson = (await adDetailRes.json()) as {
+        creative?: { id: string };
+        error?: MetaApiError;
+      };
+      if (adDetailJson.error) throw new Error(formatMetaError(adDetailJson.error));
+      const creativeId = adDetailJson.creative?.id;
+      if (!creativeId) throw new Error(`Criativo não encontrado para o anúncio "${ad.name}"`);
+
+      await postMeta(`${adAccountId}/ads`, {
+        name: ad.name,
         adset_id: newAdSetId,
-        status_option: "PAUSED",
+        creative: JSON.stringify({ creative_id: creativeId }),
+        status: "PAUSED",
         access_token: token,
       });
     }
   }
 
   return newCampaignId;
+}
+
+export interface CampaignPrefillData {
+  name: string;
+  objective: string;
+  dailyBudget: number;
+  pageId: string;
+  whatsappNumber: string;
+  instagramActorId?: string;
+  adsetId?: string;
+  adId?: string;
+  ageMin: number;
+  ageMax: number;
+  genderMode: "all" | "male" | "female";
+  locations: SelectedLocation[];
+  interests: MetaInterest[];
+  platforms: { facebook: boolean; instagram: boolean };
+  fbPositions: string[];
+  igPositions: string[];
+  primaryText: string;
+  headline: string;
+  description: string;
+  mediaType: "image" | "video";
+  videoId?: string;
+  imageHash?: string;
+  thumbnailUrl?: string;
+}
+
+export async function fetchBaseCampaignPrefill(
+  campaignId: string,
+  token: string
+): Promise<CampaignPrefillData> {
+  // Campaign
+  const campRes = await fetch(
+    `${BASE_URL}/${campaignId}?fields=name,objective,daily_budget&access_token=${encodeURIComponent(token)}`
+  );
+  const campJson = (await campRes.json()) as {
+    name?: string;
+    objective?: string;
+    daily_budget?: string;
+    error?: MetaApiError;
+  };
+  if (campJson.error) throw new Error(formatMetaError(campJson.error));
+
+  // First adset
+  const asRes = await fetch(
+    `${BASE_URL}/${campaignId}/adsets?fields=targeting,promoted_object,instagram_actor_id,daily_budget&limit=1&access_token=${encodeURIComponent(token)}`
+  );
+  const asJson = (await asRes.json()) as {
+    data?: Array<{
+      id: string;
+      targeting?: MetaTargeting;
+      promoted_object?: { page_id?: string; whatsapp_phone_number?: string };
+      instagram_actor_id?: string;
+      daily_budget?: string;
+    }>;
+    error?: MetaApiError;
+  };
+  if (asJson.error) throw new Error(formatMetaError(asJson.error));
+  const adSet = asJson.data?.[0];
+  const targeting = adSet?.targeting;
+
+  // First ad of that adset
+  let primaryText = "";
+  let headline = "";
+  let description = "";
+  let videoId: string | undefined;
+  let imageHash: string | undefined;
+  let thumbnailUrl: string | undefined;
+  let mediaType: "image" | "video" = "image";
+  let resolvedAdId: string | undefined;
+
+  if (adSet) {
+    const adsRes = await fetch(
+      `${BASE_URL}/${adSet.id}/ads?fields=id&limit=1&access_token=${encodeURIComponent(token)}`
+    );
+    const adsJson = (await adsRes.json()) as { data?: Array<{ id: string }> };
+    const adId = adsJson.data?.[0]?.id;
+    if (adId) {
+      resolvedAdId = adId;
+      try {
+        const cr = await fetchAdWithCreative(adId, token);
+        primaryText = cr.body ?? cr.object_story_spec?.video_data?.message ?? cr.object_story_spec?.link_data?.message ?? "";
+        headline = cr.title ?? cr.object_story_spec?.video_data?.title ?? cr.object_story_spec?.link_data?.name ?? "";
+        description = cr.description ?? "";
+        thumbnailUrl = cr.thumbnail_url ?? undefined;
+        videoId = cr.video_id ?? cr.object_story_spec?.video_data?.video_id;
+        imageHash = cr.object_story_spec?.link_data?.image_hash;
+        mediaType = videoId ? "video" : "image";
+      } catch { /* silent — creative fields are bonus */ }
+    }
+  }
+
+  // Targeting fields
+  const t = targeting;
+  const genders = t?.genders;
+  const genderMode: "all" | "male" | "female" =
+    genders?.includes(1) && !genders.includes(2) ? "male"
+    : genders?.includes(2) && !genders.includes(1) ? "female"
+    : "all";
+
+  const cities = (t?.geo_locations?.cities ?? []).map((c) => ({
+    key: c.key,
+    name: c.key,
+    type: "city" as const,
+    radius: (c as { radius?: number }).radius,
+  }));
+  const rawRegions = ((t?.geo_locations as Record<string, unknown> | undefined)?.["regions"] as Array<{ key: string }> | undefined) ?? [];
+  const regions = rawRegions.map((r) => ({
+    key: r.key,
+    name: r.key,
+    type: "region" as const,
+  }));
+  const locations: SelectedLocation[] = [...cities, ...regions];
+
+  const interests: MetaInterest[] = (t?.flexible_spec?.[0]?.interests ?? []).map((i) => ({
+    id: String(i.id),
+    name: i.name,
+  }));
+
+  const fbPlaces = t?.facebook_positions ?? [];
+  const igPlaces = t?.instagram_positions ?? [];
+  const platforms = {
+    facebook: (t?.publisher_platforms ?? ["facebook"]).includes("facebook"),
+    instagram: (t?.publisher_platforms ?? ["instagram"]).includes("instagram"),
+  };
+
+  const dailyBudgetCents =
+    campJson.daily_budget ? parseInt(campJson.daily_budget, 10) : (adSet?.daily_budget ? parseInt(adSet.daily_budget, 10) : 5000);
+
+  return {
+    name: campJson.name ?? "",
+    objective: campJson.objective ?? "OUTCOME_ENGAGEMENT",
+    dailyBudget: dailyBudgetCents / 100,
+    pageId: adSet?.promoted_object?.page_id ?? "",
+    whatsappNumber: adSet?.promoted_object?.whatsapp_phone_number ?? "",
+    instagramActorId: adSet?.instagram_actor_id,
+    adsetId: adSet?.id,
+    adId: resolvedAdId,
+    ageMin: t?.age_min ?? 18,
+    ageMax: t?.age_max ?? 65,
+    genderMode,
+    locations,
+    interests,
+    platforms,
+    fbPositions: fbPlaces.length > 0 ? fbPlaces : ["feed", "story"],
+    igPositions: igPlaces.filter((p) => p !== "ig_search").length > 0
+      ? igPlaces.filter((p) => p !== "ig_search")
+      : ["stream", "story"],
+    primaryText,
+    headline,
+    description,
+    mediaType,
+    videoId,
+    imageHash,
+    thumbnailUrl,
+  };
 }
 
 export interface CreateFromScratchOptions {
@@ -1176,6 +1693,7 @@ export interface CreateFromScratchOptions {
   igPositions?: string[];
   token: string;
   campaignType?: "engagement" | "sales";
+  instagramActorId?: string;
   targeting?: {
     ageMin?: number;
     ageMax?: number;
@@ -1269,7 +1787,7 @@ export async function createCampaignFromScratch(
   };
   const destinationType = "WHATSAPP";
 
-  const adSet = await postMeta(`${opts.adAccountId}/adsets`, {
+  const adSetPayload: Record<string, string> = {
     name: opts.name,
     campaign_id: campaignId,
     billing_event: "IMPRESSIONS",
@@ -1279,7 +1797,10 @@ export async function createCampaignFromScratch(
     targeting: JSON.stringify(targeting),
     status: "PAUSED",
     access_token: opts.token,
-  }) as { id: string };
+  };
+  if (opts.instagramActorId) adSetPayload.instagram_actor_id = opts.instagramActorId;
+
+  const adSet = await postMeta(`${opts.adAccountId}/adsets`, adSetPayload) as { id: string };
 
   return { campaignId, adSetId: adSet.id };
 }
@@ -1341,6 +1862,7 @@ export interface AdCreativeOptions {
   mediaType: "image" | "video";
   imageHash?: string;
   videoId?: string;
+  thumbnailUrl?: string; // existing thumbnail for video creatives (e.g. from duplicate flow)
 }
 
 export async function createAdCreative(
@@ -1377,13 +1899,14 @@ export async function createAdCreative(
             message: opts.primaryText,
             title: opts.headline,
             ...(opts.description ? { description: opts.description } : {}),
+            ...(opts.thumbnailUrl ? { image_url: opts.thumbnailUrl } : {}),
             call_to_action: callToAction,
           },
         };
 
-  const result = (await postMetaJson(`${adAccountId}/adcreatives`, {
+  const result = (await postMeta(`${adAccountId}/adcreatives`, {
     name: opts.name,
-    object_story_spec: objectStorySpec,
+    object_story_spec: JSON.stringify(objectStorySpec),
     access_token: token,
   })) as { id: string };
 

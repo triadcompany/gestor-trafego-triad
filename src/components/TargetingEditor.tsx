@@ -77,22 +77,31 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
 
   const saveMutation = useMutation({
     mutationFn: async () => {
+      // Build clean targeting — never spread original targeting (may include read-only fields Meta rejects)
       const newTargeting: MetaTargeting = {
-        ...targeting,
-        age_min: ageMin,
-        age_max: ageMax,
-        genders: genderMode === "male" ? [1] : genderMode === "female" ? [2] : [],
-        flexible_spec: interests.length > 0 ? [{ interests }] : [],
-        geo_locations: {
-          countries: targeting?.geo_locations?.countries ?? ["BR"],
-          cities: locations.map((l) => ({ key: l.key, name: l.name })),
-        },
+        geo_locations: locations.length > 0
+          ? { cities: locations.map((l) => ({ key: l.key })) }
+          : { countries: ["BR"] },
+        targeting_automation: { advantage_audience: 0 },
         publisher_platforms: [
           ...(platforms.facebook ? ["facebook"] : []),
           ...(platforms.instagram ? ["instagram"] : []),
         ],
         ...(platforms.facebook ? { facebook_positions: fbPositions } : {}),
-        ...(platforms.instagram ? { instagram_positions: igPositions } : {}),
+        ...(platforms.instagram ? {
+          instagram_positions: (() => {
+            let pos = igPositions;
+            // explore_home requires explore (Meta rule)
+            if (pos.includes("explore_home") && !pos.includes("explore")) pos = [...pos, "explore"];
+            // ig_search conflicts with other placements
+            pos = pos.filter((p) => p !== "ig_search");
+            return pos;
+          })(),
+        } : {}),
+        ...(ageMin > 18 ? { age_min: ageMin } : {}),
+        ...(ageMax < 65 ? { age_max: ageMax } : {}),
+        ...(genderMode !== "all" ? { genders: genderMode === "male" ? [1] : [2] } : {}),
+        ...(interests.length > 0 ? { flexible_spec: [{ interests }] } : {}),
       };
       await updateAdSetTargeting(adSetId, newTargeting, token);
     },

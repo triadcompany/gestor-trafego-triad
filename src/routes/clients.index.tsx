@@ -168,7 +168,7 @@ function ClientsList() {
                     <TableRow
                       key={c.id}
                       className={`cursor-pointer hover:bg-muted/50 ${c.active ? "" : "opacity-50"}`}
-                      onClick={() => navigate({ to: "/clients/$id", params: { id: c.id } })}
+                      onClick={() => navigate({ to: "/clients/$id", params: { id: c.id }, search: { openCampaignId: undefined } })}
                     >
                       <TableCell className="font-medium">{c.name}</TableCell>
                       <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">

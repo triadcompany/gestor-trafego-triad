@@ -40,6 +40,8 @@ import {
 } from "@/lib/queries";
 import {
   fetchCampaigns,
+  fetchBaseCampaignPrefill,
+  waitForVideoReady,
   getMetaToken,
   duplicateCampaign,
   createCampaignFromScratch,
@@ -118,6 +120,13 @@ function NewCampaign() {
   const [adDescription, setAdDescription] = useState("");
   const [whatsappMessage, setWhatsappMessage] = useState("");
 
+  // ── Duplicate prefill ────────────────────────────────────────
+  const [existingVideoId, setExistingVideoId] = useState<string | undefined>();
+  const [existingImageHash, setExistingImageHash] = useState<string | undefined>();
+  const [existingThumbnailUrl, setExistingThumbnailUrl] = useState<string | undefined>();
+  const [instagramActorId, setInstagramActorId] = useState<string | undefined>();
+  const [prefillLoading, setPrefillLoading] = useState(false);
+
   // ── Conversation templates ───────────────────────────────────
   const [templateMode, setTemplateMode] = useState<"select" | "new" | "edit">("select");
   const [selectedTemplateId, setSelectedTemplateId] = useState("");
@@ -136,6 +145,49 @@ function NewCampaign() {
   });
 
   const selectedClient = clients.find((c) => c.id === clientId);
+
+  // Pre-fill form when base campaign is selected in duplicate mode
+  useEffect(() => {
+    if (!baseCampaignId || mode !== "duplicate") return;
+    let cancelled = false;
+    const load = async () => {
+      setPrefillLoading(true);
+      try {
+        const token = await getMetaToken();
+        if (!token || cancelled) return;
+        const d = await fetchBaseCampaignPrefill(baseCampaignId, token);
+        if (cancelled) return;
+        setCampaignType(d.objective === "OUTCOME_SALES" ? "sales" : "engagement");
+        setBudget(d.dailyBudget);
+        if (d.pageId) setPageId(d.pageId);
+        if (d.whatsappNumber) setWhatsappNumber(d.whatsappNumber);
+        setInstagramActorId(d.instagramActorId);
+        setAgeMin(d.ageMin);
+        setAgeMax(d.ageMax);
+        setGenderMode(d.genderMode);
+        setLocations(d.locations);
+        setInterests(d.interests);
+        setPlatforms(d.platforms);
+        setFbPositions(d.fbPositions);
+        setIgPositions(d.igPositions);
+        setPrimaryText(d.primaryText);
+        setHeadline(d.headline);
+        setAdDescription(d.description);
+        setMediaType(d.mediaType);
+        setExistingVideoId(d.videoId);
+        setExistingImageHash(d.imageHash);
+        setExistingThumbnailUrl(d.thumbnailUrl);
+        setMediaFile(null);
+        setMediaPreview(null);
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "Erro ao carregar dados da campanha");
+      } finally {
+        if (!cancelled) setPrefillLoading(false);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [baseCampaignId, mode]);
 
   const { data: clientCampaigns = [], isLoading: campaignsLoading } = useQuery({
     queryKey: ["campaigns-for-new", clientId],
@@ -237,55 +289,70 @@ function NewCampaign() {
       if (!token) throw new Error("Token Meta não encontrado. Acesse Configurações para renovar.");
       if (!selectedClient) throw new Error("Selecione um cliente.");
       if (!baseCampaignId) throw new Error("Selecione a campanha base.");
-      const progressToastId = "duplicate-progress";
-      toast.loading("Duplicando campanha na Meta...", { id: progressToastId });
+      const pid = "duplicate-progress";
+      toast.loading("Duplicando campanha na Meta...", { id: pid });
       try {
         const id = await duplicateCampaign(
           baseCampaignId,
           selectedClient.meta_ad_account_id,
           campaignName,
           token,
-          (msg) => toast.loading(msg, { id: progressToastId }),
+          (msg) => toast.loading(msg, { id: pid }),
           selectedClient.meta_whatsapp_number ?? undefined
         );
-        toast.dismiss(progressToastId);
+        toast.dismiss(pid);
         return id;
       } catch (err) {
-        toast.dismiss(progressToastId);
+        toast.dismiss(pid);
         throw err;
       }
     },
-    onSuccess: (id) => setCreatedId(id),
+    onSuccess: (id) => {
+      toast.success("Campanha duplicada! Abrindo editor...");
+      navigate({
+        to: "/campaigns/edit/$id",
+        params: { id },
+        search: { clientId: clientId ?? "" },
+      });
+    },
     onError: (e) => {
-      const msg = e instanceof Error ? e.message : "Erro ao duplicar campanha";
-      toast.error(msg, {
+      toast.error(e instanceof Error ? e.message : "Erro ao duplicar", {
         duration: 12000,
         action: { label: "Ver diagnóstico", onClick: () => navigate({ to: "/diagnostico-meta" }) },
       });
     },
   });
 
-  // ── Create-from-scratch mutation ─────────────────────────────
+  // ── Create mutation (scratch mode) ───────────────────────────
   const createMutation = useMutation({
     mutationFn: async () => {
       const token = await getMetaToken();
       if (!token) throw new Error("Token Meta não encontrado. Acesse Configurações.");
       if (!selectedClient) throw new Error("Selecione um cliente.");
-      if (!mediaFile) throw new Error("Selecione uma imagem ou vídeo.");
       if (!pageId) throw new Error("ID da Página é obrigatório.");
+      const hasExistingMedia = !!(existingVideoId || existingImageHash);
+      if (!mediaFile && !hasExistingMedia) throw new Error("Selecione uma imagem ou vídeo.");
 
       const pid = "create-progress";
       const progress = (msg: string) => toast.loading(msg, { id: pid });
 
       try {
-        progress(mediaType === "image" ? "Enviando imagem..." : "Enviando vídeo...");
-        let imageHash: string | undefined;
-        let videoId: string | undefined;
+        let finalVideoId: string | undefined = existingVideoId;
+        let finalImageHash: string | undefined = existingImageHash;
+        let finalThumbnailUrl: string | undefined = existingThumbnailUrl;
 
-        if (mediaType === "image") {
-          imageHash = await uploadAdImage(selectedClient.meta_ad_account_id, mediaFile, token);
-        } else {
-          videoId = await uploadAdVideo(selectedClient.meta_ad_account_id, mediaFile, token);
+        if (mediaFile) {
+          if (mediaType === "image") {
+            progress("Enviando imagem...");
+            finalImageHash = await uploadAdImage(selectedClient.meta_ad_account_id, mediaFile, token);
+            finalVideoId = undefined;
+            finalThumbnailUrl = undefined;
+          } else {
+            progress("Enviando vídeo...");
+            finalVideoId = await uploadAdVideo(selectedClient.meta_ad_account_id, mediaFile, token);
+            finalImageHash = undefined;
+            finalThumbnailUrl = (await waitForVideoReady(finalVideoId, token, progress)) ?? existingThumbnailUrl;
+          }
         }
 
         progress("Criando campanha e conjunto...");
@@ -300,6 +367,7 @@ function NewCampaign() {
           igPositions: platforms.instagram ? igPositions : [],
           token,
           campaignType,
+          instagramActorId,
           targeting: { ageMin, ageMax, genderMode, locations, interests },
         });
 
@@ -316,8 +384,9 @@ function NewCampaign() {
             headline,
             description: adDescription || undefined,
             mediaType,
-            imageHash,
-            videoId,
+            imageHash: finalImageHash,
+            videoId: finalVideoId,
+            thumbnailUrl: finalThumbnailUrl,
           },
           token
         );
@@ -349,7 +418,8 @@ function NewCampaign() {
   // ── Validation ───────────────────────────────────────────────
   const step1ValidDuplicate = !!clientId && !!campaignName && !!baseCampaignId;
   const step1ValidScratch = !!clientId && !!campaignName && budget > 0;
-  const step3Valid = !!mediaFile && !!primaryText && !!headline;
+  const hasMedia = !!mediaFile || !!(existingVideoId || existingImageHash);
+  const step3Valid = hasMedia && !!primaryText && !!headline;
 
   // ── Success screen ───────────────────────────────────────────
   if (createdId && selectedClient) {
@@ -374,13 +444,24 @@ function NewCampaign() {
             <Button variant="outline" asChild>
               <Link to="/">Voltar ao dashboard</Link>
             </Button>
+            <Button
+              onClick={() =>
+                navigate({
+                  to: "/clients/$id",
+                  params: { id: selectedClient.id },
+                  search: { openCampaignId: createdId! },
+                })
+              }
+            >
+              Abrir campanha
+            </Button>
             <Button variant="outline" asChild>
               <a href={metaUrl} target="_blank" rel="noopener noreferrer" className="gap-2">
                 <ExternalLink className="h-4 w-4" />
                 Abrir no Meta
               </a>
             </Button>
-            <Button onClick={() => {
+            <Button variant="ghost" onClick={() => {
               setCreatedId(null);
               setCampaignName("");
               setBaseCampaignId("");
@@ -416,36 +497,34 @@ function NewCampaign() {
           A campanha será criada <strong>pausada</strong> para revisão antes de ativar.
         </p>
 
-        {/* Step indicator (scratch mode only) */}
-        {mode === "scratch" && (
-          <div className="flex items-center gap-2 mb-8">
-            {([1, 2, 3] as const).map((n) => (
-              <div key={n} className="flex items-center gap-2">
-                <button
-                  onClick={() => step > n && setStep(n)}
-                  disabled={step <= n}
-                  className={[
-                    "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors",
-                    step === n
-                      ? "bg-primary text-primary-foreground"
-                      : step > n
-                      ? "text-green-500 cursor-pointer hover:bg-green-500/10"
-                      : "text-muted-foreground",
-                  ].join(" ")}
-                >
-                  <span className={[
-                    "inline-flex h-5 w-5 shrink-0 rounded-full items-center justify-center text-xs font-semibold",
-                    step === n ? "bg-white/20" : step > n ? "bg-green-500 text-white" : "bg-muted",
-                  ].join(" ")}>
-                    {step > n ? <Check className="h-3 w-3" /> : n}
-                  </span>
-                  {n === 1 ? "Campanha" : n === 2 ? "Conjunto" : "Anúncio"}
-                </button>
-                {n < 3 && <div className="h-px w-6 bg-border" />}
-              </div>
-            ))}
-          </div>
-        )}
+        {/* Step indicator — scratch mode only */}
+        {mode === "scratch" && <div className="flex items-center gap-2 mb-8">
+          {([1, 2, 3] as const).map((n) => (
+            <div key={n} className="flex items-center gap-2">
+              <button
+                onClick={() => step > n && setStep(n)}
+                disabled={step <= n}
+                className={[
+                  "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-colors",
+                  step === n
+                    ? "bg-primary text-primary-foreground"
+                    : step > n
+                    ? "text-green-500 cursor-pointer hover:bg-green-500/10"
+                    : "text-muted-foreground",
+                ].join(" ")}
+              >
+                <span className={[
+                  "inline-flex h-5 w-5 shrink-0 rounded-full items-center justify-center text-xs font-semibold",
+                  step === n ? "bg-white/20" : step > n ? "bg-green-500 text-white" : "bg-muted",
+                ].join(" ")}>
+                  {step > n ? <Check className="h-3 w-3" /> : n}
+                </span>
+                {n === 1 ? "Campanha" : n === 2 ? "Conjunto" : "Anúncio"}
+              </button>
+              {n < 3 && <div className="h-px w-6 bg-border" />}
+            </div>
+          ))}
+        </div>}
 
         {/* ── STEP 1 ── */}
         {step === 1 && (
@@ -523,7 +602,15 @@ function NewCampaign() {
             </Card>
 
             <Card className="p-5 space-y-4">
-              <SectionTitle>Configuração</SectionTitle>
+              <div className="flex items-center justify-between">
+                <SectionTitle>Configuração</SectionTitle>
+                {prefillLoading && (
+                  <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Carregando dados da campanha...
+                  </span>
+                )}
+              </div>
 
               <div className="space-y-2">
                 <Label>Nome da campanha</Label>
@@ -601,36 +688,20 @@ function NewCampaign() {
               <Button variant="outline" asChild>
                 <Link to="/">Cancelar</Link>
               </Button>
-              <div className="flex gap-2">
-                {mode === "duplicate" && selectedClient && baseCampaignId && (
-                  <Button variant="outline" asChild>
-                    <a
-                      href={`https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${selectedClient.meta_ad_account_id.replace("act_", "")}&selected_campaign_ids=${baseCampaignId}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="gap-2"
-                    >
-                      <ExternalLink className="h-4 w-4" />
-                      Duplicar no Meta
-                    </a>
-                  </Button>
-                )}
-                {mode === "duplicate" ? (
-                  <Button
-                    onClick={() => duplicateMutation.mutate()}
-                    disabled={!step1ValidDuplicate || duplicateMutation.isPending}
-                  >
-                    {duplicateMutation.isPending ? "Duplicando..." : "Duplicar via API"}
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => setStep(2)}
-                    disabled={!step1ValidScratch}
-                  >
-                    Avançar →
-                  </Button>
-                )}
-              </div>
+              {mode === "duplicate" ? (
+                <Button
+                  onClick={() => duplicateMutation.mutate()}
+                  disabled={!step1ValidDuplicate || duplicateMutation.isPending}
+                >
+                  {duplicateMutation.isPending
+                    ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Duplicando...</>
+                    : "Duplicar via API"}
+                </Button>
+              ) : (
+                <Button onClick={() => setStep(2)} disabled={!step1ValidScratch}>
+                  Avançar →
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -795,13 +866,32 @@ function NewCampaign() {
                 ))}
               </div>
 
-              <UploadZone
-                mediaType={mediaType}
-                file={mediaFile}
-                preview={mediaPreview}
-                onFile={handleFileSelect}
-                onClear={() => { setMediaFile(null); setMediaPreview(null); }}
-              />
+              {/* Existing media from duplicate — shown when no new file selected */}
+              {!mediaFile && existingThumbnailUrl && (
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <img src={existingThumbnailUrl} alt="Mídia atual" className="w-full max-h-56 object-cover" />
+                  <div className="px-4 py-2.5 flex items-center justify-between bg-muted/30">
+                    <span className="text-xs text-muted-foreground">
+                      {existingVideoId ? "Vídeo atual" : "Imagem atual"} — da campanha base
+                    </span>
+                    <button
+                      onClick={() => { setExistingVideoId(undefined); setExistingImageHash(undefined); setExistingThumbnailUrl(undefined); }}
+                      className="text-xs text-muted-foreground hover:text-foreground ml-4 shrink-0"
+                    >
+                      Trocar
+                    </button>
+                  </div>
+                </div>
+              )}
+              {(mediaFile || !existingThumbnailUrl) && (
+                <UploadZone
+                  mediaType={mediaType}
+                  file={mediaFile}
+                  preview={mediaPreview}
+                  onFile={handleFileSelect}
+                  onClear={() => { setMediaFile(null); setMediaPreview(null); }}
+                />
+              )}
             </Card>
 
             <Card className="p-5 space-y-4">

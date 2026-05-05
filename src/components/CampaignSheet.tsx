@@ -48,6 +48,7 @@ interface CampaignSheetProps {
   clientId: string;
   adAccountId: string;
   cplMax: number;
+  whatsappNumber?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
@@ -57,6 +58,7 @@ export function CampaignSheet({
   clientId,
   adAccountId,
   cplMax,
+  whatsappNumber,
   open,
   onOpenChange,
 }: CampaignSheetProps) {
@@ -103,6 +105,7 @@ export function CampaignSheet({
             campaignId={campaign.id}
             clientId={clientId}
             isActive={isActive}
+            whatsappNumber={whatsappNumber}
             onStatusChange={invalidateCampaigns}
           />
         </div>
@@ -210,11 +213,13 @@ function AdSetsSection({
   campaignId,
   clientId,
   isActive,
+  whatsappNumber,
   onStatusChange,
 }: {
   campaignId: string;
   clientId: string;
   isActive: boolean;
+  whatsappNumber?: string;
   onStatusChange: () => void;
 }) {
   const { data: adSets, isLoading } = useQuery({
@@ -236,7 +241,7 @@ function AdSetsSection({
       ) : (
         <div className="space-y-2">
           {adSets.map((adSet) => (
-            <AdSetRow key={adSet.id} adSet={adSet} clientId={clientId} onStatusChange={onStatusChange} />
+            <AdSetRow key={adSet.id} adSet={adSet} clientId={clientId} whatsappNumber={whatsappNumber} onStatusChange={onStatusChange} />
           ))}
         </div>
       )}
@@ -247,10 +252,12 @@ function AdSetsSection({
 function AdSetRow({
   adSet,
   clientId,
+  whatsappNumber,
   onStatusChange,
 }: {
   adSet: MetaAdSet;
   clientId: string;
+  whatsappNumber?: string;
   onStatusChange: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -393,7 +400,7 @@ function AdSetRow({
                 <p className="text-xs text-muted-foreground py-1">Nenhum anúncio encontrado.</p>
               ) : (
                 ads.map((ad) => (
-                  <AdRow key={ad.id} ad={ad} adSetId={adSet.id} token={token ?? ""} />
+                  <AdRow key={ad.id} ad={ad} adSetId={adSet.id} token={token ?? ""} whatsappNumber={whatsappNumber} />
                 ))
               )}
             </TabsContent>
@@ -414,7 +421,7 @@ function AdSetRow({
 
 // ── Ad row (expandable with creative editor) ───────────────────
 
-function AdRow({ ad, adSetId, token }: { ad: MetaAd; adSetId: string; token: string }) {
+function AdRow({ ad, adSetId, token, whatsappNumber }: { ad: MetaAd; adSetId: string; token: string; whatsappNumber?: string }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(false);
   const isActive = ad.status === "ACTIVE";
@@ -460,7 +467,7 @@ function AdRow({ ad, adSetId, token }: { ad: MetaAd; adSetId: string; token: str
       {/* Creative editor */}
       {expanded && (
         <div className="border-t border-border/60 px-3 py-3 bg-muted/10">
-          <AdCreativeEditor adId={ad.id} adSetId={adSetId} token={token} />
+          <AdCreativeEditor adId={ad.id} adSetId={adSetId} token={token} whatsappNumber={whatsappNumber} />
         </div>
       )}
     </div>

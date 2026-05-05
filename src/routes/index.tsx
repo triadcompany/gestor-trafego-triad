@@ -294,6 +294,7 @@ function Dashboard() {
                 key={c.id}
                 to="/clients/$id"
                 params={{ id: c.id }}
+                search={{ openCampaignId: undefined }}
                 className="block group rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <Card className="p-4 h-full transition-all group-hover:border-primary/50 group-hover:shadow-md cursor-pointer overflow-hidden relative">

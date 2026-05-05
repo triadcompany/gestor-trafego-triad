@@ -23,6 +23,7 @@ import { Route as ClientsIndexRouteImport } from './routes/clients.index'
 import { Route as ClientsIdRouteImport } from './routes/clients.$id'
 import { Route as CampaignsNewRouteImport } from './routes/campaigns.new'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as CampaignsEditIdRouteImport } from './routes/campaigns.edit.$id'
 import { Route as AuthGoogleCallbackRouteImport } from './routes/auth.google.callback'
 
 const VendasRoute = VendasRouteImport.update({
@@ -95,6 +96,11 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const CampaignsEditIdRoute = CampaignsEditIdRouteImport.update({
+  id: '/campaigns/edit/$id',
+  path: '/campaigns/edit/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AuthGoogleCallbackRoute = AuthGoogleCallbackRouteImport.update({
   id: '/auth/google/callback',
   path: '/auth/google/callback',
@@ -117,6 +123,7 @@ export interface FileRoutesByFullPath {
   '/clients/$id': typeof ClientsIdRoute
   '/clients/': typeof ClientsIndexRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
+  '/campaigns/edit/$id': typeof CampaignsEditIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -134,6 +141,7 @@ export interface FileRoutesByTo {
   '/clients/$id': typeof ClientsIdRoute
   '/clients': typeof ClientsIndexRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
+  '/campaigns/edit/$id': typeof CampaignsEditIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -152,6 +160,7 @@ export interface FileRoutesById {
   '/clients/$id': typeof ClientsIdRoute
   '/clients/': typeof ClientsIndexRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
+  '/campaigns/edit/$id': typeof CampaignsEditIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -171,6 +180,7 @@ export interface FileRouteTypes {
     | '/clients/$id'
     | '/clients/'
     | '/auth/google/callback'
+    | '/campaigns/edit/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -188,6 +198,7 @@ export interface FileRouteTypes {
     | '/clients/$id'
     | '/clients'
     | '/auth/google/callback'
+    | '/campaigns/edit/$id'
   id:
     | '__root__'
     | '/'
@@ -205,6 +216,7 @@ export interface FileRouteTypes {
     | '/clients/$id'
     | '/clients/'
     | '/auth/google/callback'
+    | '/campaigns/edit/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -223,6 +235,7 @@ export interface RootRouteChildren {
   ClientsIdRoute: typeof ClientsIdRoute
   ClientsIndexRoute: typeof ClientsIndexRoute
   AuthGoogleCallbackRoute: typeof AuthGoogleCallbackRoute
+  CampaignsEditIdRoute: typeof CampaignsEditIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -325,6 +338,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/campaigns/edit/$id': {
+      id: '/campaigns/edit/$id'
+      path: '/campaigns/edit/$id'
+      fullPath: '/campaigns/edit/$id'
+      preLoaderRoute: typeof CampaignsEditIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth/google/callback': {
       id: '/auth/google/callback'
       path: '/auth/google/callback'
@@ -351,6 +371,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClientsIdRoute: ClientsIdRoute,
   ClientsIndexRoute: ClientsIndexRoute,
   AuthGoogleCallbackRoute: AuthGoogleCallbackRoute,
+  CampaignsEditIdRoute: CampaignsEditIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
