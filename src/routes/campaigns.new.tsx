@@ -385,6 +385,7 @@ function NewCampaign() {
         };
 
         const n8nUrl = await getN8nWebhookUrl();
+        console.log("[campaigns] n8n webhook url:", n8nUrl);
         if (n8nUrl) {
           progress("Enviando para o n8n...");
           const callbackId = crypto.randomUUID();
@@ -393,6 +394,7 @@ function NewCampaign() {
           toast.success("Anúncio enviado para o n8n! Ele será criado em instantes.");
           return null;
         }
+        console.warn("[campaigns] URL n8n não configurada — usando chamada direta");
 
         progress("Criando campanha e conjunto...");
         const { campaignId, adSetId } = await createCampaignFromScratch({ ...campaignOptions, token });
@@ -421,8 +423,9 @@ function NewCampaign() {
     onSuccess: (id) => { if (id) setCreatedId(id); },
     onError: (e) => {
       const msg = e instanceof Error ? e.message : "Erro ao criar campanha";
+      console.error("[campaigns] erro ao criar anúncio:", e);
       toast.error(msg, {
-        duration: 12000,
+        duration: 20000,
         action: { label: "Ver diagnóstico", onClick: () => navigate({ to: "/diagnostico-meta" }) },
       });
     },
