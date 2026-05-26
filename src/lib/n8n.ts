@@ -40,12 +40,14 @@ export async function triggerN8nCampaign(
   const webhookUrl = await getN8nWebhookUrl();
   if (!webhookUrl) throw new Error("URL do webhook n8n não configurada. Acesse Configurações.");
 
-  const { error: insertError } = await supabase.from("n8n_jobs").insert({
+  // Fire-and-forget — table may not exist yet; webhook call is what matters
+  supabase.from("n8n_jobs").insert({
     id: payload.callbackId,
     status: "pending",
     payload: JSON.stringify({ campaignName: payload.campaignOptions.name }),
+  }).then(({ error }) => {
+    if (error && error.code !== "23505") console.warn("[n8n] job insert failed:", error.message);
   });
-  if (insertError && insertError.code !== "23505") throw insertError;
 
   const res = await fetch(webhookUrl, {
     method: "POST",
