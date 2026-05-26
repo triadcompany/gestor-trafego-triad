@@ -51,6 +51,20 @@ export async function getMetaToken(): Promise<string | null> {
   return token;
 }
 
+export async function requireMetaToken(): Promise<string> {
+  const { token, expiresAt, daysUntilExpiry } = await getTokenInfo();
+  if (!token) {
+    if (expiresAt && expiresAt < new Date()) {
+      throw new Error("Token da Meta expirado. Acesse Configurações e reconecte sua conta Meta.");
+    }
+    throw new Error("Token da Meta não configurado. Acesse Configurações para conectar sua conta Meta.");
+  }
+  if (daysUntilExpiry !== null && daysUntilExpiry <= 3) {
+    console.warn(`[Meta] Token expira em ${daysUntilExpiry} dia(s). Renove em breve.`);
+  }
+  return token;
+}
+
 export async function getOpenAIKey(): Promise<string | null> {
   const { data } = await supabase
     .from("app_config")
@@ -1093,33 +1107,68 @@ function formatMetaError(e: MetaApiError): string {
   return parts.join(" ");
 }
 
-async function postMetaJson(endpoint: string, params: Record<string, unknown>): Promise<unknown> {
-  const res = await fetch(`${BASE_URL}/${endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  const json = (await res.json()) as { error?: MetaApiError };
-  if (json.error) {
-    await recordMetaApiError(endpoint, res.status, json.error);
-    throw new Error(formatMetaError(json.error));
+// Error codes the Meta API considers transient (safe to retry).
+// 1/2: internal/service errors; 4/17/341: rate limiting.
+const META_RETRYABLE_CODES = new Set([1, 2, 4, 17, 341]);
+
+class MetaApiCallError extends Error {
+  constructor(message: string, public readonly code?: number) {
+    super(message);
+    this.name = "MetaApiCallError";
   }
-  return json;
+}
+
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+  let lastError: Error = new Error("Unknown error");
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err));
+      if (lastError instanceof MetaApiCallError) {
+        if (lastError.code !== undefined && !META_RETRYABLE_CODES.has(lastError.code)) {
+          throw lastError;
+        }
+      }
+      if (attempt < maxAttempts - 1) {
+        await new Promise<void>((r) => setTimeout(r, 1000 * 2 ** attempt));
+      }
+    }
+  }
+  throw lastError;
+}
+
+async function postMetaJson(endpoint: string, params: Record<string, unknown>): Promise<unknown> {
+  return withRetry(async () => {
+    const res = await fetch(`${BASE_URL}/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(params),
+    });
+    const json = (await res.json()) as { error?: MetaApiError };
+    if (json.error) {
+      await recordMetaApiError(endpoint, res.status, json.error);
+      throw new MetaApiCallError(formatMetaError(json.error), json.error.code);
+    }
+    return json;
+  });
 }
 
 async function postMeta(endpoint: string, params: Record<string, string>): Promise<unknown> {
-  const body = new URLSearchParams(params);
-  const res = await fetch(`${BASE_URL}/${endpoint}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body,
+  return withRetry(async () => {
+    const body = new URLSearchParams(params);
+    const res = await fetch(`${BASE_URL}/${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+    });
+    const json = (await res.json()) as { error?: MetaApiError };
+    if (json.error) {
+      await recordMetaApiError(endpoint, res.status, json.error);
+      throw new MetaApiCallError(formatMetaError(json.error), json.error.code);
+    }
+    return json;
   });
-  const json = (await res.json()) as { error?: MetaApiError };
-  if (json.error) {
-    await recordMetaApiError(endpoint, res.status, json.error);
-    throw new Error(formatMetaError(json.error));
-  }
-  return json;
 }
 
 // ── Diagnostics ───────────────────────────────────────────────

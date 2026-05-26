@@ -55,6 +55,7 @@ import {
   type SelectedLocation,
   type MetaInterest,
 } from "@/lib/meta";
+import { getN8nWebhookUrl, triggerN8nCampaign } from "@/lib/n8n";
 
 const FB_POSITIONS = [
   { value: "feed", label: "Feed" },
@@ -355,8 +356,8 @@ function NewCampaign() {
           }
         }
 
-        progress("Criando campanha e conjunto...");
-        const { campaignId, adSetId } = await createCampaignFromScratch({
+        const normalizedPhone = (whatsappNumber || "").replace(/\D/g, "");
+        const campaignOptions = {
           name: campaignName,
           adAccountId: selectedClient.meta_ad_account_id,
           pageId,
@@ -365,29 +366,41 @@ function NewCampaign() {
           placements: platforms,
           fbPositions: platforms.facebook ? fbPositions : [],
           igPositions: platforms.instagram ? igPositions : [],
-          token,
           campaignType,
           instagramActorId,
           targeting: { ageMin, ageMax, genderMode, locations, interests },
-        });
+        };
+        const creativeOptions = {
+          name: campaignName,
+          pageId,
+          whatsappNumber: normalizedPhone,
+          whatsappMessage: whatsappMessage || undefined,
+          primaryText,
+          headline,
+          description: adDescription || undefined,
+          mediaType,
+          imageHash: finalImageHash,
+          videoId: finalVideoId,
+          thumbnailUrl: finalThumbnailUrl,
+        };
+
+        const n8nUrl = await getN8nWebhookUrl();
+        if (n8nUrl) {
+          progress("Enviando para o n8n...");
+          const callbackId = crypto.randomUUID();
+          await triggerN8nCampaign({ callbackId, token, campaignOptions, creativeOptions });
+          toast.dismiss(pid);
+          toast.success("Anúncio enviado para o n8n! Ele será criado em instantes.");
+          return null;
+        }
+
+        progress("Criando campanha e conjunto...");
+        const { campaignId, adSetId } = await createCampaignFromScratch({ ...campaignOptions, token });
 
         progress("Criando criativo...");
-        const normalizedPhone = (whatsappNumber || "").replace(/\D/g, "");
         const creativeId = await createAdCreative(
           selectedClient.meta_ad_account_id,
-          {
-            name: campaignName,
-            pageId,
-            whatsappNumber: normalizedPhone,
-            whatsappMessage: whatsappMessage || undefined,
-            primaryText,
-            headline,
-            description: adDescription || undefined,
-            mediaType,
-            imageHash: finalImageHash,
-            videoId: finalVideoId,
-            thumbnailUrl: finalThumbnailUrl,
-          },
+          creativeOptions,
           token
         );
 
@@ -405,7 +418,7 @@ function NewCampaign() {
         throw err;
       }
     },
-    onSuccess: (id) => setCreatedId(id),
+    onSuccess: (id) => { if (id) setCreatedId(id); },
     onError: (e) => {
       const msg = e instanceof Error ? e.message : "Erro ao criar campanha";
       toast.error(msg, {
