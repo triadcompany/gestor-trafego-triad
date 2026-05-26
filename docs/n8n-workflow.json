@@ -1,0 +1,257 @@
+{
+  "name": "Gestor Tráfego — Criar Anúncio Meta",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "criar-anuncio",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook — Receber Payload",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "criar-anuncio"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\nreturn [{\n  json: {\n    token: body.token,\n    callbackId: body.callbackId,\n    adAccountId: body.campaignOptions.adAccountId,\n    campaignName: body.campaignOptions.name,\n    objective: body.campaignOptions.campaignType === 'sales' ? 'OUTCOME_SALES' : 'OUTCOME_ENGAGEMENT',\n    dailyBudget: Math.round(body.campaignOptions.dailyBudget * 100),\n    pageId: body.campaignOptions.pageId,\n    whatsappNumber: (body.campaignOptions.whatsappNumber || '').replace(/\\D/g, ''),\n    targeting: JSON.stringify(body.campaignOptions.targeting || {}),\n    placements: body.campaignOptions.placements,\n    primaryText: body.creativeOptions.primaryText,\n    headline: body.creativeOptions.headline,\n    description: body.creativeOptions.description || '',\n    mediaType: body.creativeOptions.mediaType,\n    imageHash: body.creativeOptions.imageHash || null,\n    videoId: body.creativeOptions.videoId || null,\n    thumbnailUrl: body.creativeOptions.thumbnailUrl || null,\n    whatsappMessage: body.creativeOptions.whatsappMessage || null\n  }\n}];"
+      },
+      "id": "parse-payload",
+      "name": "Extrair Campos",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.adAccountId }}/campaigns",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "name", "value": "={{ $json.campaignName }}" },
+            { "name": "objective", "value": "={{ $json.objective }}" },
+            { "name": "status", "value": "PAUSED" },
+            { "name": "special_ad_categories", "value": "[]" },
+            { "name": "daily_budget", "value": "={{ $json.dailyBudget }}" },
+            { "name": "bid_strategy", "value": "LOWEST_COST_WITHOUT_CAP" },
+            { "name": "access_token", "value": "={{ $json.token }}" }
+          ]
+        },
+        "options": {
+          "retry": {
+            "enabled": true,
+            "maxTries": 3,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "criar-campanha",
+      "name": "1. Criar Campanha",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $('Extrair Campos').item.json.adAccountId }}/adsets",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "name", "value": "={{ $('Extrair Campos').item.json.campaignName }}" },
+            { "name": "campaign_id", "value": "={{ $json.id }}" },
+            { "name": "billing_event", "value": "IMPRESSIONS" },
+            { "name": "optimization_goal", "value": "CONVERSATIONS" },
+            { "name": "destination_type", "value": "WHATSAPP" },
+            { "name": "promoted_object", "value": "={{ JSON.stringify({ page_id: $('Extrair Campos').item.json.pageId, whatsapp_phone_number: $('Extrair Campos').item.json.whatsappNumber }) }}" },
+            { "name": "targeting", "value": "={{ JSON.stringify({ geo_locations: { countries: ['BR'] }, targeting_automation: { advantage_audience: 0 } }) }}" },
+            { "name": "status", "value": "PAUSED" },
+            { "name": "access_token", "value": "={{ $('Extrair Campos').item.json.token }}" }
+          ]
+        },
+        "options": {
+          "retry": {
+            "enabled": true,
+            "maxTries": 3,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "criar-adset",
+      "name": "2. Criar Ad Set",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const fields = $('Extrair Campos').item.json;\nconst adSetId = $input.first().json.id;\nconst waNumber = fields.whatsappNumber;\nconst waMsg = fields.whatsappMessage;\nconst waLink = waMsg\n  ? `https://wa.me/${waNumber}?text=${encodeURIComponent(waMsg)}`\n  : `https://wa.me/${waNumber}`;\n\nconst cta = { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP', whatsapp_number: waNumber } };\n\nlet objectStorySpec;\nif (fields.mediaType === 'image') {\n  objectStorySpec = {\n    page_id: fields.pageId,\n    link_data: {\n      image_hash: fields.imageHash,\n      message: fields.primaryText,\n      name: fields.headline,\n      ...(fields.description ? { description: fields.description } : {}),\n      link: waLink,\n      call_to_action: cta\n    }\n  };\n} else {\n  objectStorySpec = {\n    page_id: fields.pageId,\n    video_data: {\n      video_id: fields.videoId,\n      message: fields.primaryText,\n      title: fields.headline,\n      ...(fields.description ? { description: fields.description } : {}),\n      ...(fields.thumbnailUrl ? { image_url: fields.thumbnailUrl } : {}),\n      call_to_action: cta\n    }\n  };\n}\n\nreturn [{ json: { adSetId, objectStorySpec: JSON.stringify(objectStorySpec), fields } }];"
+      },
+      "id": "montar-creative",
+      "name": "Montar Creative Spec",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $('Extrair Campos').item.json.adAccountId }}/adcreatives",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "name", "value": "={{ $('Extrair Campos').item.json.campaignName }}" },
+            { "name": "object_story_spec", "value": "={{ $json.objectStorySpec }}" },
+            { "name": "access_token", "value": "={{ $('Extrair Campos').item.json.token }}" }
+          ]
+        },
+        "options": {
+          "retry": {
+            "enabled": true,
+            "maxTries": 3,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "criar-creative",
+      "name": "3. Criar Creative",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1340, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $('Extrair Campos').item.json.adAccountId }}/ads",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "name", "value": "={{ $('Extrair Campos').item.json.campaignName }}" },
+            { "name": "adset_id", "value": "={{ $('Montar Creative Spec').item.json.adSetId }}" },
+            { "name": "creative", "value": "={{ JSON.stringify({ creative_id: $json.id }) }}" },
+            { "name": "status", "value": "PAUSED" },
+            { "name": "access_token", "value": "={{ $('Extrair Campos').item.json.token }}" }
+          ]
+        },
+        "options": {
+          "retry": {
+            "enabled": true,
+            "maxTries": 3,
+            "waitBetweenTries": 2000
+          }
+        }
+      },
+      "id": "criar-ad",
+      "name": "4. Criar Ad",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1560, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://SEU-SUPABASE.supabase.co/rest/v1/n8n_jobs?id=eq.{{ $('Extrair Campos').item.json.callbackId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "SUA-SUPABASE-SERVICE-ROLE-KEY" },
+            { "name": "Authorization", "value": "Bearer SUA-SUPABASE-SERVICE-ROLE-KEY" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'done', campaign_id: $('1. Criar Campanha').item.json.id, ad_id: $json.id, updated_at: new Date().toISOString() }) }}"
+      },
+      "id": "atualizar-job-ok",
+      "name": "Atualizar Job — Sucesso",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 200]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://SEU-SUPABASE.supabase.co/rest/v1/n8n_jobs?id=eq.{{ $('Extrair Campos').item.json.callbackId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "SUA-SUPABASE-SERVICE-ROLE-KEY" },
+            { "name": "Authorization", "value": "Bearer SUA-SUPABASE-SERVICE-ROLE-KEY" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "return=minimal" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'error', error_message: $json.message || 'Erro desconhecido no n8n', updated_at: new Date().toISOString() }) }}"
+      },
+      "id": "atualizar-job-erro",
+      "name": "Atualizar Job — Erro",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1780, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"jobId\": \"{{ $('Extrair Campos').item.json.callbackId }}\" }"
+      },
+      "id": "resposta-webhook",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 500]
+    }
+  ],
+  "connections": {
+    "Webhook — Receber Payload": {
+      "main": [[{ "node": "Extrair Campos", "type": "main", "index": 0 }]]
+    },
+    "Extrair Campos": {
+      "main": [
+        [
+          { "node": "1. Criar Campanha", "type": "main", "index": 0 },
+          { "node": "Responder Webhook", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "1. Criar Campanha": {
+      "main": [[{ "node": "2. Criar Ad Set", "type": "main", "index": 0 }]]
+    },
+    "2. Criar Ad Set": {
+      "main": [[{ "node": "Montar Creative Spec", "type": "main", "index": 0 }]]
+    },
+    "Montar Creative Spec": {
+      "main": [[{ "node": "3. Criar Creative", "type": "main", "index": 0 }]]
+    },
+    "3. Criar Creative": {
+      "main": [[{ "node": "4. Criar Ad", "type": "main", "index": 0 }]]
+    },
+    "4. Criar Ad": {
+      "main": [[{ "node": "Atualizar Job — Sucesso", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "errorWorkflow": "atualizar-job-erro",
+    "executionOrder": "v1"
+  },
+  "_meta": {
+    "instructions": [
+      "1. Importe este arquivo no n8n (Workflows > Import from file)",
+      "2. No nó 'Webhook — Receber Payload', copie a URL de produção gerada pelo n8n",
+      "3. Cole essa URL em Configurações do app no campo 'URL Webhook n8n'",
+      "4. Nos nós 'Atualizar Job', substitua SEU-SUPABASE pela URL do seu projeto Supabase",
+      "5. Substitua SUA-SUPABASE-SERVICE-ROLE-KEY pela service role key do Supabase",
+      "6. Crie a tabela n8n_jobs no Supabase (SQL abaixo)",
+      "",
+      "SQL para criar a tabela n8n_jobs:",
+      "CREATE TABLE n8n_jobs (id UUID PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending', payload JSONB, campaign_id TEXT, ad_id TEXT, error_message TEXT, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now());"
+    ]
+  }
+}
