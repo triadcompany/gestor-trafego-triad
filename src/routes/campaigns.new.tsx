@@ -169,6 +169,17 @@ function NewCampaign() {
     }
   }, [jobStatus, pendingJobId]);
 
+  // Timeout: se o n8n não responder em 3 min, libera o botão
+  useEffect(() => {
+    if (!pendingJobId) return;
+    const timer = setTimeout(() => {
+      toast.dismiss("n8n-progress");
+      toast.error("O n8n demorou demais. Verifique o workflow e tente novamente.", { duration: 20000 });
+      setPendingJobId(null);
+    }, 3 * 60 * 1000);
+    return () => clearTimeout(timer);
+  }, [pendingJobId]);
+
   // Pre-fill form when base campaign is selected in duplicate mode
   useEffect(() => {
     if (!baseCampaignId || mode !== "duplicate") return;
