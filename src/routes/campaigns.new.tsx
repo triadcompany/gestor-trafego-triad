@@ -55,7 +55,7 @@ import {
   type SelectedLocation,
   type MetaInterest,
 } from "@/lib/meta";
-import { getN8nWebhookUrl, triggerN8nCampaign } from "@/lib/n8n";
+import { getN8nWebhookUrl, triggerN8nCampaign, pollN8nJob } from "@/lib/n8n";
 
 const FB_POSITIONS = [
   { value: "feed", label: "Feed" },
@@ -137,6 +137,7 @@ function NewCampaign() {
 
   // ── Result ──────────────────────────────────────────────────
   const [createdId, setCreatedId] = useState<string | null>(null);
+  const [pendingJobId, setPendingJobId] = useState<string | null>(null);
 
   // ── Data ────────────────────────────────────────────────────
   const queryClient = useQueryClient();
@@ -146,6 +147,27 @@ function NewCampaign() {
   });
 
   const selectedClient = clients.find((c) => c.id === clientId);
+
+  // ── n8n job polling ─────────────────────────────────────────
+  const { data: jobStatus } = useQuery({
+    queryKey: ["n8n-job", pendingJobId],
+    queryFn: () => pollN8nJob(pendingJobId!),
+    enabled: !!pendingJobId,
+    refetchInterval: 4000,
+  });
+
+  useEffect(() => {
+    if (!jobStatus || !pendingJobId) return;
+    if (jobStatus.status === "done") {
+      toast.dismiss("n8n-progress");
+      toast.success("Anúncio criado com sucesso pelo n8n!", { duration: 10000 });
+      setPendingJobId(null);
+    } else if (jobStatus.status === "error") {
+      toast.dismiss("n8n-progress");
+      toast.error(`Erro no n8n: ${jobStatus.errorMessage ?? "Erro desconhecido"}`, { duration: 20000 });
+      setPendingJobId(null);
+    }
+  }, [jobStatus, pendingJobId]);
 
   // Pre-fill form when base campaign is selected in duplicate mode
   useEffect(() => {
@@ -385,16 +407,14 @@ function NewCampaign() {
         };
 
         const n8nUrl = await getN8nWebhookUrl();
-        console.log("[campaigns] n8n webhook url:", n8nUrl);
         if (n8nUrl) {
           progress("Enviando para o n8n...");
           const callbackId = crypto.randomUUID();
           await triggerN8nCampaign({ callbackId, token, campaignOptions, creativeOptions });
           toast.dismiss(pid);
-          toast.success("Anúncio enviado para o n8n! Ele será criado em instantes.");
-          return null;
+          toast.loading("Criando anúncio via n8n...", { id: "n8n-progress", duration: Infinity });
+          return { n8nJobId: callbackId };
         }
-        console.warn("[campaigns] URL n8n não configurada — usando chamada direta");
 
         progress("Criando campanha e conjunto...");
         const { campaignId, adSetId } = await createCampaignFromScratch({ ...campaignOptions, token });
@@ -420,7 +440,14 @@ function NewCampaign() {
         throw err;
       }
     },
-    onSuccess: (id) => { if (id) setCreatedId(id); },
+    onSuccess: (result) => {
+      if (!result) return;
+      if (typeof result === "object" && "n8nJobId" in result) {
+        setPendingJobId(result.n8nJobId);
+      } else {
+        setCreatedId(result);
+      }
+    },
     onError: (e) => {
       const msg = e instanceof Error ? e.message : "Erro ao criar campanha";
       console.error("[campaigns] erro ao criar anúncio:", e);
@@ -1049,10 +1076,10 @@ function NewCampaign() {
               <Button variant="outline" onClick={() => setStep(2)}>← Voltar</Button>
               <Button
                 onClick={() => createMutation.mutate()}
-                disabled={!step3Valid || createMutation.isPending}
+                disabled={!step3Valid || createMutation.isPending || !!pendingJobId}
                 className="px-6"
               >
-                {createMutation.isPending ? (
+                {(createMutation.isPending || pendingJobId) ? (
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Criando...</>
                 ) : "Criar Campanha"}
               </Button>
