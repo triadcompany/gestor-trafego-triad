@@ -169,14 +169,14 @@ function NewCampaign() {
     }
   }, [jobStatus, pendingJobId]);
 
-  // Timeout: se o n8n não responder em 3 min, libera o botão
+  // Timeout: se o n8n não responder em 60s, libera o botão
   useEffect(() => {
     if (!pendingJobId) return;
     const timer = setTimeout(() => {
       toast.dismiss("n8n-progress");
-      toast.error("O n8n demorou demais. Verifique o workflow e tente novamente.", { duration: 20000 });
+      toast.error("O n8n não respondeu a tempo. Verifique o workflow e tente novamente.", { duration: 20000 });
       setPendingJobId(null);
-    }, 3 * 60 * 1000);
+    }, 60 * 1000);
     return () => clearTimeout(timer);
   }, [pendingJobId]);
 
