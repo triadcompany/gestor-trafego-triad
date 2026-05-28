@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList } from "lucide-react";
 import {
   Tooltip as UITooltip,
   TooltipContent,
@@ -136,7 +136,7 @@ function ClientDetail() {
   const [editingGoal, setEditingGoal] = useState(false);
   const [cplMin, setCplMin] = useState<number | null>(null);
   const [cplMax, setCplMax] = useState<number | null>(null);
-  const [chartMetric, setChartMetric] = useState<"cpl" | "spend" | "leads">("cpl");
+  const [chartMetric, setChartMetric] = useState<"cpl" | "spend" | "leads" | "forms">("cpl");
   const [selectedCampaign, setSelectedCampaign] = useState<MetaCampaign | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -183,6 +183,7 @@ function ClientDetail() {
 
   const periodSpend = insights.reduce((s, h) => s + h.spend, 0);
   const periodLeads = insights.reduce((s, h) => s + h.leads, 0);
+  const periodForms = insights.reduce((s, h) => s + (h.forms ?? 0), 0);
   const periodCpl =
     periodLeads > 0 ? Math.round((periodSpend / periodLeads) * 100) / 100 : null;
 
@@ -421,13 +422,16 @@ function ClientDetail() {
                 </div>
               )}
             </div>
-            <div className="flex gap-6">
+            <div className="flex gap-6 flex-wrap">
               <Stat
                 label={`CPL ${periodLabel}`}
                 value={periodCpl !== null ? brl(periodCpl) : "—"}
               />
               <Stat label="Gasto" value={periodSpend > 0 ? brl(periodSpend) : "—"} />
               <Stat label="Leads" value={periodLeads > 0 ? String(periodLeads) : "—"} />
+              {periodForms > 0 && (
+                <Stat label="Formulários" value={String(periodForms)} />
+              )}
             </div>
           </div>
         </Card>
@@ -436,7 +440,7 @@ function ClientDetail() {
         <Card className="p-4 mb-6">
           <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
             <h2 className="text-sm font-medium">
-              {chartMetric === "cpl" ? "CPL" : chartMetric === "spend" ? "Gasto" : "Leads"} — {periodLabel}
+              {chartMetric === "cpl" ? "CPL" : chartMetric === "spend" ? "Gasto" : chartMetric === "leads" ? "Leads" : "Formulários"} — {periodLabel}
             </h2>
             <div className="flex items-center gap-1 rounded-lg border border-border p-1 bg-muted/30">
               {(
@@ -444,6 +448,7 @@ function ClientDetail() {
                   { key: "cpl", icon: TrendingUp, label: "CPL" },
                   { key: "spend", icon: DollarSign, label: "Gasto" },
                   { key: "leads", icon: UsersIcon, label: "Leads" },
+                  { key: "forms", icon: ClipboardList, label: "Forms" },
                 ] as const
               ).map(({ key, icon: Icon, label }) => (
                 <button
@@ -476,10 +481,10 @@ function ClientDetail() {
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey="date" stroke="var(--muted-foreground)" fontSize={11} />
-                  <YAxis stroke="var(--muted-foreground)" fontSize={11} tickFormatter={chartMetric === "leads" ? undefined : (v) => `R$${v}`} />
+                  <YAxis stroke="var(--muted-foreground)" fontSize={11} tickFormatter={(chartMetric === "leads" || chartMetric === "forms") ? undefined : (v) => `R$${v}`} />
                   <ChartTooltip
                     contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-                    formatter={(v: number) => chartMetric === "leads" ? [v, "Leads"] : [brl(v), chartMetric === "cpl" ? "CPL" : "Gasto"]}
+                    formatter={(v: number) => chartMetric === "leads" ? [v, "Leads"] : chartMetric === "forms" ? [v, "Formulários"] : [brl(v), chartMetric === "cpl" ? "CPL" : "Gasto"]}
                   />
                   {chartMetric === "cpl" && (
                     <ReferenceArea y1={client.cpl_min} y2={client.cpl_max} fill="var(--primary)" fillOpacity={0.08} />
@@ -487,7 +492,7 @@ function ClientDetail() {
                   <Line
                     type="monotone"
                     dataKey={chartMetric}
-                    stroke={chartMetric === "cpl" ? "var(--primary)" : chartMetric === "spend" ? "hsl(var(--chart-2))" : "hsl(var(--chart-3))"}
+                    stroke={chartMetric === "cpl" ? "var(--primary)" : chartMetric === "spend" ? "hsl(var(--chart-2))" : chartMetric === "leads" ? "hsl(var(--chart-3))" : "hsl(var(--chart-4))"}
                     strokeWidth={2}
                     dot={{ r: 2 }}
                     activeDot={{ r: 5 }}

@@ -176,11 +176,26 @@ export interface MetaSyncResult {
   syncedAt: string;
 }
 
+function extractMetrics(actions?: Array<{ action_type: string; value: string }>): { leads: number; forms: number } {
+  const find = (types: string[]) => {
+    const a = actions?.find((a) => types.includes(a.action_type));
+    return a ? parseInt(a.value, 10) : 0;
+  };
+  return {
+    leads: find([
+      "onsite_conversion.total_messaging_connection",
+      "onsite_conversion.messaging_conversation_started_7d",
+      "messaging_first_reply",
+    ]),
+    forms: find(["lead", "onsite_conversion.lead_grouped"]),
+  };
+}
+
 export async function syncClientMetrics(
   clientId: string,
   adAccountId: string,
   token: string
-): Promise<{ spend: number; leads: number }> {
+): Promise<{ spend: number; leads: number; forms: number }> {
   const today = new Date().toISOString().slice(0, 10);
 
   const params = new URLSearchParams({
@@ -203,17 +218,10 @@ export async function syncClientMetrics(
 
   const row = json.data?.[0];
   const spend = parseFloat(row?.spend ?? "0");
-
-  const leadsAction = row?.actions?.find(
-    (a) =>
-      a.action_type === "onsite_conversion.total_messaging_connection" ||
-      a.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
-      a.action_type === "messaging_first_reply"
-  );
-  const leads = leadsAction ? parseInt(leadsAction.value, 10) : 0;
+  const { leads, forms } = extractMetrics(row?.actions);
 
   await supabase.from("metrics_daily").upsert(
-    { client_id: clientId, date: today, spend, leads },
+    { client_id: clientId, date: today, spend, leads, forms },
     { onConflict: "client_id,date" }
   );
 
@@ -223,7 +231,7 @@ export async function syncClientMetrics(
     await supabase.from("clients").update({ meta_balance: balance }).eq("id", clientId);
   }
 
-  return { spend, leads };
+  return { spend, leads, forms };
 }
 
 export async function fetchAccountInsightsForRange(
@@ -231,7 +239,7 @@ export async function fetchAccountInsightsForRange(
   token: string,
   since: string,
   until: string,
-): Promise<{ spend: number; leads: number }> {
+): Promise<{ spend: number; leads: number; forms: number }> {
   const params = new URLSearchParams({
     fields: "spend,actions",
     time_range: JSON.stringify({ since, until }),
@@ -248,19 +256,13 @@ export async function fetchAccountInsightsForRange(
     error?: { message: string };
   };
 
-  if (json.error) return { spend: 0, leads: 0 };
+  if (json.error) return { spend: 0, leads: 0, forms: 0 };
 
   const row = json.data?.[0];
   const spend = parseFloat(row?.spend ?? "0");
-  const leadsAction = row?.actions?.find(
-    (a) =>
-      a.action_type === "onsite_conversion.total_messaging_connection" ||
-      a.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
-      a.action_type === "messaging_first_reply"
-  );
-  const leads = leadsAction ? parseInt(leadsAction.value, 10) : 0;
+  const { leads, forms } = extractMetrics(row?.actions);
 
-  return { spend, leads };
+  return { spend, leads, forms };
 }
 
 export async function syncAllClients(token: string): Promise<MetaSyncResult> {
@@ -304,6 +306,7 @@ export interface DailyInsight {
   date: string; // YYYY-MM-DD
   spend: number;
   leads: number;
+  forms: number;
   cpl: number | null;
 }
 
@@ -340,17 +343,12 @@ export async function fetchDailyInsights(
 
   return (json.data ?? []).map((row) => {
     const spend = parseFloat(row.spend ?? "0");
-    const leadsAction = row.actions?.find(
-      (a) =>
-        a.action_type === "onsite_conversion.total_messaging_connection" ||
-        a.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
-        a.action_type === "messaging_first_reply"
-    );
-    const leads = leadsAction ? parseInt(leadsAction.value, 10) : 0;
+    const { leads, forms } = extractMetrics(row.actions);
     return {
       date: row.date_start,
       spend,
       leads,
+      forms,
       cpl: leads > 0 ? Math.round((spend / leads) * 100) / 100 : null,
     };
   });

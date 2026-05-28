@@ -34,6 +34,7 @@ export interface MetricRow {
   date: string;
   spend: number;
   leads: number;
+  forms: number;
   cpl: number | null;
 }
 
@@ -42,6 +43,7 @@ export interface ClientWithToday extends ClientRow {
   cplToday: number | null;
   spendToday: number;
   leadsToday: number;
+  formsToday: number;
 }
 
 export interface ClientDetail extends ClientRow {
@@ -49,6 +51,7 @@ export interface ClientDetail extends ClientRow {
   cplToday: number | null;
   spendToday: number;
   leadsToday: number;
+  formsToday: number;
   history: MetricRow[];
 }
 
@@ -118,22 +121,23 @@ export async function fetchClients(
 
   // Single-day (today / yesterday): use metrics_daily cache — fast and always fresh from auto-sync
   if (start === end) {
-    type PeriodRow = { client_id: string; spend: number; leads: number; cpl: number | null };
+    type PeriodRow = { client_id: string; spend: number; leads: number; forms: number; cpl: number | null };
     const { data: rows } = await (
-      supabase.from("metrics_daily").select("client_id, spend, leads, cpl").eq("date", start)
+      supabase.from("metrics_daily").select("client_id, spend, leads, forms, cpl").eq("date", start)
     ) as { data: PeriodRow[] | null };
 
-    const metricsMap = new Map<string, { spend: number; leads: number; cpl: number | null }>();
+    const metricsMap = new Map<string, { spend: number; leads: number; forms: number; cpl: number | null }>();
     for (const m of rows ?? []) {
-      metricsMap.set(m.client_id, { spend: m.spend, leads: m.leads, cpl: m.cpl });
+      metricsMap.set(m.client_id, { spend: m.spend, leads: m.leads, forms: m.forms ?? 0, cpl: m.cpl });
     }
 
     return clientRows.map((c) => {
       const agg = metricsMap.get(c.id);
       const spend = agg?.spend ?? 0;
       const leads = agg?.leads ?? 0;
+      const forms = agg?.forms ?? 0;
       const cpl = agg?.cpl ?? (leads > 0 ? spend / leads : null);
-      return { ...c, spendToday: spend, leadsToday: leads, cplToday: cpl, status: computeStatus(cpl, spend, c.cpl_max) };
+      return { ...c, spendToday: spend, leadsToday: leads, formsToday: forms, cplToday: cpl, status: computeStatus(cpl, spend, c.cpl_max) };
     });
   }
 
@@ -141,8 +145,7 @@ export async function fetchClients(
   const token = await getMetaToken();
 
   if (!token) {
-    // No token configured — return clients with no data
-    return clientRows.map((c) => ({ ...c, spendToday: 0, leadsToday: 0, cplToday: null, status: "no-data" as ClientStatus }));
+    return clientRows.map((c) => ({ ...c, spendToday: 0, leadsToday: 0, formsToday: 0, cplToday: null, status: "no-data" as ClientStatus }));
   }
 
   const results = await Promise.allSettled(
@@ -152,11 +155,11 @@ export async function fetchClients(
   return clientRows.map((c, i) => {
     const result = results[i];
     if (result.status === "rejected") {
-      return { ...c, spendToday: 0, leadsToday: 0, cplToday: null, status: "no-data" as ClientStatus };
+      return { ...c, spendToday: 0, leadsToday: 0, formsToday: 0, cplToday: null, status: "no-data" as ClientStatus };
     }
-    const { spend, leads } = result.value;
+    const { spend, leads, forms } = result.value;
     const cpl = leads > 0 ? spend / leads : null;
-    return { ...c, spendToday: spend, leadsToday: leads, cplToday: cpl, status: computeStatus(cpl, spend, c.cpl_max) };
+    return { ...c, spendToday: spend, leadsToday: leads, formsToday: forms, cplToday: cpl, status: computeStatus(cpl, spend, c.cpl_max) };
   });
 }
 
@@ -182,7 +185,7 @@ export async function fetchClientDetail(id: string): Promise<ClientDetail> {
     supabase.from("clients").select("*, client_tags(tags(id, name, color))").eq("id", id).single(),
     supabase
       .from("metrics_daily")
-      .select("date, spend, leads, cpl")
+      .select("date, spend, leads, forms, cpl")
       .eq("client_id", id)
       .gte("date", thirtyDaysAgo)
       .order("date"),
@@ -193,6 +196,7 @@ export async function fetchClientDetail(id: string): Promise<ClientDetail> {
   const todayMetric = (history ?? []).find((m) => m.date === today);
   const spend = todayMetric?.spend ?? 0;
   const leads = todayMetric?.leads ?? 0;
+  const forms = (todayMetric as any)?.forms ?? 0;
   const cpl = todayMetric?.cpl ?? null;
 
   const tags = ((client as any).client_tags ?? []).map((ct: any) => ct.tags).filter(Boolean);
@@ -202,9 +206,10 @@ export async function fetchClientDetail(id: string): Promise<ClientDetail> {
     tags,
     spendToday: spend,
     leadsToday: leads,
+    formsToday: forms,
     cplToday: cpl,
     status: computeStatus(cpl, spend, client.cpl_max),
-    history: history ?? [],
+    history: (history ?? []).map((m: any) => ({ ...m, forms: m.forms ?? 0 })),
   };
 }
 
