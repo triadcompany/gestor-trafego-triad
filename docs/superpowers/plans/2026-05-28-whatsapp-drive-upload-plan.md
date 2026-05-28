@@ -6,219 +6,259 @@
 
 ## Pré-requisitos (fazer antes de começar)
 
-- [ ] Anotar o **ID da pasta "Gestor Thiago Lisboa"** no Google Drive (copiar da URL ao abrir a pasta)
+- [ ] Anotar o **ID da pasta "Gestor Thiago Lisboa"** no Drive (URL ao abrir a pasta)
+- [ ] Confirmar URL base da Evolution API, `apikey` e nome da instância
+- [ ] Confirmar formato exato do `remoteJid` do seu número no webhook (ex: `5547988620003@s.whatsapp.net`)
 - [ ] Executar SQL no Supabase:
-  ```sql
-  CREATE TABLE drive_uploads (
-    id         uuid        DEFAULT gen_random_uuid() PRIMARY KEY,
-    media_url  text        NOT NULL,
-    car_name   text        NOT NULL,
-    folders    jsonb       NOT NULL,
-    status     text        DEFAULT 'aguardando',
-    folder_id  text,
-    created_at timestamptz DEFAULT now()
-  );
-  ```
-- [ ] Confirmar a URL base da Evolution API, o `apikey` e o nome da instância
-- [ ] Confirmar o número autorizado exato como aparece no webhook (ex: `5547988620003@s.whatsapp.net`)
+
+```sql
+CREATE TABLE drive_uploads (
+  id                 uuid        DEFAULT gen_random_uuid() PRIMARY KEY,
+  status             text        DEFAULT 'aguardando_pasta',
+  folders            jsonb,
+  pasta_cliente_id   text,
+  pasta_cliente_nome text,
+  car_name           text,
+  media_url          text,
+  folder_id          text,
+  created_at         timestamptz DEFAULT now()
+);
+```
 
 ---
 
-## Fase 1 — Workflow 1: Receber Vídeo
+## Workflow 1 — Palavra-chave "Drive"
 
-### Passo 1.1 — Criar workflow e webhook trigger
-- Criar novo workflow no n8n: **"WA Drive — Receber Vídeo"**
-- Adicionar nó **Webhook**:
-  - Method: POST
-  - Path: `wa-drive-receber`
-  - Response mode: `Immediately`
-- Configurar a Evolution API para disparar webhook nessa URL para o evento `messages.upsert`
+**Nome no n8n:** `WA Drive — 1. Listar Pastas`
 
-### Passo 1.2 — Filtrar mensagem válida
-- Adicionar nó **IF** "Filtrar Mensagem" com todas as condições AND:
-  - `{{ $json.data.messageType }}` equals `videoMessage`
-  - `{{ $json.data.key.remoteJid }}` equals `5547988620003@s.whatsapp.net`
-  - `{{ $json.data.message.videoMessage.caption }}` matches regex `^.+\s*-\s*.+$`
+### 1.1 — Webhook
+- Method: POST | Path: `wa-drive-1-listar`
+- Response mode: `Immediately`
 
-### Passo 1.3 — Extrair campos do caption
-- Adicionar nó **Code** "Extrair Campos":
-  ```javascript
-  const data = $input.first().json.data;
-  const caption = data.message.videoMessage.caption.trim();
-  const match = caption.match(/^(.+?)\s*-\s*(.+)$/);
-  const carName = match[2].trim();
-  const mediaUrl = data.message.videoMessage.url;
-  const remoteJid = data.key.remoteJid;
+### 1.2 — Filtrar Mensagem (IF, todas AND)
+- `{{ $json.data.key.remoteJid }}` equals `5547988620003@s.whatsapp.net`
+- `{{ $json.data.messageType }}` equals `conversation`
+- `{{ $json.data.message.conversation.toLowerCase() }}` equals `drive`
 
-  return [{ json: { carName, mediaUrl, remoteJid } }];
-  ```
+### 1.3 — Listar Pastas (Google Drive)
+- Operation: Search Files
+- Query: `'ID_PASTA_RAIZ' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
+- Fields: `id, name`
 
-### Passo 1.4 — Listar pastas do cliente no Drive
-- Adicionar nó **Google Drive** "Listar Pastas Cliente":
-  - Operation: Search Files
-  - Query: `'<ID de "Gestor Thiago Lisboa">' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`
-  - Fields: `id, name`
+### 1.4 — Montar Lista (Code)
+```javascript
+const files = $input.all();
+const folders = files
+  .map(item => ({ name: item.json.name, id: item.json.id }))
+  .sort((a, b) => a.name.localeCompare(b.name))
+  .map((f, i) => ({ index: i + 1, name: f.name, id: f.id }));
 
-### Passo 1.5 — Montar lista numerada
-- Adicionar nó **Code** "Montar Lista":
-  ```javascript
-  const files = $input.all();
-  const folders = files
-    .map(item => ({ name: item.json.name, id: item.json.id }))
-    .sort((a, b) => a.name.localeCompare(b.name))
-    .map((f, i) => ({ index: i + 1, name: f.name, id: f.id }));
+const listText = folders.map(f => `${f.index}. ${f.name}`).join('\n');
+const message = `📁 Selecione a pasta do cliente:\n\n${listText}`;
 
-  const listText = folders.map(f => `${f.index}. ${f.name}`).join('\n');
-  const carName = $('Extrair Campos').item.json.carName;
-  const mediaUrl = $('Extrair Campos').item.json.mediaUrl;
-  const remoteJid = $('Extrair Campos').item.json.remoteJid;
+return [{ json: { folders, message } }];
+```
 
-  const message = `📁 Recebi o vídeo! Qual é a pasta do cliente?\n\n${listText}\n\nResponda com o número da pasta.\n(Carro: ${carName})`;
+### 1.5 — Salvar Supabase
+- Operation: Insert | Table: `drive_uploads`
+- `folders`: `={{ JSON.stringify($json.folders) }}`
+- `status`: `aguardando_pasta`
 
-  return [{ json: { folders, message, carName, mediaUrl, remoteJid } }];
-  ```
-
-### Passo 1.6 — Salvar no Supabase
-- Adicionar nó **Supabase** "Salvar Supabase":
-  - Operation: Insert
-  - Table: `drive_uploads`
-  - Fields:
-    - `media_url`: `={{ $json.mediaUrl }}`
-    - `car_name`: `={{ $json.carName }}`
-    - `folders`: `={{ JSON.stringify($json.folders) }}`
-    - `status`: `aguardando`
-
-### Passo 1.7 — Enviar lista no WhatsApp
-- Adicionar nó **HTTP Request** "Enviar Lista WA":
-  - Method: POST
-  - URL: `<url_evolution_api>/message/sendText/<instancia>`
-  - Header: `apikey: <sua_apikey_evolution>`
-  - Body (JSON):
-    ```json
-    {
-      "number": "={{ $('Montar Lista').item.json.remoteJid }}",
-      "text": "={{ $('Montar Lista').item.json.message }}"
-    }
-    ```
+### 1.6 — Enviar Lista WhatsApp (HTTP Request)
+- Method: POST
+- URL: `URL_EVOLUTION/message/sendText/INSTANCIA`
+- Header: `apikey: APIKEY`
+- Body:
+```json
+{
+  "number": "5547988620003@s.whatsapp.net",
+  "text": "={{ $('Montar Lista').item.json.message }}"
+}
+```
 
 ---
 
-## Fase 2 — Workflow 2: Confirmar e Fazer Upload
+## Workflow 2 — Seleção da Pasta
 
-### Passo 2.1 — Criar workflow e webhook trigger
-- Criar novo workflow: **"WA Drive — Confirmar e Upload"**
-- Adicionar nó **Webhook**:
-  - Method: POST
-  - Path: `wa-drive-confirmar`
-  - Response mode: `Immediately`
-- Configurar a Evolution API para disparar webhook nessa URL também
+**Nome no n8n:** `WA Drive — 2. Selecionar Pasta`
 
-> **Nota:** Se a Evolution API não suporta múltiplos webhooks por instância, use um único webhook e bifurque com um IF logo no início: se tem vídeo + caption no formato → Workflow 1; se é texto numérico → Workflow 2.
+### 2.1 — Webhook
+- Method: POST | Path: `wa-drive-2-selecionar`
+- Response mode: `Immediately`
 
-### Passo 2.2 — Filtrar resposta numérica
-- Adicionar nó **IF** "Filtrar Resposta" (AND):
-  - `{{ $json.data.key.remoteJid }}` equals `5547988620003@s.whatsapp.net`
-  - `{{ $json.data.messageType }}` equals `conversation` OR `extendedTextMessage`
-  - Texto corresponde a regex `^\d+$`
+### 2.2 — Filtrar Resposta (IF, todas AND)
+- `{{ $json.data.key.remoteJid }}` equals `5547988620003@s.whatsapp.net`
+- `{{ $json.data.messageType }}` equals `conversation`
+- `{{ $json.data.message.conversation }}` matches regex `^\d+$`
 
-### Passo 2.3 — Buscar registro pendente
-- Adicionar nó **Supabase** "Buscar Pendente":
-  - Operation: Select
-  - Table: `drive_uploads`
-  - Filter: `status` equals `aguardando`
-  - Order by: `created_at` DESC
-  - Limit: 1
+### 2.3 — Buscar Supabase
+- Operation: Select | Table: `drive_uploads`
+- Filter: `status` eq `aguardando_pasta`
+- Order: `created_at` DESC | Limit: 1
 
-### Passo 2.4 — Checar se há registro
-- Adicionar nó **IF** "Tem Registro?":
-  - `{{ $json.id }}` is not empty
-  - Branch FALSE: encerrar
+### 2.4 — Checar Registro (IF)
+- `{{ $json.id }}` is not empty
+- Branch FALSE: encerrar
 
-### Passo 2.5 — Validar número e selecionar pasta
-- Adicionar nó **Code** "Validar e Selecionar":
-  ```javascript
-  const msgText = $('Filtrar Resposta').item.json.data.message.conversation
-    || $('Filtrar Resposta').item.json.data.message.extendedTextMessage?.text || '';
-  const escolha = parseInt(msgText.trim());
-  const registro = $('Buscar Pendente').item.json;
-  const folders = registro.folders;
+### 2.5 — Validar e Selecionar (Code)
+```javascript
+const escolha = parseInt($('Filtrar Resposta').item.json.data.message.conversation.trim());
+const registro = $('Buscar Supabase').item.json;
+const folders = registro.folders;
 
-  if (isNaN(escolha) || escolha < 1 || escolha > folders.length) {
-    return [{ json: { valido: false, total: folders.length } }];
-  }
+if (isNaN(escolha) || escolha < 1 || escolha > folders.length) {
+  return [{ json: { valido: false, total: folders.length, registroId: registro.id } }];
+}
 
-  const pastaCliente = folders.find(f => f.index === escolha);
-  return [{
-    json: {
-      valido: true,
-      pastaClienteId: pastaCliente.id,
-      pastaClienteNome: pastaCliente.name,
-      carName: registro.car_name,
-      mediaUrl: registro.media_url,
-      registroId: registro.id
-    }
-  }];
-  ```
+const pasta = folders.find(f => f.index === escolha);
+return [{ json: {
+  valido: true,
+  pastaClienteId: pasta.id,
+  pastaClienteNome: pasta.name,
+  registroId: registro.id
+} }];
+```
 
-### Passo 2.6 — Tratar número inválido
-- Adicionar nó **IF** "Número Válido?":
-  - `{{ $json.valido }}` equals `true`
-  - Branch FALSE → **HTTP Request** "Enviar Erro WA":
-    - Mensagem: `❌ Número inválido. Responda com um número entre 1 e {{ $('Validar e Selecionar').item.json.total }}.`
+### 2.6 — Número Válido? (IF)
+- `{{ $json.valido }}` equals `true`
+- Branch FALSE → HTTP Request "Erro WA": `❌ Número inválido. Responda com um número entre 1 e {{ $json.total }}.`
 
-### Passo 2.7 — Criar subpasta do carro
-- Adicionar nó **Google Drive** "Criar Subpasta":
-  - Operation: Create Folder
-  - Folder name: `={{ $json.carName }}`
-  - Parent folder ID: `={{ $json.pastaClienteId }}`
+### 2.7 — Atualizar Supabase
+- Operation: Update | Table: `drive_uploads`
+- Filter: `id` eq `={{ $json.registroId }}`
+- `pasta_cliente_id`: `={{ $json.pastaClienteId }}`
+- `pasta_cliente_nome`: `={{ $json.pastaClienteNome }}`
+- `status`: `aguardando_video`
 
-### Passo 2.8 — Baixar vídeo da Evolution API
-- Adicionar nó **HTTP Request** "Baixar Mídia":
-  - Method: GET
-  - URL: `={{ $('Validar e Selecionar').item.json.mediaUrl }}`
-  - Header: `apikey: <sua_apikey_evolution>`
-  - Response format: `File`
-
-### Passo 2.9 — Upload direto na subpasta
-- Adicionar nó **Google Drive** "Upload Drive":
-  - Operation: Upload
-  - Drive: My Drive
-  - Folder ID: `={{ $('Criar Subpasta').item.json.id }}`
-  - File name: `={{ $('Validar e Selecionar').item.json.carName }}_{{ $now.toFormat('yyyyMMdd_HHmmss') }}.mp4`
-  - Input binary field: `data`
-
-### Passo 2.10 — Atualizar Supabase
-- Adicionar nó **Supabase** "Atualizar Supabase":
-  - Operation: Update
-  - Table: `drive_uploads`
-  - Filter: `id` equals `={{ $('Validar e Selecionar').item.json.registroId }}`
-  - Fields:
-    - `status`: `concluido`
-    - `folder_id`: `={{ $('Criar Subpasta').item.json.id }}`
-
-### Passo 2.11 — Enviar link no WhatsApp
-- Adicionar nó **HTTP Request** "Enviar Link WA":
-  - Method: POST
-  - URL: `<url_evolution_api>/message/sendText/<instancia>`
-  - Header: `apikey: <sua_apikey_evolution>`
-  - Body:
-    ```json
-    {
-      "number": "5547988620003@s.whatsapp.net",
-      "text": "✅ Vídeo salvo em {{ $('Validar e Selecionar').item.json.pastaClienteNome }} / {{ $('Validar e Selecionar').item.json.carName }}!\n\n📂 https://drive.google.com/drive/folders/{{ $('Criar Subpasta').item.json.id }}"
-    }
-    ```
+### 2.8 — Confirmar Seleção WhatsApp (HTTP Request)
+```json
+{
+  "number": "5547988620003@s.whatsapp.net",
+  "text": "✅ {{ $('Validar e Selecionar').item.json.pastaClienteNome }} selecionado.\n\nAgora envie o vídeo com o nome do carro na legenda."
+}
+```
 
 ---
 
-## Ordem de execução
+## Workflow 3 — Receber Vídeo
 
-1. Executar SQL no Supabase
-2. Anotar ID da pasta "Gestor Thiago Lisboa" no Drive
-3. Construir e ativar Workflow 1
-4. Testar Workflow 1: enviar vídeo com caption → confirmar que a lista chega no WhatsApp
-5. Construir e ativar Workflow 2
-6. Testar fluxo completo: enviar vídeo → receber lista → responder número → confirmar upload e link
+**Nome no n8n:** `WA Drive — 3. Receber Vídeo`
+
+### 3.1 — Webhook
+- Method: POST | Path: `wa-drive-3-video`
+- Response mode: `Immediately`
+
+### 3.2 — Filtrar Vídeo (IF, todas AND)
+- `{{ $json.data.key.remoteJid }}` equals `5547988620003@s.whatsapp.net`
+- `{{ $json.data.messageType }}` equals `videoMessage`
+- `{{ $json.data.message.videoMessage.caption }}` is not empty
+
+### 3.3 — Buscar Supabase
+- Operation: Select | Table: `drive_uploads`
+- Filter: `status` eq `aguardando_video`
+- Order: `created_at` DESC | Limit: 1
+
+### 3.4 — Checar Registro (IF)
+- `{{ $json.id }}` is not empty
+- Branch FALSE: encerrar
+
+### 3.5 — Extrair Campos (Code)
+```javascript
+const data = $('Filtrar Vídeo').item.json.data;
+const carName = data.message.videoMessage.caption.trim();
+const mediaUrl = data.message.videoMessage.url;
+const registro = $('Buscar Supabase').item.json;
+
+return [{ json: {
+  carName,
+  mediaUrl,
+  registroId: registro.id,
+  pastaClienteNome: registro.pasta_cliente_nome
+} }];
+```
+
+### 3.6 — Atualizar Supabase
+- Operation: Update | Table: `drive_uploads`
+- Filter: `id` eq `={{ $json.registroId }}`
+- `car_name`: `={{ $json.carName }}`
+- `media_url`: `={{ $json.mediaUrl }}`
+- `status`: `aguardando_confirmacao`
+
+### 3.7 — Pedir Confirmação WhatsApp (HTTP Request)
+```json
+{
+  "number": "5547988620003@s.whatsapp.net",
+  "text": "📋 Confirma?\n\nCliente: {{ $('Extrair Campos').item.json.pastaClienteNome }}\nCarro: {{ $('Extrair Campos').item.json.carName }}\n\nResponda *sim* para confirmar."
+}
+```
+
+---
+
+## Workflow 4 — Confirmação e Upload
+
+**Nome no n8n:** `WA Drive — 4. Upload Final`
+
+### 4.1 — Webhook
+- Method: POST | Path: `wa-drive-4-confirmar`
+- Response mode: `Immediately`
+
+### 4.2 — Filtrar "sim" (IF, todas AND)
+- `{{ $json.data.key.remoteJid }}` equals `5547988620003@s.whatsapp.net`
+- `{{ $json.data.messageType }}` equals `conversation`
+- `{{ $json.data.message.conversation.toLowerCase().trim() }}` equals `sim`
+
+### 4.3 — Buscar Supabase
+- Operation: Select | Table: `drive_uploads`
+- Filter: `status` eq `aguardando_confirmacao`
+- Order: `created_at` DESC | Limit: 1
+
+### 4.4 — Checar Registro (IF)
+- `{{ $json.id }}` is not empty
+- Branch FALSE: encerrar
+
+### 4.5 — Criar Subpasta (Google Drive)
+- Operation: Create Folder
+- Folder name: `={{ $json.car_name }}`
+- Parent folder ID: `={{ $json.pasta_cliente_id }}`
+
+### 4.6 — Baixar Mídia (HTTP Request)
+- Method: GET
+- URL: `={{ $('Buscar Supabase').item.json.media_url }}`
+- Header: `apikey: APIKEY`
+- Response format: `File`
+
+### 4.7 — Upload Drive (Google Drive)
+- Operation: Upload
+- Folder ID: `={{ $('Criar Subpasta').item.json.id }}`
+- File name: `={{ $('Buscar Supabase').item.json.car_name }}_{{ $now.toFormat('yyyyMMdd_HHmmss') }}.mp4`
+- Input binary field: `data`
+
+### 4.8 — Atualizar Supabase
+- Operation: Update | Table: `drive_uploads`
+- Filter: `id` eq `={{ $('Buscar Supabase').item.json.id }}`
+- `folder_id`: `={{ $('Criar Subpasta').item.json.id }}`
+- `status`: `concluido`
+
+### 4.9 — Enviar Link WhatsApp (HTTP Request)
+```json
+{
+  "number": "5547988620003@s.whatsapp.net",
+  "text": "✅ Vídeo salvo em {{ $('Buscar Supabase').item.json.pasta_cliente_nome }} / {{ $('Buscar Supabase').item.json.car_name }}!\n\n📂 https://drive.google.com/drive/folders/{{ $('Criar Subpasta').item.json.id }}"
+}
+```
+
+---
+
+## Configuração da Evolution API
+
+Os 4 webhooks precisam ser registrados na Evolution API. Se ela só suporta 1 URL por instância, use uma única URL de webhook no n8n que bifurca internamente com IFs:
+
+| Condição | Encaminha para |
+|----------|---------------|
+| texto = "drive" | WF1 lógica |
+| texto = número inteiro + `aguardando_pasta` | WF2 lógica |
+| tem vídeo + `aguardando_video` | WF3 lógica |
+| texto = "sim" + `aguardando_confirmacao` | WF4 lógica |
 
 ---
 
@@ -226,8 +266,20 @@
 
 | Placeholder | Onde encontrar |
 |-------------|---------------|
-| `<ID de "Gestor Thiago Lisboa">` | URL do Drive ao abrir a pasta raiz |
-| `<url_evolution_api>` | Painel da Evolution API |
-| `<instancia>` | Nome da instância na Evolution API |
-| `<sua_apikey_evolution>` | Painel da Evolution API → API Keys |
-| `5547988620003@s.whatsapp.net` | Confirmar formato exato no payload do webhook |
+| `ID_PASTA_RAIZ` | URL do Drive ao abrir "Gestor Thiago Lisboa" |
+| `URL_EVOLUTION` | Painel da Evolution API |
+| `INSTANCIA` | Nome da instância na Evolution API |
+| `APIKEY` | Painel Evolution API → API Keys |
+| `5547988620003@s.whatsapp.net` | Verificar no payload do primeiro webhook recebido |
+
+---
+
+## Ordem de execução e testes
+
+1. Executar SQL no Supabase
+2. Criar os 4 workflows no n8n (desativados)
+3. Configurar webhook na Evolution API
+4. Ativar WF1 → testar: mandar "Drive" → confirmar que lista chega
+5. Ativar WF2 → testar: responder número → confirmar mensagem de seleção
+6. Ativar WF3 → testar: enviar vídeo com legenda → confirmar mensagem de resumo
+7. Ativar WF4 → testar: responder "sim" → confirmar upload e link

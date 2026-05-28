@@ -6,7 +6,7 @@
 
 ## Visão Geral
 
-Fluxo n8n que permite enviar um vídeo para um número WhatsApp (Evolution API) com uma mensagem no formato `cliente - carro`, e automaticamente organiza o arquivo no Google Drive na estrutura correta, com uma etapa de confirmação interativa para evitar erros de digitação no nome da pasta do cliente.
+Fluxo conversacional no WhatsApp (via Evolution API + n8n) para organizar vídeos no Google Drive. O usuário inicia com a palavra-chave "Drive", seleciona a pasta do cliente, envia o vídeo com o nome do carro na legenda, confirma, e recebe o link da pasta criada.
 
 ---
 
@@ -14,32 +14,47 @@ Fluxo n8n que permite enviar um vídeo para um número WhatsApp (Evolution API) 
 
 - Pasta raiz no Drive: **"Gestor Thiago Lisboa"**
 - Estrutura: `Gestor Thiago Lisboa / [cliente] / [carro] / video.mp4`
-- As pastas de clientes já existem; pastas de carro são criadas pelo fluxo
+- Pastas de clientes já existem; pastas de carro são criadas pelo fluxo
 - Número WhatsApp do bot: **+55 47 98862-0003** (Evolution API)
-- Remetente autorizado: apenas o próprio usuário (mesmo número)
+- Remetente autorizado: apenas o próprio usuário
+
+---
+
+## Fluxo Conversacional
+
+```
+Você: "Drive"
+Bot:  "📁 Selecione a pasta do cliente:
+       1. Alliance
+       2. Gauchinho
+       3. Roma Motors"
+
+Você: "2"
+Bot:  "✅ Gauchinho selecionado. Agora envie o vídeo com o nome do carro na legenda."
+
+Você: [vídeo com legenda "t-cross"]
+Bot:  "📋 Confirma?
+       Cliente: Gauchinho
+       Carro: t-cross
+       Responda sim para confirmar."
+
+Você: "sim"
+Bot:  "✅ Vídeo salvo em Gauchinho / t-cross!
+       📂 https://drive.google.com/drive/folders/..."
+```
 
 ---
 
 ## Arquitetura
 
-Dois workflows n8n independentes + tabela Supabase como estado compartilhado.
+4 workflows n8n + tabela Supabase como máquina de estados.
 
 ```
-[Você] → envia vídeo + "gauchinho - t-cross" → [Evolution API]
-           ↓ webhook
-    [Workflow 1 — Receber Vídeo]
-      → lista pastas do cliente → salva mediaUrl + metadados no Supabase
-      → envia lista numerada no WhatsApp
-           ↓
-[Você] → responde "2" → [Evolution API]
-           ↓ webhook
-    [Workflow 2 — Confirmar e Fazer Upload]
-      → lê registro do Supabase → seleciona pasta
-      → cria subpasta do carro → baixa vídeo → upload direto no destino
-      → atualiza Supabase → envia link no WhatsApp
+"Drive"  →  [WF1] lista pastas          →  status: aguardando_pasta
+número   →  [WF2] salva pasta selecionada →  status: aguardando_video
+vídeo    →  [WF3] salva mídia + carro   →  status: aguardando_confirmacao
+"sim"    →  [WF4] cria pasta + upload   →  status: concluido
 ```
-
-Não há pasta temporária — o vídeo é baixado e enviado direto ao destino final apenas após a confirmação da pasta.
 
 ---
 
@@ -47,100 +62,82 @@ Não há pasta temporária — o vídeo é baixado e enviado direto ao destino f
 
 ```sql
 CREATE TABLE drive_uploads (
-  id         uuid        DEFAULT gen_random_uuid() PRIMARY KEY,
-  media_url  text        NOT NULL,   -- URL da mídia na Evolution API (baixada no Workflow 2)
-  car_name   text        NOT NULL,   -- nome da subpasta a criar
-  folders    jsonb       NOT NULL,   -- [{ "index": 1, "name": "gauchinho", "id": "abc" }]
-  status     text        DEFAULT 'aguardando',  -- aguardando | concluido | erro
-  folder_id  text,                   -- ID da pasta final (preenchido após upload)
-  created_at timestamptz DEFAULT now()
+  id                 uuid        DEFAULT gen_random_uuid() PRIMARY KEY,
+  status             text        DEFAULT 'aguardando_pasta',
+  folders            jsonb,      -- [{ "index": 1, "name": "Gauchinho", "id": "..." }]
+  pasta_cliente_id   text,       -- preenchido no WF2
+  pasta_cliente_nome text,       -- preenchido no WF2
+  car_name           text,       -- preenchido no WF3
+  media_url          text,       -- URL da mídia na Evolution API, preenchido no WF3
+  folder_id          text,       -- ID da pasta final no Drive, preenchido no WF4
+  created_at         timestamptz DEFAULT now()
 );
 ```
 
 ---
 
-## Workflow 1 — Receber Vídeo
+## Workflow 1 — Palavra-chave "Drive"
 
-**Trigger:** Webhook POST da Evolution API (evento `messages.upsert`)
+**Trigger:** Webhook Evolution API — evento `messages.upsert`
 
-### Nós
-
-| # | Nome | Tipo | Descrição |
-|---|------|------|-----------|
-| 1 | Webhook — Evolution | Webhook | Recebe todos os eventos de mensagem |
-| 2 | Filtrar Mensagem | IF | Passa apenas se: `messageType = videoMessage`, remetente = número autorizado, texto (`caption`) corresponde ao padrão `X - Y` |
-| 3 | Extrair Campos | Code | Extrai `carName` e `mediaUrl` do payload; monta `clientRaw` do caption |
-| 4 | Listar Pastas do Cliente | Google Drive | Lista subpastas de "Gestor Thiago Lisboa" |
-| 5 | Montar Lista | Code | Monta array `[{ index, name, id }]` e texto numerado para WhatsApp |
-| 6 | Salvar no Supabase | Supabase | INSERT em `drive_uploads` com `media_url`, `car_name`, `folders`, `status: aguardando` |
-| 7 | Enviar Lista WhatsApp | HTTP Request (Evolution API) | Envia mensagem com lista numerada + instrução |
-
-### Mensagem enviada (exemplo)
-```
-📁 Recebi o vídeo! Qual é a pasta do cliente?
-
-1. Alliance
-2. Gauchinho
-3. Roma Motors
-
-Responda com o número da pasta.
-(Carro: t-cross)
-```
+| # | Nó | Descrição |
+|---|---|---|
+| 1 | Webhook | Recebe todos os eventos |
+| 2 | Filtrar | Remetente autorizado + tipo `conversation` + texto = "drive" (case-insensitive) |
+| 3 | Listar Pastas | Google Drive — lista subpastas de "Gestor Thiago Lisboa" |
+| 4 | Montar Lista | Code — monta array `[{ index, name, id }]` + texto numerado |
+| 5 | Salvar Supabase | INSERT com `folders`, `status: aguardando_pasta` |
+| 6 | Enviar Lista WA | Evolution API — manda lista numerada |
 
 ---
 
-## Workflow 2 — Confirmar e Fazer Upload
+## Workflow 2 — Seleção da Pasta (número)
 
-**Trigger:** Webhook POST da Evolution API (mesmo endpoint ou endpoint separado)
+**Trigger:** Webhook Evolution API
 
-### Nós
-
-| # | Nome | Tipo | Descrição |
-|---|------|------|-----------|
-| 1 | Webhook — Evolution | Webhook | Recebe todos os eventos de mensagem |
-| 2 | Filtrar Resposta | IF | Passa apenas se: remetente = número autorizado, texto é número inteiro |
-| 3 | Buscar Registro | Supabase | SELECT mais recente com `status = aguardando` |
-| 4 | Validar Número | IF | Checa se número digitado está dentro do range da lista; se inválido, responde com erro e encerra |
-| 5 | Selecionar e Preparar | Code | Usa o índice digitado para extrair `{ name, id }` da pasta do cliente |
-| 6 | Criar Subpasta | Google Drive | Cria pasta `car_name` dentro da pasta selecionada; se já existe, usa a existente |
-| 7 | Baixar Mídia | HTTP Request | GET na `media_url` salva no Supabase com header `apikey` da Evolution API |
-| 8 | Upload para Subpasta | Google Drive | Faz upload do vídeo binário direto na subpasta criada |
-| 9 | Atualizar Supabase | Supabase | UPDATE `status: concluido`, `folder_id` |
-| 10 | Enviar Link WhatsApp | HTTP Request (Evolution API) | Envia link da pasta no WhatsApp |
-
-### Mensagem de sucesso
-```
-✅ Vídeo salvo em Gauchinho / t-cross!
-
-📂 https://drive.google.com/drive/folders/{folder_id}
-```
-
-### Mensagem de erro (número inválido)
-```
-❌ Número inválido. Responda com um número entre 1 e N.
-```
+| # | Nó | Descrição |
+|---|---|---|
+| 1 | Webhook | Recebe todos os eventos |
+| 2 | Filtrar | Remetente autorizado + texto é número inteiro |
+| 3 | Buscar Supabase | SELECT mais recente com `status = aguardando_pasta` |
+| 4 | Checar Registro | IF — tem registro? Se não, descarta |
+| 5 | Validar e Selecionar | Code — valida range, extrai pasta selecionada |
+| 6 | Atualizar Supabase | UPDATE `pasta_cliente_id`, `pasta_cliente_nome`, `status: aguardando_video` |
+| 7 | Enviar Confirmação WA | "✅ Gauchinho selecionado. Agora envie o vídeo com o nome do carro na legenda." |
 
 ---
 
-## Fluxo de Dados
+## Workflow 3 — Receber Vídeo
 
-```
-Evolution API webhook body
-  └── data.key.remoteJid                          → remetente
-  └── data.messageType                            → "videoMessage"
-  └── data.message.videoMessage.caption           → "gauchinho - t-cross"
-  └── data.message.videoMessage.url               → URL da mídia (salva no Supabase)
-```
+**Trigger:** Webhook Evolution API
+
+| # | Nó | Descrição |
+|---|---|---|
+| 1 | Webhook | Recebe todos os eventos |
+| 2 | Filtrar | Remetente autorizado + `messageType = videoMessage` + caption não vazio |
+| 3 | Buscar Supabase | SELECT mais recente com `status = aguardando_video` |
+| 4 | Checar Registro | IF — tem registro? Se não, descarta |
+| 5 | Extrair Campos | Code — extrai `car_name` da legenda e `media_url` do payload |
+| 6 | Atualizar Supabase | UPDATE `car_name`, `media_url`, `status: aguardando_confirmacao` |
+| 7 | Enviar Confirmação WA | Manda resumo (cliente + carro) e pede "sim" para confirmar |
 
 ---
 
-## Configuração Necessária (pré-requisitos)
+## Workflow 4 — Confirmação e Upload
 
-1. **ID da pasta "Gestor Thiago Lisboa"** — copiar da URL do Drive
-2. **Credencial Google Drive** já configurada no n8n
-3. **Evolution API** configurada para disparar webhook no n8n ao receber mensagens
-4. **Tabela `drive_uploads`** criada no Supabase (SQL acima)
-5. **Credencial Supabase** no n8n (já usada em outros workflows)
+**Trigger:** Webhook Evolution API
+
+| # | Nó | Descrição |
+|---|---|---|
+| 1 | Webhook | Recebe todos os eventos |
+| 2 | Filtrar | Remetente autorizado + texto = "sim" (case-insensitive) |
+| 3 | Buscar Supabase | SELECT mais recente com `status = aguardando_confirmacao` |
+| 4 | Checar Registro | IF — tem registro? Se não, descarta |
+| 5 | Criar Subpasta | Google Drive — cria pasta `car_name` dentro de `pasta_cliente_id` |
+| 6 | Baixar Mídia | HTTP Request — GET na `media_url` com apikey da Evolution |
+| 7 | Upload Drive | Google Drive — upload do vídeo na subpasta criada |
+| 8 | Atualizar Supabase | UPDATE `folder_id`, `status: concluido` |
+| 9 | Enviar Link WA | Manda link da pasta + mensagem de sucesso |
 
 ---
 
@@ -148,16 +145,26 @@ Evolution API webhook body
 
 | Situação | Comportamento |
 |----------|--------------|
-| Mensagem sem vídeo | Filtro descarta silenciosamente |
-| Caption fora do formato `X - Y` | Filtro descarta silenciosamente |
-| Número digitado fora do range | Workflow 2 responde com mensagem de erro |
-| Nenhum registro `aguardando` no Supabase | Workflow 2 descarta silenciosamente |
-| URL da mídia expirou | Upload falha; status permanece `aguardando` |
+| "Drive" mas já tem `aguardando_*` ativo | WF1 cria novo registro (o mais recente sempre vence) |
+| Número fora do range | WF2 responde com erro e mantém estado |
+| Vídeo sem legenda | WF3 descarta silenciosamente |
+| "sim" sem registro pendente | WF4 descarta silenciosamente |
+| URL da mídia expirou | WF4 falha no download; status permanece `aguardando_confirmacao` |
+
+---
+
+## Pré-requisitos
+
+1. **ID da pasta "Gestor Thiago Lisboa"** — copiar da URL do Drive
+2. Credencial **Google Drive** configurada no n8n
+3. **Evolution API** com webhook configurado apontando para os 4 endpoints
+4. Tabela `drive_uploads` criada no Supabase
+5. Credencial **Supabase** no n8n
 
 ---
 
 ## Fora de Escopo
 
-- Suporte a múltiplos uploads simultâneos pendentes (o SELECT pega sempre o mais recente)
-- Cancelamento de um upload pendente
-- Upload de imagens ou outros tipos de mídia
+- Cancelar um upload em andamento (ex: palavra "cancelar")
+- Múltiplos uploads simultâneos
+- Upload de imagens ou outros formatos
