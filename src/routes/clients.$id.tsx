@@ -970,10 +970,12 @@ function ClientNotes({ clientId, clientName }: { clientId: string; clientName: s
 function CampaignsTotals({ campaigns, cplMax }: { campaigns: MetaCampaign[]; cplMax: number }) {
   const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0);
   const totalLeads = campaigns.reduce((s, c) => s + c.leads, 0);
+  const totalForms = campaigns.reduce((s, c) => s + (c.forms ?? 0), 0);
+  const totalConversions = totalLeads + totalForms;
   const totalImpressions = campaigns.reduce((s, c) => s + c.impressions, 0);
   const totalClicks = campaigns.reduce((s, c) => s + c.link_clicks, 0);
 
-  const totalCpl = totalLeads > 0 ? Math.round((totalSpend / totalLeads) * 100) / 100 : null;
+  const totalCpl = totalConversions > 0 ? Math.round((totalSpend / totalConversions) * 100) / 100 : null;
   const totalCtr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null;
   const totalCpm = totalImpressions > 0 ? (totalSpend / totalImpressions) * 1000 : null;
 
@@ -995,6 +997,7 @@ function CampaignsTotals({ campaigns, cplMax }: { campaigns: MetaCampaign[]; cpl
         <TotalStat label="Gasto" value={brl(totalSpend)} />
         <Divider />
         <TotalStat label="Leads" value={totalLeads > 0 ? String(totalLeads) : "—"} />
+        {totalForms > 0 && <><Divider /><TotalStat label="Forms" value={String(totalForms)} /></>}
         <Divider />
         <TotalStat label="CPL médio" value={totalCpl !== null ? brl(totalCpl) : "—"} valueClass={cplColor} />
         <Divider />
@@ -1063,7 +1066,14 @@ function CampaignRow({
         {c.spend > 0 ? brl(c.spend) : "—"}
       </TableCell>
       <TableCell className="text-right tabular-nums">
-        {c.leads > 0 ? c.leads : "—"}
+        {c.leads > 0 || (c.forms ?? 0) > 0 ? (
+          <span>
+            {c.leads > 0 ? c.leads : "—"}
+            {(c.forms ?? 0) > 0 && (
+              <span className="ml-1 text-xs text-muted-foreground" title="Formulários">+{c.forms}f</span>
+            )}
+          </span>
+        ) : "—"}
       </TableCell>
       <TableCell className={`text-right tabular-nums font-medium ${cplColor}`}>
         {c.cpl !== null ? brl(c.cpl) : "—"}

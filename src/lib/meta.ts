@@ -377,6 +377,7 @@ export interface MetaCampaign {
   objective: string;
   spend: number;
   leads: number;
+  forms: number;
   cpl: number | null;
   impressions: number;
   link_clicks: number;
@@ -408,6 +409,7 @@ export async function fetchCampaignById(
     objective: json.objective,
     spend: 0,
     leads: 0,
+    forms: 0,
     cpl: null,
     impressions: 0,
     link_clicks: 0,
@@ -487,13 +489,8 @@ export async function fetchCampaigns(
       const ctr = ins?.ctr ? parseFloat(ins.ctr) : null;
       const cpm = ins?.cpm ? parseFloat(ins.cpm) : null;
 
-      const leadsAction = ins?.actions?.find(
-        (a) =>
-          a.action_type === "onsite_conversion.total_messaging_connection" ||
-          a.action_type === "onsite_conversion.messaging_conversation_started_7d" ||
-          a.action_type === "messaging_first_reply"
-      );
-      const leads = leadsAction ? parseInt(leadsAction.value, 10) : 0;
+      const { leads, forms } = extractMetrics(ins?.actions);
+      const totalConversions = leads + forms;
 
       return {
         id: c.id,
@@ -503,7 +500,8 @@ export async function fetchCampaigns(
         objective: c.objective,
         spend,
         leads,
-        cpl: leads > 0 ? Math.round((spend / leads) * 100) / 100 : null,
+        forms,
+        cpl: totalConversions > 0 ? Math.round((spend / totalConversions) * 100) / 100 : null,
         impressions,
         link_clicks: linkClicks,
         ctr,
