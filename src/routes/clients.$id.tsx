@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useParams, useSearch } from "@tanstack/react-router";
+import { createFileRoute, Link, useParams, useSearch, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search } from "lucide-react";
 import {
   Tooltip as UITooltip,
   TooltipContent,
@@ -38,7 +38,7 @@ import {
   ResponsiveContainer,
   ReferenceArea,
 } from "recharts";
-import { fetchClientDetail, updateClientGoal, updateClientPix, fetchNotes, createNote, updateNote, deleteNote, fetchTasksByClient, createTask, updateTask, deleteTask, type TaskRow } from "@/lib/queries";
+import { fetchClientDetail, updateClientGoal, updateClientPix, fetchNotes, createNote, updateNote, deleteNote, fetchTasksByClient, createTask, updateTask, deleteTask, fetchAllClients, type TaskRow } from "@/lib/queries";
 import { TagBadge } from "@/components/TagBadge";
 import { NoteCard } from "@/components/NoteCard";
 import { NoteComposer } from "@/components/NoteComposer";
@@ -144,9 +144,19 @@ function ClientDetail() {
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
 
+  const navigate = useNavigate();
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [switcherSearch, setSwitcherSearch] = useState("");
+
   const { data: client, isLoading } = useQuery({
     queryKey: ["client", id],
     queryFn: () => fetchClientDetail(id),
+  });
+
+  const { data: allClients = [] } = useQuery({
+    queryKey: ["all-clients"],
+    queryFn: fetchAllClients,
+    enabled: switcherOpen,
   });
 
   const customRange: CustomDateRange | undefined =
@@ -266,15 +276,61 @@ function ClientDetail() {
 
         {/* Header */}
         <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight">{client.name}</h1>
-            <p className="text-sm text-muted-foreground mt-1 capitalize">
-              {client.meta_ad_account_id} · {client.segment}
-            </p>
+          <div className="relative">
+            <button
+              onClick={() => { setSwitcherOpen((o) => !o); setSwitcherSearch(""); }}
+              className="group flex items-center gap-2 text-left hover:opacity-80 transition-opacity"
+            >
+              <div>
+                <h1 className="text-2xl md:text-3xl font-semibold tracking-tight flex items-center gap-2">
+                  {client.name}
+                  <ChevronsUpDown className="h-5 w-5 text-muted-foreground group-hover:text-foreground transition-colors" />
+                </h1>
+                <p className="text-sm text-muted-foreground mt-1 capitalize">
+                  {client.meta_ad_account_id} · {client.segment}
+                </p>
+              </div>
+            </button>
+
             {(client.tags ?? []).length > 0 && (
               <div className="flex flex-wrap gap-1 mt-2">
                 {(client.tags ?? []).map((t) => <TagBadge key={t.id} tag={t} />)}
               </div>
+            )}
+
+            {switcherOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setSwitcherOpen(false)} />
+                <div className="absolute left-0 top-full mt-2 z-50 w-72 rounded-lg border bg-popover shadow-lg">
+                  <div className="flex items-center gap-2 border-b px-3 py-2">
+                    <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <input
+                      autoFocus
+                      placeholder="Pesquisar cliente..."
+                      value={switcherSearch}
+                      onChange={(e) => setSwitcherSearch(e.target.value)}
+                      className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+                    />
+                  </div>
+                  <div className="max-h-64 overflow-y-auto py-1">
+                    {allClients
+                      .filter((c) => c.name.toLowerCase().includes(switcherSearch.toLowerCase()))
+                      .map((c) => (
+                        <button
+                          key={c.id}
+                          onClick={() => { setSwitcherOpen(false); navigate({ to: "/clients/$id", params: { id: c.id } }); }}
+                          className={`w-full text-left px-3 py-2 text-sm hover:bg-accent transition-colors flex items-center justify-between ${c.id === id ? "font-medium text-foreground" : "text-muted-foreground"}`}
+                        >
+                          <span>{c.name}</span>
+                          {c.id === id && <Check className="h-4 w-4 text-primary" />}
+                        </button>
+                      ))}
+                    {allClients.filter((c) => c.name.toLowerCase().includes(switcherSearch.toLowerCase())).length === 0 && (
+                      <p className="px-3 py-4 text-sm text-muted-foreground text-center">Nenhum cliente encontrado</p>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
           </div>
 

@@ -1,0 +1,65 @@
+{
+  "name": "Gestor Tráfego — Erro Campanha Meta",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const exec = $json.execution || {};\nconst callbackId = exec.customData?.callbackId || '';\nconst lastNode = exec.lastNodeExecuted || 'desconhecido';\nconst errorMsg = exec.error?.message || 'Erro desconhecido no n8n';\n\nreturn [{\n  json: {\n    callbackId,\n    errorMessage: 'Erro em \"' + lastNode + '\": ' + errorMsg\n  }\n}];"
+      },
+      "id": "extrair-erro",
+      "name": "Extrair Erro",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://SEU-SUPABASE.supabase.co/rest/v1/n8n_jobs?id=eq.{{ $json.callbackId }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "SUA-SUPABASE-SERVICE-ROLE-KEY" },
+            { "name": "Authorization", "value": "Bearer SUA-SUPABASE-SERVICE-ROLE-KEY" },
+            { "name": "Content-Type", "value": "application/json" },
+            { "name": "Prefer", "value": "resolution=merge-duplicates" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ status: 'error', error_message: $json.errorMessage, updated_at: new Date().toISOString() }) }}"
+      },
+      "id": "registrar-erro",
+      "name": "Registrar Erro",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [680, 300]
+    }
+  ],
+  "connections": {
+    "Error Trigger": {
+      "main": [[{ "node": "Extrair Erro", "type": "main", "index": 0 }]]
+    },
+    "Extrair Erro": {
+      "main": [[{ "node": "Registrar Erro", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "_meta": {
+    "instructions": [
+      "1. Importe este arquivo PRIMEIRO no n8n",
+      "2. Copie o ID deste workflow (na URL do n8n ao abrir o workflow)",
+      "3. No workflow principal, vá em Settings > Error Workflow e selecione este workflow",
+      "4. Substitua SEU-SUPABASE e SUA-SUPABASE-SERVICE-ROLE-KEY nos nós de HTTP"
+    ]
+  }
+}

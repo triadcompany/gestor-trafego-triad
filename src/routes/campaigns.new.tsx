@@ -311,9 +311,27 @@ function NewCampaign() {
   };
 
   const handleFileSelect = useCallback((file: File) => {
-    setMediaFile(file);
-    const url = URL.createObjectURL(file);
-    setMediaPreview(url);
+    if (file.type.startsWith("image/")) {
+      const img = new window.Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        if (img.width < 500 || img.height < 500) {
+          toast.error(
+            `Imagem muito pequena: ${img.width}×${img.height}px. Meta exige mínimo 500×500px.`,
+            { duration: 6000 }
+          );
+          URL.revokeObjectURL(url);
+          return;
+        }
+        setMediaFile(file);
+        setMediaPreview(url);
+      };
+      img.src = url;
+    } else {
+      setMediaFile(file);
+      const url = URL.createObjectURL(file);
+      setMediaPreview(url);
+    }
   }, []);
 
   // ── Duplicate mutation ───────────────────────────────────────

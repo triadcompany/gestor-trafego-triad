@@ -17,13 +17,24 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body;\nreturn [{\n  json: {\n    token: body.token,\n    callbackId: body.callbackId,\n    adAccountId: body.campaignOptions.adAccountId,\n    campaignName: body.campaignOptions.name,\n    objective: body.campaignOptions.campaignType === 'sales' ? 'OUTCOME_SALES' : 'OUTCOME_ENGAGEMENT',\n    dailyBudget: Math.round(body.campaignOptions.dailyBudget * 100),\n    pageId: body.campaignOptions.pageId,\n    whatsappNumber: (body.campaignOptions.whatsappNumber || '').replace(/\\D/g, ''),\n    targeting: JSON.stringify(body.campaignOptions.targeting || {}),\n    placements: body.campaignOptions.placements,\n    primaryText: body.creativeOptions.primaryText,\n    headline: body.creativeOptions.headline,\n    description: body.creativeOptions.description || '',\n    mediaType: body.creativeOptions.mediaType,\n    imageHash: body.creativeOptions.imageHash || null,\n    videoId: body.creativeOptions.videoId || null,\n    thumbnailUrl: body.creativeOptions.thumbnailUrl || null,\n    whatsappMessage: body.creativeOptions.whatsappMessage || null\n  }\n}];"
+        "jsCode": "const body = $input.first().json.body || $input.first().json;\nconst callbackId = body.callbackId || '';\nif (callbackId) $execution.customData.set('callbackId', callbackId);\n\nconst co = body.campaignOptions || {};\nconst cr = body.creativeOptions || {};\nconst pl = co.placements || {};\nconst t = co.targeting || {};\n\nconst hasFb = (pl.facebook === true || pl.facebook === 'true') ? 1 : 0;\nconst hasIg = (pl.instagram === true || pl.instagram === 'true') ? 1 : 0;\n\nconst fbRaw = (co.fbPositions || []).filter(function(p){ return p !== 'reels'; });\nconst igRaw = (co.igPositions || []).filter(function(p){ return p !== 'reels' && p !== 'ig_search'; });\nconst fbPosStr = fbRaw.length ? fbRaw.join(',') : 'feed,story';\nconst igPosStr = igRaw.length ? igRaw.join(',') : 'stream,story';\n\nconst locs = t.locations || [];\nlet geoStr;\nif (locs.length > 0) {\n  const cities = locs.filter(function(l){ return l.type === 'city'; });\n  const regions = locs.filter(function(l){ return l.type === 'region'; });\n  const countries = locs.filter(function(l){ return l.type === 'country'; });\n  const geoObj = {};\n  if (cities.length) geoObj.cities = cities.map(function(l){ return { key: l.key }; });\n  if (regions.length) geoObj.regions = regions.map(function(l){ return { key: l.key }; });\n  if (countries.length) geoObj.countries = countries.map(function(l){ return l.key; });\n  else if (!cities.length && !regions.length) geoObj.countries = ['BR'];\n  geoStr = JSON.stringify(geoObj);\n} else {\n  geoStr = '{\"countries\":[\"BR\"]}';\n}\n\nconst ints = t.interests || [];\nconst interestsStr = ints.length\n  ? JSON.stringify(ints.map(function(i){ return { id: i.id, name: i.name }; }))\n  : '';\n\nreturn [{\n  json: {\n    token: body.token || co.token || '',\n    callbackId: callbackId,\n    adAccountId: co.adAccountId || '',\n    campaignName: co.name || '',\n    objective: co.campaignType === 'sales' ? 'OUTCOME_SALES' : 'OUTCOME_ENGAGEMENT',\n    dailyBudget: Math.round((co.dailyBudget || 0) * 100),\n    pageId: co.pageId || '',\n    whatsappNumber: (co.whatsappNumber || '').replace(/\\D/g, ''),\n    hasFacebook: hasFb,\n    hasInstagram: hasIg,\n    fbPositions: fbPosStr,\n    igPositions: igPosStr,\n    ageMin: t.ageMin || 18,\n    ageMax: t.ageMax || 65,\n    genderMode: t.genderMode || 'all',\n    geoStr: geoStr,\n    interestsStr: interestsStr,\n    primaryText: cr.primaryText || '',\n    headline: cr.headline || '',\n    description: cr.description || '',\n    mediaType: cr.mediaType || 'image',\n    imageHash: cr.imageHash || null,\n    videoId: cr.videoId || null,\n    thumbnailUrl: cr.thumbnailUrl || null,\n    whatsappMessage: cr.whatsappMessage || null\n  }\n}];"
       },
       "id": "parse-payload",
       "name": "Extrair Campos",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"ok\": true, \"jobId\": \"{{ $('Extrair Campos').item.json.callbackId }}\" }"
+      },
+      "id": "resposta-webhook",
+      "name": "Responder Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [680, 500]
     },
     {
       "parameters": {
@@ -42,11 +53,7 @@
           ]
         },
         "options": {
-          "retry": {
-            "enabled": true,
-            "maxTries": 3,
-            "waitBetweenTries": 2000
-          }
+          "retry": { "enabled": true, "maxTries": 3, "waitBetweenTries": 2000 }
         }
       },
       "id": "criar-campanha",
@@ -57,45 +64,40 @@
     },
     {
       "parameters": {
+        "jsCode": "const fields = $('Extrair Campos').item.json;\nconst campaignId = $input.first().json.id;\n\nconst geo = JSON.parse(fields.geoStr);\n\nconst targeting = {\n  geo_locations: geo,\n  targeting_automation: { advantage_audience: 0 }\n};\n\nif (fields.ageMin > 18) targeting.age_min = fields.ageMin;\nif (fields.ageMax < 65) targeting.age_max = fields.ageMax;\n\nif (fields.genderMode === 'male') targeting.genders = [1];\nelse if (fields.genderMode === 'female') targeting.genders = [2];\n\nif (fields.interestsStr) {\n  const ints = JSON.parse(fields.interestsStr);\n  if (ints.length) targeting.flexible_spec = [{ interests: ints }];\n}\n\n// hasFacebook e hasInstagram são 1 ou 0\nconst pubs = [];\nif (fields.hasFacebook) pubs.push('facebook');\nif (fields.hasInstagram) pubs.push('instagram');\nif (pubs.length) targeting.publisher_platforms = pubs;\n\nif (fields.hasFacebook) targeting.facebook_positions = fields.fbPositions.split(',');\nif (fields.hasInstagram) targeting.instagram_positions = fields.igPositions.split(',');\n\nconst payload = {\n  name: fields.campaignName,\n  campaign_id: campaignId,\n  billing_event: 'IMPRESSIONS',\n  optimization_goal: 'CONVERSATIONS',\n  destination_type: 'WHATSAPP',\n  promoted_object: {\n    page_id: fields.pageId,\n    whatsapp_phone_number: fields.whatsappNumber\n  },\n  targeting: targeting,\n  status: 'PAUSED',\n  access_token: fields.token\n};\n\nreturn [{ json: { payloadStr: JSON.stringify(payload) } }];"
+      },
+      "id": "montar-adset",
+      "name": "Montar Ad Set",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
         "method": "POST",
         "url": "=https://graph.facebook.com/v21.0/{{ $('Extrair Campos').item.json.adAccountId }}/adsets",
         "sendBody": true,
-        "bodyParameters": {
-          "parameters": [
-            { "name": "name", "value": "={{ $('Extrair Campos').item.json.campaignName }}" },
-            { "name": "campaign_id", "value": "={{ $json.id }}" },
-            { "name": "billing_event", "value": "IMPRESSIONS" },
-            { "name": "optimization_goal", "value": "CONVERSATIONS" },
-            { "name": "destination_type", "value": "WHATSAPP" },
-            { "name": "promoted_object", "value": "={{ JSON.stringify({ page_id: $('Extrair Campos').item.json.pageId, whatsapp_phone_number: $('Extrair Campos').item.json.whatsappNumber }) }}" },
-            { "name": "targeting", "value": "={{ JSON.stringify({ geo_locations: { countries: ['BR'] }, targeting_automation: { advantage_audience: 0 } }) }}" },
-            { "name": "status", "value": "PAUSED" },
-            { "name": "access_token", "value": "={{ $('Extrair Campos').item.json.token }}" }
-          ]
-        },
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.payloadStr }}",
         "options": {
-          "retry": {
-            "enabled": true,
-            "maxTries": 3,
-            "waitBetweenTries": 2000
-          }
+          "retry": { "enabled": true, "maxTries": 3, "waitBetweenTries": 2000 }
         }
       },
       "id": "criar-adset",
       "name": "2. Criar Ad Set",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [900, 300]
+      "position": [1120, 300]
     },
     {
       "parameters": {
-        "jsCode": "const fields = $('Extrair Campos').item.json;\nconst adSetId = $input.first().json.id;\nconst waNumber = fields.whatsappNumber;\nconst waMsg = fields.whatsappMessage;\nconst waLink = waMsg\n  ? `https://wa.me/${waNumber}?text=${encodeURIComponent(waMsg)}`\n  : `https://wa.me/${waNumber}`;\n\nconst cta = { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP', whatsapp_number: waNumber } };\n\nlet objectStorySpec;\nif (fields.mediaType === 'image') {\n  objectStorySpec = {\n    page_id: fields.pageId,\n    link_data: {\n      image_hash: fields.imageHash,\n      message: fields.primaryText,\n      name: fields.headline,\n      ...(fields.description ? { description: fields.description } : {}),\n      link: waLink,\n      call_to_action: cta\n    }\n  };\n} else {\n  objectStorySpec = {\n    page_id: fields.pageId,\n    video_data: {\n      video_id: fields.videoId,\n      message: fields.primaryText,\n      title: fields.headline,\n      ...(fields.description ? { description: fields.description } : {}),\n      ...(fields.thumbnailUrl ? { image_url: fields.thumbnailUrl } : {}),\n      call_to_action: cta\n    }\n  };\n}\n\nreturn [{ json: { adSetId, objectStorySpec: JSON.stringify(objectStorySpec), fields } }];"
+        "jsCode": "const fields = $('Extrair Campos').item.json;\nconst adSetId = $input.first().json.id;\nconst waNumber = fields.whatsappNumber;\nconst waMsg = fields.whatsappMessage;\nconst waLink = waMsg\n  ? 'https://wa.me/' + waNumber + '?text=' + encodeURIComponent(waMsg)\n  : 'https://wa.me/' + waNumber;\n\nconst cta = { type: 'WHATSAPP_MESSAGE', value: { app_destination: 'WHATSAPP', whatsapp_number: waNumber } };\n\nlet objectStorySpec;\nif (fields.mediaType === 'image') {\n  objectStorySpec = {\n    page_id: fields.pageId,\n    link_data: {\n      image_hash: fields.imageHash,\n      message: fields.primaryText,\n      name: fields.headline,\n      link: waLink,\n      call_to_action: cta\n    }\n  };\n  if (fields.description) objectStorySpec.link_data.description = fields.description;\n} else {\n  objectStorySpec = {\n    page_id: fields.pageId,\n    video_data: {\n      video_id: fields.videoId,\n      message: fields.primaryText,\n      title: fields.headline,\n      call_to_action: cta\n    }\n  };\n  if (fields.description) objectStorySpec.video_data.description = fields.description;\n  if (fields.thumbnailUrl) objectStorySpec.video_data.image_url = fields.thumbnailUrl;\n}\n\nreturn [{ json: { adSetId, objectStorySpec: JSON.stringify(objectStorySpec), fields } }];"
       },
       "id": "montar-creative",
       "name": "Montar Creative Spec",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
-      "position": [1120, 300]
+      "position": [1340, 300]
     },
     {
       "parameters": {
@@ -110,18 +112,14 @@
           ]
         },
         "options": {
-          "retry": {
-            "enabled": true,
-            "maxTries": 3,
-            "waitBetweenTries": 2000
-          }
+          "retry": { "enabled": true, "maxTries": 3, "waitBetweenTries": 2000 }
         }
       },
       "id": "criar-creative",
       "name": "3. Criar Creative",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1340, 300]
+      "position": [1560, 300]
     },
     {
       "parameters": {
@@ -138,18 +136,14 @@
           ]
         },
         "options": {
-          "retry": {
-            "enabled": true,
-            "maxTries": 3,
-            "waitBetweenTries": 2000
-          }
+          "retry": { "enabled": true, "maxTries": 3, "waitBetweenTries": 2000 }
         }
       },
       "id": "criar-ad",
       "name": "4. Criar Ad",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1560, 300]
+      "position": [1780, 300]
     },
     {
       "parameters": {
@@ -161,7 +155,7 @@
             { "name": "apikey", "value": "SUA-SUPABASE-SERVICE-ROLE-KEY" },
             { "name": "Authorization", "value": "Bearer SUA-SUPABASE-SERVICE-ROLE-KEY" },
             { "name": "Content-Type", "value": "application/json" },
-            { "name": "Prefer", "value": "return=minimal" }
+            { "name": "Prefer", "value": "resolution=merge-duplicates" }
           ]
         },
         "sendBody": true,
@@ -172,41 +166,7 @@
       "name": "Atualizar Job — Sucesso",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1780, 200]
-    },
-    {
-      "parameters": {
-        "method": "POST",
-        "url": "=https://SEU-SUPABASE.supabase.co/rest/v1/n8n_jobs?id=eq.{{ $('Extrair Campos').item.json.callbackId }}",
-        "sendHeaders": true,
-        "headerParameters": {
-          "parameters": [
-            { "name": "apikey", "value": "SUA-SUPABASE-SERVICE-ROLE-KEY" },
-            { "name": "Authorization", "value": "Bearer SUA-SUPABASE-SERVICE-ROLE-KEY" },
-            { "name": "Content-Type", "value": "application/json" },
-            { "name": "Prefer", "value": "return=minimal" }
-          ]
-        },
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ status: 'error', error_message: $json.message || 'Erro desconhecido no n8n', updated_at: new Date().toISOString() }) }}"
-      },
-      "id": "atualizar-job-erro",
-      "name": "Atualizar Job — Erro",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [1780, 420]
-    },
-    {
-      "parameters": {
-        "respondWith": "json",
-        "responseBody": "={ \"ok\": true, \"jobId\": \"{{ $('Extrair Campos').item.json.callbackId }}\" }"
-      },
-      "id": "resposta-webhook",
-      "name": "Responder Webhook",
-      "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [680, 500]
+      "position": [2000, 300]
     }
   ],
   "connections": {
@@ -222,6 +182,9 @@
       ]
     },
     "1. Criar Campanha": {
+      "main": [[{ "node": "Montar Ad Set", "type": "main", "index": 0 }]]
+    },
+    "Montar Ad Set": {
       "main": [[{ "node": "2. Criar Ad Set", "type": "main", "index": 0 }]]
     },
     "2. Criar Ad Set": {
@@ -238,7 +201,7 @@
     }
   },
   "settings": {
-    "errorWorkflow": "atualizar-job-erro",
+    "errorWorkflow": "SEU-ID-DO-WORKFLOW-DE-ERRO",
     "executionOrder": "v1"
   },
   "_meta": {
@@ -248,10 +211,11 @@
       "3. Cole essa URL em Configurações do app no campo 'URL Webhook n8n'",
       "4. Nos nós 'Atualizar Job', substitua SEU-SUPABASE pela URL do seu projeto Supabase",
       "5. Substitua SUA-SUPABASE-SERVICE-ROLE-KEY pela service role key do Supabase",
-      "6. Crie a tabela n8n_jobs no Supabase (SQL abaixo)",
+      "6. Em Settings > Error Workflow, coloque o ID do workflow de erro (n8n-error-workflow.json)",
       "",
       "SQL para criar a tabela n8n_jobs:",
-      "CREATE TABLE n8n_jobs (id UUID PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending', payload JSONB, campaign_id TEXT, ad_id TEXT, error_message TEXT, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now());"
+      "CREATE TABLE n8n_jobs (id UUID PRIMARY KEY, status TEXT NOT NULL DEFAULT 'pending', payload JSONB, campaign_id TEXT, ad_id TEXT, error_message TEXT, created_at TIMESTAMPTZ DEFAULT now(), updated_at TIMESTAMPTZ DEFAULT now());",
+      "ALTER TABLE n8n_jobs DISABLE ROW LEVEL SECURITY;"
     ]
   }
 }
