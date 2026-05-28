@@ -1,0 +1,841 @@
+[
+  {
+    "name": "WA Drive — 1. Listar Pastas",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "wa-drive-1-listar",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "wf1-webhook",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 1,
+        "position": [240, 300]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={\"ok\": true}"
+        },
+        "id": "wf1-respond",
+        "name": "Responder",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [460, 480]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": { "caseSensitive": false, "typeValidation": "loose" },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json.data.key.fromMe }}",
+                "rightValue": false,
+                "operator": { "type": "boolean", "operation": "equals" }
+              },
+              {
+                "id": "c2",
+                "leftValue": "={{ $json.data.messageType }}",
+                "rightValue": "conversation",
+                "operator": { "type": "string", "operation": "equals" }
+              },
+              {
+                "id": "c3",
+                "leftValue": "={{ ($json.data.message.conversation || '').toLowerCase().trim() }}",
+                "rightValue": "drive",
+                "operator": { "type": "string", "operation": "equals" }
+              }
+            ]
+          }
+        },
+        "id": "wf1-filter",
+        "name": "Filtrar Mensagem",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [460, 300]
+      },
+      {
+        "parameters": {
+          "resource": "fileFolder",
+          "operation": "search",
+          "queryString": "'1Z0qw1EsGG_LlClynk8-B8qGAP4kFtKFy' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false",
+          "returnAll": true,
+          "options": {}
+        },
+        "id": "wf1-list-folders",
+        "name": "Listar Pastas",
+        "type": "n8n-nodes-base.googleDrive",
+        "typeVersion": 3,
+        "position": [680, 300],
+        "credentials": {
+          "googleDriveOAuth2Api": { "id": "", "name": "Google Drive account" }
+        }
+      },
+      {
+        "parameters": {
+          "jsCode": "const files = $input.all();\nconst remoteJid = $('Filtrar Mensagem').item.json.data.key.remoteJid;\n\nconst folders = files\n  .map(item => ({ name: item.json.name, id: item.json.id }))\n  .sort((a, b) => a.name.localeCompare(b.name))\n  .map((f, i) => ({ index: i + 1, name: f.name, id: f.id }));\n\nconst listText = folders.map(f => `${f.index}. ${f.name}`).join('\\n');\nconst message = `📁 Selecione a pasta do cliente:\\n\\n${listText}`;\n\nreturn [{ json: { folders, message, remoteJid } }];"
+        },
+        "id": "wf1-build-list",
+        "name": "Montar Lista",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [900, 300]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "create",
+          "tableId": "drive_uploads",
+          "dataToSend": "defineBelow",
+          "fieldsUi": {
+            "fieldValues": [
+              { "fieldId": "folders", "fieldValue": "={{ JSON.stringify($json.folders) }}" },
+              { "fieldId": "status", "fieldValue": "aguardando_pasta" }
+            ]
+          }
+        },
+        "id": "wf1-supabase-insert",
+        "name": "Salvar Supabase",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [1120, 300],
+        "credentials": {
+          "supabaseApi": { "id": "", "name": "Supabase account" }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://triadcompany-evolution-api.upw28y.easypanel.host/message/sendText/drive",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [{ "name": "apikey", "value": "429683C4C977415CAAFCCE10F7D57E11" }]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ number: $('Montar Lista').item.json.remoteJid, text: $('Montar Lista').item.json.message }) }}",
+          "options": {}
+        },
+        "id": "wf1-send-wa",
+        "name": "Enviar Lista WA",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [1340, 300]
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [{ "node": "Responder", "type": "main", "index": 0 },
+           { "node": "Filtrar Mensagem", "type": "main", "index": 0 }]
+        ]
+      },
+      "Filtrar Mensagem": {
+        "main": [
+          [{ "node": "Listar Pastas", "type": "main", "index": 0 }],
+          []
+        ]
+      },
+      "Listar Pastas": {
+        "main": [[{ "node": "Montar Lista", "type": "main", "index": 0 }]]
+      },
+      "Montar Lista": {
+        "main": [[{ "node": "Salvar Supabase", "type": "main", "index": 0 }]]
+      },
+      "Salvar Supabase": {
+        "main": [[{ "node": "Enviar Lista WA", "type": "main", "index": 0 }]]
+      }
+    },
+    "active": false,
+    "settings": { "executionOrder": "v1" }
+  },
+
+  {
+    "name": "WA Drive — 2. Selecionar Pasta",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "wa-drive-2-selecionar",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "wf2-webhook",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 1,
+        "position": [240, 300]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={\"ok\": true}"
+        },
+        "id": "wf2-respond",
+        "name": "Responder",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [460, 480]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": { "caseSensitive": false, "typeValidation": "loose" },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json.data.key.fromMe }}",
+                "rightValue": false,
+                "operator": { "type": "boolean", "operation": "equals" }
+              },
+              {
+                "id": "c2",
+                "leftValue": "={{ $json.data.messageType }}",
+                "rightValue": "conversation",
+                "operator": { "type": "string", "operation": "equals" }
+              },
+              {
+                "id": "c3",
+                "leftValue": "={{ /^\\d+$/.test(($json.data.message.conversation || '').trim()) }}",
+                "rightValue": true,
+                "operator": { "type": "boolean", "operation": "equals" }
+              }
+            ]
+          }
+        },
+        "id": "wf2-filter",
+        "name": "Filtrar Número",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [460, 300]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "getAll",
+          "tableId": "drive_uploads",
+          "returnAll": false,
+          "limit": 1,
+          "filters": {
+            "conditions": [{ "keyName": "status", "condition": "eq", "keyValue": "aguardando_pasta" }]
+          },
+          "sort": { "values": [{ "field": "created_at", "direction": "DESC" }] }
+        },
+        "id": "wf2-supabase-get",
+        "name": "Buscar Registro",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [680, 300],
+        "credentials": {
+          "supabaseApi": { "id": "", "name": "Supabase account" }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": { "typeValidation": "loose" },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json.id }}",
+                "rightValue": "",
+                "operator": { "type": "string", "operation": "isNotEmpty" }
+              }
+            ]
+          }
+        },
+        "id": "wf2-has-record",
+        "name": "Tem Registro?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [900, 300]
+      },
+      {
+        "parameters": {
+          "jsCode": "const msgText = ($('Filtrar Número').item.json.data.message.conversation || '').trim();\nconst escolha = parseInt(msgText);\nconst registro = $('Buscar Registro').item.json;\nconst folders = typeof registro.folders === 'string' ? JSON.parse(registro.folders) : registro.folders;\nconst remoteJid = $('Filtrar Número').item.json.data.key.remoteJid;\n\nif (isNaN(escolha) || escolha < 1 || escolha > folders.length) {\n  return [{ json: { valido: false, total: folders.length, registroId: registro.id, remoteJid } }];\n}\n\nconst pasta = folders.find(f => f.index === escolha);\nreturn [{ json: {\n  valido: true,\n  pastaClienteId: pasta.id,\n  pastaClienteNome: pasta.name,\n  registroId: registro.id,\n  remoteJid\n} }];"
+        },
+        "id": "wf2-validate",
+        "name": "Validar e Selecionar",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1120, 300]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": { "typeValidation": "loose" },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json.valido }}",
+                "rightValue": true,
+                "operator": { "type": "boolean", "operation": "equals" }
+              }
+            ]
+          }
+        },
+        "id": "wf2-is-valid",
+        "name": "Número Válido?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [1340, 300]
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://triadcompany-evolution-api.upw28y.easypanel.host/message/sendText/drive",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [{ "name": "apikey", "value": "429683C4C977415CAAFCCE10F7D57E11" }]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ number: $('Validar e Selecionar').item.json.remoteJid, text: '❌ Número inválido. Responda com um número entre 1 e ' + $('Validar e Selecionar').item.json.total + '.' }) }}",
+          "options": {}
+        },
+        "id": "wf2-send-error",
+        "name": "Enviar Erro WA",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [1560, 480]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "tableId": "drive_uploads",
+          "filters": {
+            "conditions": [{ "keyName": "id", "condition": "eq", "keyValue": "={{ $json.registroId }}" }]
+          },
+          "dataToSend": "defineBelow",
+          "fieldsUi": {
+            "fieldValues": [
+              { "fieldId": "pasta_cliente_id", "fieldValue": "={{ $json.pastaClienteId }}" },
+              { "fieldId": "pasta_cliente_nome", "fieldValue": "={{ $json.pastaClienteNome }}" },
+              { "fieldId": "status", "fieldValue": "aguardando_video" }
+            ]
+          }
+        },
+        "id": "wf2-supabase-update",
+        "name": "Atualizar Supabase",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [1560, 300],
+        "credentials": {
+          "supabaseApi": { "id": "", "name": "Supabase account" }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://triadcompany-evolution-api.upw28y.easypanel.host/message/sendText/drive",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [{ "name": "apikey", "value": "429683C4C977415CAAFCCE10F7D57E11" }]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ number: $('Validar e Selecionar').item.json.remoteJid, text: '✅ *' + $('Validar e Selecionar').item.json.pastaClienteNome + '* selecionado.\\n\\nAgora envie o vídeo com o nome do carro na legenda.' }) }}",
+          "options": {}
+        },
+        "id": "wf2-send-confirm",
+        "name": "Confirmar Seleção WA",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [1780, 300]
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [{ "node": "Responder", "type": "main", "index": 0 },
+           { "node": "Filtrar Número", "type": "main", "index": 0 }]
+        ]
+      },
+      "Filtrar Número": {
+        "main": [
+          [{ "node": "Buscar Registro", "type": "main", "index": 0 }],
+          []
+        ]
+      },
+      "Buscar Registro": {
+        "main": [[{ "node": "Tem Registro?", "type": "main", "index": 0 }]]
+      },
+      "Tem Registro?": {
+        "main": [
+          [{ "node": "Validar e Selecionar", "type": "main", "index": 0 }],
+          []
+        ]
+      },
+      "Validar e Selecionar": {
+        "main": [[{ "node": "Número Válido?", "type": "main", "index": 0 }]]
+      },
+      "Número Válido?": {
+        "main": [
+          [{ "node": "Atualizar Supabase", "type": "main", "index": 0 }],
+          [{ "node": "Enviar Erro WA", "type": "main", "index": 0 }]
+        ]
+      },
+      "Atualizar Supabase": {
+        "main": [[{ "node": "Confirmar Seleção WA", "type": "main", "index": 0 }]]
+      }
+    },
+    "active": false,
+    "settings": { "executionOrder": "v1" }
+  },
+
+  {
+    "name": "WA Drive — 3. Receber Vídeo",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "wa-drive-3-video",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "wf3-webhook",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 1,
+        "position": [240, 300]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={\"ok\": true}"
+        },
+        "id": "wf3-respond",
+        "name": "Responder",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [460, 480]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": { "caseSensitive": false, "typeValidation": "loose" },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json.data.key.fromMe }}",
+                "rightValue": false,
+                "operator": { "type": "boolean", "operation": "equals" }
+              },
+              {
+                "id": "c2",
+                "leftValue": "={{ $json.data.messageType }}",
+                "rightValue": "videoMessage",
+                "operator": { "type": "string", "operation": "equals" }
+              },
+              {
+                "id": "c3",
+                "leftValue": "={{ ($json.data.message.videoMessage?.caption || '').trim() }}",
+                "rightValue": "",
+                "operator": { "type": "string", "operation": "isNotEmpty" }
+              }
+            ]
+          }
+        },
+        "id": "wf3-filter",
+        "name": "Filtrar Vídeo",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [460, 300]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "getAll",
+          "tableId": "drive_uploads",
+          "returnAll": false,
+          "limit": 1,
+          "filters": {
+            "conditions": [{ "keyName": "status", "condition": "eq", "keyValue": "aguardando_video" }]
+          },
+          "sort": { "values": [{ "field": "created_at", "direction": "DESC" }] }
+        },
+        "id": "wf3-supabase-get",
+        "name": "Buscar Registro",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [680, 300],
+        "credentials": {
+          "supabaseApi": { "id": "", "name": "Supabase account" }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": { "typeValidation": "loose" },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json.id }}",
+                "rightValue": "",
+                "operator": { "type": "string", "operation": "isNotEmpty" }
+              }
+            ]
+          }
+        },
+        "id": "wf3-has-record",
+        "name": "Tem Registro?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [900, 300]
+      },
+      {
+        "parameters": {
+          "jsCode": "const data = $('Filtrar Vídeo').item.json.data;\nconst carName = (data.message.videoMessage.caption || '').trim();\nconst messageId = data.key.id;\nconst remoteJid = data.key.remoteJid;\nconst registro = $('Buscar Registro').item.json;\n\nreturn [{ json: {\n  carName,\n  messageId,\n  remoteJid,\n  registroId: registro.id,\n  pastaClienteNome: registro.pasta_cliente_nome\n} }];"
+        },
+        "id": "wf3-extract",
+        "name": "Extrair Campos",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1120, 300]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "tableId": "drive_uploads",
+          "filters": {
+            "conditions": [{ "keyName": "id", "condition": "eq", "keyValue": "={{ $json.registroId }}" }]
+          },
+          "dataToSend": "defineBelow",
+          "fieldsUi": {
+            "fieldValues": [
+              { "fieldId": "car_name", "fieldValue": "={{ $json.carName }}" },
+              { "fieldId": "message_id", "fieldValue": "={{ $json.messageId }}" },
+              { "fieldId": "remote_jid", "fieldValue": "={{ $json.remoteJid }}" },
+              { "fieldId": "status", "fieldValue": "aguardando_confirmacao" }
+            ]
+          }
+        },
+        "id": "wf3-supabase-update",
+        "name": "Atualizar Supabase",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [1340, 300],
+        "credentials": {
+          "supabaseApi": { "id": "", "name": "Supabase account" }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://triadcompany-evolution-api.upw28y.easypanel.host/message/sendText/drive",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [{ "name": "apikey", "value": "429683C4C977415CAAFCCE10F7D57E11" }]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ number: $('Extrair Campos').item.json.remoteJid, text: '📋 Confirma?\\n\\nCliente: *' + $('Extrair Campos').item.json.pastaClienteNome + '*\\nCarro: *' + $('Extrair Campos').item.json.carName + '*\\n\\nResponda *sim* para salvar.' }) }}",
+          "options": {}
+        },
+        "id": "wf3-send-confirm",
+        "name": "Pedir Confirmação WA",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [1560, 300]
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [{ "node": "Responder", "type": "main", "index": 0 },
+           { "node": "Filtrar Vídeo", "type": "main", "index": 0 }]
+        ]
+      },
+      "Filtrar Vídeo": {
+        "main": [
+          [{ "node": "Buscar Registro", "type": "main", "index": 0 }],
+          []
+        ]
+      },
+      "Buscar Registro": {
+        "main": [[{ "node": "Tem Registro?", "type": "main", "index": 0 }]]
+      },
+      "Tem Registro?": {
+        "main": [
+          [{ "node": "Extrair Campos", "type": "main", "index": 0 }],
+          []
+        ]
+      },
+      "Extrair Campos": {
+        "main": [[{ "node": "Atualizar Supabase", "type": "main", "index": 0 }]]
+      },
+      "Atualizar Supabase": {
+        "main": [[{ "node": "Pedir Confirmação WA", "type": "main", "index": 0 }]]
+      }
+    },
+    "active": false,
+    "settings": { "executionOrder": "v1" }
+  },
+
+  {
+    "name": "WA Drive — 4. Upload Final",
+    "nodes": [
+      {
+        "parameters": {
+          "httpMethod": "POST",
+          "path": "wa-drive-4-confirmar",
+          "responseMode": "responseNode",
+          "options": {}
+        },
+        "id": "wf4-webhook",
+        "name": "Webhook",
+        "type": "n8n-nodes-base.webhook",
+        "typeVersion": 1,
+        "position": [240, 300]
+      },
+      {
+        "parameters": {
+          "respondWith": "json",
+          "responseBody": "={\"ok\": true}"
+        },
+        "id": "wf4-respond",
+        "name": "Responder",
+        "type": "n8n-nodes-base.respondToWebhook",
+        "typeVersion": 1,
+        "position": [460, 480]
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": { "caseSensitive": false, "typeValidation": "loose" },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json.data.key.fromMe }}",
+                "rightValue": false,
+                "operator": { "type": "boolean", "operation": "equals" }
+              },
+              {
+                "id": "c2",
+                "leftValue": "={{ $json.data.messageType }}",
+                "rightValue": "conversation",
+                "operator": { "type": "string", "operation": "equals" }
+              },
+              {
+                "id": "c3",
+                "leftValue": "={{ ($json.data.message.conversation || '').toLowerCase().trim() }}",
+                "rightValue": "sim",
+                "operator": { "type": "string", "operation": "equals" }
+              }
+            ]
+          }
+        },
+        "id": "wf4-filter",
+        "name": "Filtrar Sim",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [460, 300]
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "getAll",
+          "tableId": "drive_uploads",
+          "returnAll": false,
+          "limit": 1,
+          "filters": {
+            "conditions": [{ "keyName": "status", "condition": "eq", "keyValue": "aguardando_confirmacao" }]
+          },
+          "sort": { "values": [{ "field": "created_at", "direction": "DESC" }] }
+        },
+        "id": "wf4-supabase-get",
+        "name": "Buscar Registro",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [680, 300],
+        "credentials": {
+          "supabaseApi": { "id": "", "name": "Supabase account" }
+        }
+      },
+      {
+        "parameters": {
+          "conditions": {
+            "options": { "typeValidation": "loose" },
+            "combinator": "and",
+            "conditions": [
+              {
+                "id": "c1",
+                "leftValue": "={{ $json.id }}",
+                "rightValue": "",
+                "operator": { "type": "string", "operation": "isNotEmpty" }
+              }
+            ]
+          }
+        },
+        "id": "wf4-has-record",
+        "name": "Tem Registro?",
+        "type": "n8n-nodes-base.if",
+        "typeVersion": 2,
+        "position": [900, 300]
+      },
+      {
+        "parameters": {
+          "resource": "folder",
+          "operation": "create",
+          "name": "={{ $json.car_name }}",
+          "driveId": { "__rl": true, "mode": "list", "value": "MyDrive", "cachedResultName": "My Drive" },
+          "folderId": { "__rl": true, "mode": "id", "value": "={{ $json.pasta_cliente_id }}" },
+          "options": {}
+        },
+        "id": "wf4-create-folder",
+        "name": "Criar Subpasta",
+        "type": "n8n-nodes-base.googleDrive",
+        "typeVersion": 3,
+        "position": [1120, 300],
+        "credentials": {
+          "googleDriveOAuth2Api": { "id": "", "name": "Google Drive account" }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://triadcompany-evolution-api.upw28y.easypanel.host/chat/getBase64FromMediaMessage/drive",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [{ "name": "apikey", "value": "429683C4C977415CAAFCCE10F7D57E11" }]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ key: { id: $('Buscar Registro').item.json.message_id, remoteJid: $('Buscar Registro').item.json.remote_jid, fromMe: false }, convertToMp4: true }) }}",
+          "options": {}
+        },
+        "id": "wf4-download-media",
+        "name": "Baixar Mídia",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [1340, 300]
+      },
+      {
+        "parameters": {
+          "jsCode": "const base64 = $input.first().json.base64;\nconst mimeType = $input.first().json.mimetype || 'video/mp4';\nconst registro = $('Buscar Registro').item.json;\nconst fileName = `${registro.car_name}_${new Date().toISOString().replace(/[:.]/g, '-').slice(0,19)}.mp4`;\n\nconst binaryData = await this.helpers.prepareBinaryData(\n  Buffer.from(base64, 'base64'),\n  fileName,\n  mimeType\n);\n\nreturn [{ json: { folderId: $('Criar Subpasta').item.json.id, fileName, registro }, binary: { data: binaryData } }];"
+        },
+        "id": "wf4-prepare-binary",
+        "name": "Preparar Binário",
+        "type": "n8n-nodes-base.code",
+        "typeVersion": 2,
+        "position": [1560, 300]
+      },
+      {
+        "parameters": {
+          "resource": "file",
+          "operation": "upload",
+          "name": "={{ $json.fileName }}",
+          "driveId": { "__rl": true, "mode": "list", "value": "MyDrive", "cachedResultName": "My Drive" },
+          "folderId": { "__rl": true, "mode": "id", "value": "={{ $json.folderId }}" },
+          "inputDataFieldName": "data",
+          "options": {}
+        },
+        "id": "wf4-upload",
+        "name": "Upload Drive",
+        "type": "n8n-nodes-base.googleDrive",
+        "typeVersion": 3,
+        "position": [1780, 300],
+        "credentials": {
+          "googleDriveOAuth2Api": { "id": "", "name": "Google Drive account" }
+        }
+      },
+      {
+        "parameters": {
+          "resource": "row",
+          "operation": "update",
+          "tableId": "drive_uploads",
+          "filters": {
+            "conditions": [{ "keyName": "id", "condition": "eq", "keyValue": "={{ $('Buscar Registro').item.json.id }}" }]
+          },
+          "dataToSend": "defineBelow",
+          "fieldsUi": {
+            "fieldValues": [
+              { "fieldId": "folder_id", "fieldValue": "={{ $('Criar Subpasta').item.json.id }}" },
+              { "fieldId": "status", "fieldValue": "concluido" }
+            ]
+          }
+        },
+        "id": "wf4-supabase-update",
+        "name": "Atualizar Supabase",
+        "type": "n8n-nodes-base.supabase",
+        "typeVersion": 1,
+        "position": [2000, 300],
+        "credentials": {
+          "supabaseApi": { "id": "", "name": "Supabase account" }
+        }
+      },
+      {
+        "parameters": {
+          "method": "POST",
+          "url": "https://triadcompany-evolution-api.upw28y.easypanel.host/message/sendText/drive",
+          "sendHeaders": true,
+          "headerParameters": {
+            "parameters": [{ "name": "apikey", "value": "429683C4C977415CAAFCCE10F7D57E11" }]
+          },
+          "sendBody": true,
+          "specifyBody": "json",
+          "jsonBody": "={{ JSON.stringify({ number: $('Buscar Registro').item.json.remote_jid, text: '✅ Vídeo salvo em *' + $('Buscar Registro').item.json.pasta_cliente_nome + '* / *' + $('Buscar Registro').item.json.car_name + '*!\\n\\n📂 https://drive.google.com/drive/folders/' + $('Criar Subpasta').item.json.id }) }}",
+          "options": {}
+        },
+        "id": "wf4-send-link",
+        "name": "Enviar Link WA",
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4,
+        "position": [2220, 300]
+      }
+    ],
+    "connections": {
+      "Webhook": {
+        "main": [
+          [{ "node": "Responder", "type": "main", "index": 0 },
+           { "node": "Filtrar Sim", "type": "main", "index": 0 }]
+        ]
+      },
+      "Filtrar Sim": {
+        "main": [
+          [{ "node": "Buscar Registro", "type": "main", "index": 0 }],
+          []
+        ]
+      },
+      "Buscar Registro": {
+        "main": [[{ "node": "Tem Registro?", "type": "main", "index": 0 }]]
+      },
+      "Tem Registro?": {
+        "main": [
+          [{ "node": "Criar Subpasta", "type": "main", "index": 0 }],
+          []
+        ]
+      },
+      "Criar Subpasta": {
+        "main": [[{ "node": "Baixar Mídia", "type": "main", "index": 0 }]]
+      },
+      "Baixar Mídia": {
+        "main": [[{ "node": "Preparar Binário", "type": "main", "index": 0 }]]
+      },
+      "Preparar Binário": {
+        "main": [[{ "node": "Upload Drive", "type": "main", "index": 0 }]]
+      },
+      "Upload Drive": {
+        "main": [[{ "node": "Atualizar Supabase", "type": "main", "index": 0 }]]
+      },
+      "Atualizar Supabase": {
+        "main": [[{ "node": "Enviar Link WA", "type": "main", "index": 0 }]]
+      }
+    },
+    "active": false,
+    "settings": { "executionOrder": "v1" }
+  }
+]
