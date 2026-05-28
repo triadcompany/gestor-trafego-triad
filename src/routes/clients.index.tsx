@@ -146,6 +146,7 @@ function ClientsList() {
                 <TableHead className="hidden lg:table-cell">Conta Meta</TableHead>
                 <TableHead className="hidden md:table-cell">Tags</TableHead>
                 <TableHead>Segmento</TableHead>
+                <TableHead className="hidden sm:table-cell">Pagamento</TableHead>
                 <TableHead className="hidden sm:table-cell">Meta CPL</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
@@ -182,6 +183,16 @@ function ClientsList() {
                       <TableCell>
                         <Badge variant="outline" className="capitalize">
                           {c.segment}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="hidden sm:table-cell">
+                        <Badge
+                          variant="outline"
+                          className={c.payment_method === "pix"
+                            ? "border-green-600/40 text-green-600 bg-green-600/10"
+                            : "border-blue-500/40 text-blue-500 bg-blue-500/10"}
+                        >
+                          {c.payment_method === "pix" ? "PIX" : "Cartão"}
                         </Badge>
                       </TableCell>
                       <TableCell className="hidden sm:table-cell tabular-nums text-sm">
