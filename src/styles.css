@@ -4,6 +4,13 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Hide Lovable editor badge */
+[data-lovable-tagger],
+#lovable-badge,
+lovable-badge {
+  display: none !important;
+}
+
 /*
  * Design system definition.
  *
