@@ -553,12 +553,9 @@ export async function fetchCurrentProfile(): Promise<Profile | null> {
 }
 
 export async function fetchProfiles(): Promise<Profile[]> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, full_name")
-    .order("full_name");
-  if (error) throw error;
-  return (data ?? []) as Profile[];
+  // Uses server-side admin client to bypass RLS — profiles are non-sensitive internal data
+  const { fetchProfilesAdmin } = await import("@/server/profiles");
+  return fetchProfilesAdmin();
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
