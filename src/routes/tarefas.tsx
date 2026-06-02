@@ -434,7 +434,12 @@ function TaskCard({
             <span className="text-xs text-muted-foreground">{task.client_name}</span>
           )}
           {task.assignee_name && (
-            <span className="text-xs text-muted-foreground">→ {task.assignee_name}</span>
+            <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-violet-900/50 text-violet-300 border border-violet-800/60">
+              <span className="w-3.5 h-3.5 rounded-full bg-violet-600 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
+                {task.assignee_name[0].toUpperCase()}
+              </span>
+              {task.assignee_name.split(" ")[0]}
+            </span>
           )}
         </div>
       </div>
