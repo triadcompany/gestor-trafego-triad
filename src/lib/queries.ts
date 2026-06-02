@@ -61,7 +61,7 @@ function computeStatus(
   cplMax: number
 ): ClientStatus {
   if (spend === 0) return "no-data";
-  if (cpl === null) return "critical";
+  if (cpl === null || cpl < 0) return "critical";
   if (cpl <= cplMax) return "on-target";
   if (cpl <= cplMax * 1.3) return "attention";
   return "critical";

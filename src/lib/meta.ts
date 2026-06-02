@@ -256,7 +256,7 @@ export async function fetchAccountInsightsForRange(
     error?: { message: string };
   };
 
-  if (json.error) return { spend: 0, leads: 0, forms: 0 };
+  if (json.error) throw new Error(`Meta API: ${json.error.message}`);
 
   const row = json.data?.[0];
   const spend = parseFloat(row?.spend ?? "0");
@@ -701,7 +701,7 @@ export async function fetchAdWithCreative(adId: string, token: string): Promise<
     } catch { /* ignore */ }
   }
 
-  console.log("[AdCreative]", creativeId, JSON.stringify({
+  if (import.meta.env.DEV) console.log("[AdCreative]", creativeId, JSON.stringify({
     page_id: creative.actor_id,
     video_id: creative.video_id ?? creative.object_story_spec?.video_data?.video_id,
     whatsapp_number: creative.whatsapp_number ?? "(not found)",
@@ -739,14 +739,15 @@ export async function waitForVideoReady(
         status?: { video_status?: string; processing_progress?: number };
         error?: MetaApiError;
       };
-      if (json.error) break;
+      if (json.error) throw new Error(`Erro da Meta ao verificar vídeo: ${json.error.message}`);
       const pct = json.status?.processing_progress ?? 0;
       const st = json.status?.video_status;
       onProgress?.(`Processando vídeo... ${pct}%`);
       if (st === "ready" || st === "complete") return json.picture ?? null;
       if (st === "error") throw new Error("A Meta não conseguiu processar o vídeo. Tente outro arquivo.");
     } catch (err) {
-      if (err instanceof Error && err.message.includes("processar")) throw err;
+      if (err instanceof Error) throw err;
+      throw new Error("Erro inesperado ao aguardar processamento do vídeo.");
     }
   }
   throw new Error("Timeout: o vídeo demorou mais que 2 minutos para processar. Tente novamente.");

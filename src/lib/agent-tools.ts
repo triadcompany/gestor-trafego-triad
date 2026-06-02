@@ -394,11 +394,18 @@ export async function executeConfirmedAction(
       }
 
       case "update_client_pix": {
+        const pixActive = args.pix_active as boolean;
+        const pixCycle = (args.pix_cycle as "semanal" | "quinzenal" | "mensal") ?? null;
+        const pixRefDay = (args.pix_reference_day as number | undefined) ?? null;
+        const monthlyBudget = (args.monthly_budget as number | undefined) ?? null;
+        if (pixActive && (!pixCycle || pixRefDay === null || monthlyBudget === null)) {
+          return { type: "error", message: "Para ativar o PIX, informe ciclo, dia de referência e orçamento mensal." };
+        }
         await updateClientPix(args.client_id as string, {
-          pix_active: args.pix_active as boolean,
-          monthly_budget: args.monthly_budget as number ?? null,
-          pix_cycle: (args.pix_cycle as "semanal" | "quinzenal" | "mensal") ?? null,
-          pix_reference_day: args.pix_reference_day as number ?? null,
+          pix_active: pixActive,
+          monthly_budget: monthlyBudget,
+          pix_cycle: pixCycle,
+          pix_reference_day: pixRefDay,
         });
         return { type: "result", data: { success: true } };
       }
