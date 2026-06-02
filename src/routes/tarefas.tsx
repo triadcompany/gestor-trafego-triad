@@ -39,10 +39,10 @@ import {
   fetchReports, createReport, markReportSent, markReportPending, updateReport, deleteReport,
   fetchAllClients,
   fetchTasks, createTask, updateTask, deleteTask,
-  fetchProfiles,
   type TaskRow,
   type NoteWithClient,
 } from "@/lib/queries";
+import { fetchProfilesAdmin } from "@/server/profiles";
 import type { TaskStatus } from "@/lib/database.types";
 
 export const Route = createFileRoute("/tarefas")({
@@ -87,7 +87,7 @@ function TarefasPage() {
   const qc = useQueryClient();
 
   const { data: clients = [] } = useQuery({ queryKey: ["all-clients"], queryFn: fetchAllClients });
-  const { data: profiles = [] } = useQuery({ queryKey: ["profiles"], queryFn: fetchProfiles });
+  const { data: profiles = [] } = useQuery({ queryKey: ["profiles"], queryFn: () => fetchProfilesAdmin() });
   const { data: notes = [], isLoading: notesLoading } = useQuery<NoteWithClient[]>({ queryKey: ["notes"], queryFn: () => fetchNotes() });
   const { data: reports = [], isLoading: reportsLoading } = useQuery({ queryKey: ["reports"], queryFn: fetchReports });
   const { data: tasks = [], isLoading: tasksLoading } = useQuery({ queryKey: ["tasks"], queryFn: fetchTasks });
@@ -591,20 +591,18 @@ function TaskDialog({
               </PopoverContent>
             </Popover>
           </div>
-          {profiles.length > 0 && (
-            <div className="space-y-1">
-              <Label>Responsável (opcional)</Label>
-              <Select value={assignedTo || "none"} onValueChange={(v) => setAssignedTo(v === "none" ? "" : v)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nenhum</SelectItem>
-                  {profiles.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
+          <div className="space-y-1">
+            <Label>Responsável (opcional)</Label>
+            <Select value={assignedTo || "none"} onValueChange={(v) => setAssignedTo(v === "none" ? "" : v)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Nenhum</SelectItem>
+                {profiles.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>{p.full_name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={onClose}>Cancelar</Button>
             <Button type="submit" disabled={saving || !title.trim()}>
