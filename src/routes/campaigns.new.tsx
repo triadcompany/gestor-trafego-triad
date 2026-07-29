@@ -1050,11 +1050,7 @@ function NewCampaign() {
                   {templatesError ? (
                     <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/10 rounded-md p-2.5">
                       <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                      <span>
-                        Tabela <code>conversation_templates</code> não encontrada. Rode a migration no Supabase Dashboard:
-                        <br />
-                        <code className="select-all">create table if not exists conversation_templates (id uuid primary key default gen_random_uuid(), name text not null, greeting text, pre_message text, created_at timestamptz not null default now());</code>
-                      </span>
+                      <span>Não foi possível carregar os templates de conversa. Tente novamente em instantes.</span>
                     </div>
                   ) : selectedTemplate ? (
                     <div className="bg-muted/40 rounded-lg p-3 space-y-2.5">

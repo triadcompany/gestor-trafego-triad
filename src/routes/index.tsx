@@ -93,7 +93,7 @@ function Dashboard() {
   });
 
   const syncMutation = useMutation({
-    mutationFn: triggerMetaSync,
+    mutationFn: () => triggerMetaSync(),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["clients-dashboard"] });
       queryClient.invalidateQueries({ queryKey: ["last-synced-at"] });

@@ -66,7 +66,7 @@ function SaldosPage() {
   });
 
   const syncMutation = useMutation({
-    mutationFn: triggerMetaSync,
+    mutationFn: () => triggerMetaSync(),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["client-balances"] });
       queryClient.invalidateQueries({ queryKey: ["last-synced-at"] });

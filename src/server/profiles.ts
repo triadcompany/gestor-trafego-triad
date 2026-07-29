@@ -1,11 +1,11 @@
 import { createServerFn } from "@tanstack/react-start";
-import { supabaseAdmin } from "@/integrations/supabase/client.server";
+import { db } from "@/db/client";
+import { profiles } from "@/db/schema";
 
 export const fetchProfilesAdmin = createServerFn({ method: "GET" }).handler(async () => {
-  const { data, error } = await supabaseAdmin
-    .from("profiles")
-    .select("id, full_name, role")
-    .order("full_name");
-  if (error) throw error;
-  return data ?? [];
+  const rows = await db
+    .select({ id: profiles.id, full_name: profiles.fullName, role: profiles.role })
+    .from(profiles)
+    .orderBy(profiles.fullName);
+  return rows;
 });

@@ -1,4 +1,9 @@
-import { supabase } from "./supabase";
+import { createServerFn } from "@tanstack/react-start";
+import { eq } from "drizzle-orm";
+import { z } from "zod";
+import { db } from "@/db/client";
+import { googleCalendarTokens } from "@/db/schema";
+import { getSessionUserId } from "@/server/session";
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string;
 const CLIENT_SECRET = import.meta.env.VITE_GOOGLE_CLIENT_SECRET as string;
@@ -22,33 +27,41 @@ export function getGoogleAuthUrl(): string {
   return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
 }
 
-export async function exchangeGoogleCode(code: string): Promise<void> {
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      code,
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      redirect_uri: REDIRECT_URI,
-      grant_type: "authorization_code",
-    }),
+const _exchangeGoogleCode = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ code: z.string() }))
+  .handler(async ({ data }) => {
+    const userId = await getSessionUserId();
+    if (!userId) throw new Error("Usuário não autenticado");
+
+    const res = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        code: data.code,
+        client_id: CLIENT_ID,
+        client_secret: CLIENT_SECRET,
+        redirect_uri: REDIRECT_URI,
+        grant_type: "authorization_code",
+      }),
+    });
+
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error_description ?? "Falha ao conectar Google Agenda");
+
+    const { access_token, refresh_token, expires_in } = json;
+    const expiresAt = new Date(Date.now() + expires_in * 1000).toISOString();
+
+    await db
+      .insert(googleCalendarTokens)
+      .values({ userId, accessToken: access_token, refreshToken: refresh_token, expiresAt })
+      .onConflictDoUpdate({
+        target: googleCalendarTokens.userId,
+        set: { accessToken: access_token, refreshToken: refresh_token, expiresAt },
+      });
   });
 
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error_description ?? "Falha ao conectar Google Agenda");
-
-  const { access_token, refresh_token, expires_in } = json;
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error("Usuário não autenticado");
-
-  const expires_at = new Date(Date.now() + expires_in * 1000).toISOString();
-
-  const { error } = await supabase.from("google_calendar_tokens").upsert(
-    { user_id: user.id, access_token, refresh_token, expires_at },
-    { onConflict: "user_id" }
-  );
-  if (error) throw error;
+export async function exchangeGoogleCode(code: string): Promise<void> {
+  await _exchangeGoogleCode({ data: { code } });
 }
 
 async function refreshToken(userId: string, refreshTokenValue: string): Promise<string | null> {
@@ -66,56 +79,63 @@ async function refreshToken(userId: string, refreshTokenValue: string): Promise<
   if (!res.ok) return null;
 
   const { access_token, expires_in } = await res.json();
-  const expires_at = new Date(Date.now() + expires_in * 1000).toISOString();
+  const expiresAt = new Date(Date.now() + expires_in * 1000).toISOString();
 
-  await supabase
-    .from("google_calendar_tokens")
-    .update({ access_token, expires_at })
-    .eq("user_id", userId);
+  await db
+    .update(googleCalendarTokens)
+    .set({ accessToken: access_token, expiresAt })
+    .where(eq(googleCalendarTokens.userId, userId));
 
   return access_token;
 }
 
-export async function getValidToken(): Promise<string | null> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return null;
+const _getValidToken = createServerFn({ method: "GET" }).handler(async (): Promise<string | null> => {
+  const userId = await getSessionUserId();
+  if (!userId) return null;
 
-  const { data } = await supabase
-    .from("google_calendar_tokens")
-    .select("access_token, refresh_token, expires_at")
-    .eq("user_id", user.id)
-    .single();
+  const rows = await db
+    .select({ accessToken: googleCalendarTokens.accessToken, refreshToken: googleCalendarTokens.refreshToken, expiresAt: googleCalendarTokens.expiresAt })
+    .from(googleCalendarTokens)
+    .where(eq(googleCalendarTokens.userId, userId))
+    .limit(1);
+  const row = rows[0];
+  if (!row) return null;
 
-  if (!data) return null;
-
-  const expiresAt = new Date(data.expires_at);
+  const expiresAt = new Date(row.expiresAt);
   const bufferMs = 5 * 60 * 1000;
 
   if (expiresAt.getTime() > Date.now() + bufferMs) {
-    return data.access_token;
+    return row.accessToken;
   }
 
-  if (!data.refresh_token) return null;
-  return refreshToken(user.id, data.refresh_token);
+  if (!row.refreshToken) return null;
+  return refreshToken(userId, row.refreshToken);
+});
+
+export async function getValidToken(): Promise<string | null> {
+  return _getValidToken();
 }
+
+const _isGoogleCalendarConnected = createServerFn({ method: "GET" }).handler(async (): Promise<boolean> => {
+  const userId = await getSessionUserId();
+  if (!userId) return false;
+
+  const rows = await db.select({ id: googleCalendarTokens.id }).from(googleCalendarTokens).where(eq(googleCalendarTokens.userId, userId)).limit(1);
+  return rows.length > 0;
+});
 
 export async function isGoogleCalendarConnected(): Promise<boolean> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return false;
-
-  const { data } = await supabase
-    .from("google_calendar_tokens")
-    .select("id")
-    .eq("user_id", user.id)
-    .maybeSingle();
-
-  return !!data;
+  return _isGoogleCalendarConnected();
 }
 
+const _disconnectGoogleCalendar = createServerFn({ method: "POST" }).handler(async () => {
+  const userId = await getSessionUserId();
+  if (!userId) return;
+  await db.delete(googleCalendarTokens).where(eq(googleCalendarTokens.userId, userId));
+});
+
 export async function disconnectGoogleCalendar(): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) return;
-  await supabase.from("google_calendar_tokens").delete().eq("user_id", user.id);
+  await _disconnectGoogleCalendar();
 }
 
 export interface CalendarEvent {

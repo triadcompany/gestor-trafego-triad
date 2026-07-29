@@ -7,7 +7,6 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus, Send, Bot, User, AlertTriangle, Check, X, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
 import {
   agentSendMessage,
   agentExecuteAction,
@@ -57,9 +56,7 @@ function AgentePage() {
 
   const sendMutation = useMutation({
     mutationFn: async (message: string) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Não autenticado.");
-      return agentSendMessage({ data: { message, conversation_id: conversationId, user_id: user.id } });
+      return agentSendMessage({ data: { message, conversation_id: conversationId } });
     },
     onMutate: (message) => {
       setMessages((prev) => [
@@ -111,14 +108,12 @@ function AgentePage() {
 
   const confirmMutation = useMutation({
     mutationFn: async ({ action, confirmMsgId }: { action: PendingAction; confirmMsgId: string }) => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Não autenticado.");
       setMessages((prev) =>
         prev.map((m) => m.id === confirmMsgId ? { ...m, status: "confirmed" as const } : m)
       );
       setIsThinking(true);
       return agentExecuteAction({
-        data: { pending_action: action, conversation_id: conversationId!, user_id: user.id },
+        data: { pending_action: action, conversation_id: conversationId! },
       });
     },
     onSuccess: (res) => {

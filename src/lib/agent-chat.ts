@@ -1,9 +1,12 @@
 "use server";
 import { createServerFn } from "@tanstack/react-start";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
-import { supabase } from "./supabase";
+import { db } from "@/db/client";
+import { agentConversations, agentMessages } from "@/db/schema";
+import { getSessionUserId } from "@/server/session";
 import { fetchClients } from "./queries";
 import { getOpenAIKey } from "./meta";
 import { TOOL_DEFINITIONS, WRITE_TOOLS, executeTool, executeConfirmedAction, describeAction, type JsonArgs } from "./agent-tools";
@@ -37,13 +40,11 @@ const pendingActionSchema = z.object({
 const sendMessageSchema = z.object({
   message: z.string(),
   conversation_id: z.string().nullable(),
-  user_id: z.string(),
 });
 
 const executeActionSchema = z.object({
   pending_action: pendingActionSchema,
   conversation_id: z.string(),
-  user_id: z.string(),
 });
 
 const loadMessagesSchema = z.object({
@@ -87,25 +88,23 @@ ${clientSummary}`;
 
 // ── Conversation helpers ──────────────────────────────────────────────────────
 
-async function ensureConversation(conversationId: string | null, userId: string): Promise<string> {
+async function ensureConversation(conversationId: string | null, userId: string | null): Promise<string> {
   if (conversationId) return conversationId;
-  const { data, error } = await supabase
-    .from("agent_conversations")
-    .insert({ created_by: userId, last_msg_at: new Date().toISOString() })
-    .select("id")
-    .single();
-  if (error) throw new Error(error.message);
-  return data.id;
+  const [row] = await db
+    .insert(agentConversations)
+    .values({ createdBy: userId, lastMsgAt: new Date().toISOString() })
+    .returning({ id: agentConversations.id });
+  return row.id;
 }
 
 async function loadHistory(conversationId: string): Promise<ChatCompletionMessageParam[]> {
-  const { data } = await supabase
-    .from("agent_messages")
-    .select("role, content")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: true })
+  const rows = await db
+    .select({ role: agentMessages.role, content: agentMessages.content })
+    .from(agentMessages)
+    .where(eq(agentMessages.conversationId, conversationId))
+    .orderBy(agentMessages.createdAt)
     .limit(40);
-  return ((data ?? []) as { role: string; content: string | null }[])
+  return rows
     .filter((m) => m.role === "user" || m.role === "assistant")
     .map((m) => ({ role: m.role as "user" | "assistant", content: m.content ?? "" }));
 }
@@ -115,24 +114,24 @@ async function saveMessages(
   messages: Array<{ role: string; content: string | null }>
 ): Promise<void> {
   if (messages.length === 0) return;
-  await supabase.from("agent_messages").insert(
-    messages.map((m) => ({ conversation_id: conversationId, role: m.role, content: m.content }))
-  );
-  await supabase
-    .from("agent_conversations")
-    .update({ last_msg_at: new Date().toISOString() })
-    .eq("id", conversationId);
+  await db
+    .insert(agentMessages)
+    .values(messages.map((m) => ({ conversationId, role: m.role, content: m.content })));
+  await db
+    .update(agentConversations)
+    .set({ lastMsgAt: new Date().toISOString() })
+    .where(eq(agentConversations.id, conversationId));
 }
 
 async function updateConversationTitle(conversationId: string, firstUserMessage: string): Promise<void> {
-  const { data } = await supabase
-    .from("agent_conversations")
-    .select("title")
-    .eq("id", conversationId)
-    .single();
-  if (data?.title) return;
+  const rows = await db
+    .select({ title: agentConversations.title })
+    .from(agentConversations)
+    .where(eq(agentConversations.id, conversationId))
+    .limit(1);
+  if (rows[0]?.title) return;
   const title = firstUserMessage.slice(0, 60).trim() + (firstUserMessage.length > 60 ? "..." : "");
-  await supabase.from("agent_conversations").update({ title }).eq("id", conversationId);
+  await db.update(agentConversations).set({ title }).where(eq(agentConversations.id, conversationId));
 }
 
 // ── Server functions ──────────────────────────────────────────────────────────
@@ -146,7 +145,10 @@ export const agentSendMessage = createServerFn({ method: "POST" })
     const openai = new OpenAI({ apiKey: openaiKey });
 
     try {
-      const convId = await ensureConversation(data.conversation_id, data.user_id);
+      const userId = await getSessionUserId();
+      if (!userId) return { type: "error", message: "Não autenticado." };
+
+      const convId = await ensureConversation(data.conversation_id, userId);
       const history = await loadHistory(convId);
       const systemPrompt = await buildSystemPrompt();
 
@@ -253,25 +255,24 @@ export const agentExecuteAction = createServerFn({ method: "POST" })
 
 export const agentListConversations = createServerFn({ method: "GET" }).handler(
   async (): Promise<Array<{ id: string; title: string | null; last_msg_at: string }>> => {
-    const { data } = await supabase
-      .from("agent_conversations")
-      .select("id, title, last_msg_at")
-      .order("last_msg_at", { ascending: false })
+    const rows = await db
+      .select({ id: agentConversations.id, title: agentConversations.title, last_msg_at: agentConversations.lastMsgAt })
+      .from(agentConversations)
+      .orderBy(desc(agentConversations.lastMsgAt))
       .limit(30);
-    return (data ?? []) as Array<{ id: string; title: string | null; last_msg_at: string }>;
+    return rows;
   }
 );
 
 export const agentLoadMessages = createServerFn({ method: "GET" })
   .inputValidator(loadMessagesSchema)
   .handler(async ({ data }): Promise<ChatMessage[]> => {
-    const { data: msgs } = await supabase
-      .from("agent_messages")
-      .select("role, content")
-      .eq("conversation_id", data.conversation_id)
-      .in("role", ["user", "assistant"])
-      .order("created_at", { ascending: true });
-    return ((msgs ?? []) as { role: string; content: string | null }[]).map((m) => ({
+    const rows = await db
+      .select({ role: agentMessages.role, content: agentMessages.content })
+      .from(agentMessages)
+      .where(and(eq(agentMessages.conversationId, data.conversation_id), inArray(agentMessages.role, ["user", "assistant"])))
+      .orderBy(agentMessages.createdAt);
+    return rows.map((m) => ({
       role: m.role as "user" | "assistant",
       content: m.content ?? "",
     }));

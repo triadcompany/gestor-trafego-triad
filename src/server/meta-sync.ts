@@ -1,7 +1,8 @@
-import { syncAllClients, getMetaToken } from "@/lib/meta";
+import { createServerFn } from "@tanstack/react-start";
+import { getMetaToken, syncAllClients } from "@/lib/meta";
 
-export async function triggerMetaSync() {
+export const triggerMetaSync = createServerFn({ method: "POST" }).handler(async () => {
   const token = await getMetaToken();
   if (!token) throw new Error("Token Meta não encontrado. Acesse /login para configurar.");
   return syncAllClients(token);
-}
+});

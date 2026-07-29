@@ -1,4 +1,21 @@
-import { supabase } from "./supabase";
+import { createServerFn } from "@tanstack/react-start";
+import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { z } from "zod";
+import { db } from "@/db/client";
+import {
+  clientNotes,
+  clientTags,
+  clients,
+  conversationTemplates,
+  metricsDaily,
+  profiles,
+  reportLog,
+  sales,
+  salesGoals,
+  tags,
+  tasks,
+} from "@/db/schema";
+import { getSessionUserId } from "@/server/session";
 import type { ClientStatus, PeriodType, ReportStatus, TaskStatus } from "./database.types";
 import { getMetaToken, fetchAccountInsightsForRange } from "./meta";
 
@@ -55,6 +72,27 @@ export interface ClientDetail extends ClientRow {
   history: MetricRow[];
 }
 
+function toClientRow(c: typeof clients.$inferSelect): ClientRow {
+  return {
+    id: c.id,
+    name: c.name,
+    meta_ad_account_id: c.metaAdAccountId,
+    meta_page_id: c.metaPageId,
+    meta_whatsapp_number: c.metaWhatsappNumber,
+    segment: c.segment as "popular" | "premium",
+    cpl_min: c.cplMin,
+    cpl_max: c.cplMax,
+    active: c.active,
+    created_at: c.createdAt,
+    meta_balance: c.metaBalance,
+    payment_method: c.paymentMethod as "pix" | "cartao",
+    monthly_budget: c.monthlyBudget,
+    pix_cycle: c.pixCycle as ClientRow["pix_cycle"],
+    pix_reference_day: c.pixReferenceDay,
+    pix_active: c.pixActive,
+  };
+}
+
 function computeStatus(
   cpl: number | null,
   spend: number,
@@ -104,31 +142,40 @@ function periodDateRange(
   }
 }
 
+const _fetchActiveClients = createServerFn({ method: "GET" }).handler(async () => {
+  const rows = await db.select().from(clients).where(eq(clients.active, true)).orderBy(clients.name);
+  return rows.map(toClientRow);
+});
+
+const _fetchMetricsForDate = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ date: z.string() }))
+  .handler(async ({ data }) => {
+    return db
+      .select({
+        clientId: metricsDaily.clientId,
+        spend: metricsDaily.spend,
+        leads: metricsDaily.leads,
+        forms: metricsDaily.forms,
+        cpl: metricsDaily.cpl,
+      })
+      .from(metricsDaily)
+      .where(eq(metricsDaily.date, data.date));
+  });
+
 export async function fetchClients(
   period: DashboardPeriod = "today",
   customRange?: { since: string; until: string },
 ): Promise<ClientWithToday[]> {
   const { start, end } = periodDateRange(period, customRange);
+  const clientRows = await _fetchActiveClients();
 
-  const { data: clients, error } = await supabase
-    .from("clients")
-    .select("*")
-    .eq("active", true)
-    .order("name");
-
-  if (error) throw error;
-  const clientRows = clients as ClientRow[];
-
-  // Single-day (today / yesterday): use metrics_daily cache — fast and always fresh from auto-sync
+  // Single-day (today / yesterday): use metrics_daily cache — fast e sempre atualizado pelo auto-sync
   if (start === end) {
-    type PeriodRow = { client_id: string; spend: number; leads: number; forms: number; cpl: number | null };
-    const { data: rows } = await (
-      supabase.from("metrics_daily").select("client_id, spend, leads, forms, cpl").eq("date", start)
-    ) as { data: PeriodRow[] | null };
+    const rows = await _fetchMetricsForDate({ data: { date: start } });
 
     const metricsMap = new Map<string, { spend: number; leads: number; forms: number; cpl: number | null }>();
-    for (const m of rows ?? []) {
-      metricsMap.set(m.client_id, { spend: m.spend, leads: m.leads, forms: m.forms ?? 0, cpl: m.cpl });
+    for (const m of rows) {
+      metricsMap.set(m.clientId, { spend: m.spend, leads: m.leads, forms: m.forms ?? 0, cpl: m.cpl });
     }
 
     return clientRows.map((c) => {
@@ -141,7 +188,7 @@ export async function fetchClients(
     });
   }
 
-  // Multi-day: fetch aggregated totals directly from Meta API (metrics_daily only has current-day data)
+  // Multi-day: busca totais agregados direto na API do Meta (metrics_daily só guarda o dia atual)
   const token = await getMetaToken();
 
   if (!token) {
@@ -163,55 +210,111 @@ export async function fetchClients(
   });
 }
 
-export async function fetchAllClients(): Promise<ClientRow[]> {
-  const { data, error } = await supabase
-    .from("clients")
-    .select("*, client_tags(tags(id, name, color))")
-    .order("name");
-  if (error) throw error;
-  return (data ?? []).map((c: any) => ({
-    ...c,
-    tags: (c.client_tags ?? []).map((ct: any) => ct.tags).filter(Boolean),
+const _fetchAllClients = createServerFn({ method: "GET" }).handler(async () => {
+  const rows = await db.query.clients.findMany({
+    orderBy: clients.name,
+    with: { clientTags: { with: { tag: true } } },
+  });
+  return rows.map((c) => ({
+    ...toClientRow(c),
+    tags: c.clientTags.map((ct) => ct.tag).filter(Boolean) as TagRow[],
   }));
+});
+
+export async function fetchAllClients(): Promise<ClientRow[]> {
+  return _fetchAllClients();
 }
+
+const _fetchClientDetail = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    const today = new Date().toISOString().slice(0, 10);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+
+    const [client, history] = await Promise.all([
+      db.query.clients.findFirst({
+        where: eq(clients.id, data.id),
+        with: { clientTags: { with: { tag: true } } },
+      }),
+      db
+        .select({
+          date: metricsDaily.date,
+          spend: metricsDaily.spend,
+          leads: metricsDaily.leads,
+          forms: metricsDaily.forms,
+          cpl: metricsDaily.cpl,
+        })
+        .from(metricsDaily)
+        .where(and(eq(metricsDaily.clientId, data.id), gte(metricsDaily.date, thirtyDaysAgo)))
+        .orderBy(metricsDaily.date),
+    ]);
+
+    if (!client) throw new Error("Cliente não encontrado");
+
+    const todayMetric = history.find((m) => m.date === today);
+    const spend = todayMetric?.spend ?? 0;
+    const leads = todayMetric?.leads ?? 0;
+    const forms = todayMetric?.forms ?? 0;
+    const cpl = todayMetric?.cpl ?? null;
+
+    return {
+      ...toClientRow(client),
+      tags: client.clientTags.map((ct) => ct.tag).filter(Boolean) as TagRow[],
+      spendToday: spend,
+      leadsToday: leads,
+      formsToday: forms,
+      cplToday: cpl,
+      status: computeStatus(cpl, spend, client.cplMax),
+      history: history.map((m) => ({ ...m, forms: m.forms ?? 0 })),
+    };
+  });
 
 export async function fetchClientDetail(id: string): Promise<ClientDetail> {
-  const today = new Date().toISOString().slice(0, 10);
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000)
-    .toISOString()
-    .slice(0, 10);
-
-  const [{ data: client, error }, { data: history }] = await Promise.all([
-    supabase.from("clients").select("*, client_tags(tags(id, name, color))").eq("id", id).single(),
-    supabase
-      .from("metrics_daily")
-      .select("date, spend, leads, forms, cpl")
-      .eq("client_id", id)
-      .gte("date", thirtyDaysAgo)
-      .order("date"),
-  ]);
-
-  if (error || !client) throw error ?? new Error("Cliente não encontrado");
-
-  const todayMetric = (history ?? []).find((m) => m.date === today);
-  const spend = todayMetric?.spend ?? 0;
-  const leads = todayMetric?.leads ?? 0;
-  const forms = (todayMetric as any)?.forms ?? 0;
-  const cpl = todayMetric?.cpl ?? null;
-
-  const tags = ((client as any).client_tags ?? []).map((ct: any) => ct.tags).filter(Boolean);
-
-  return {
-    ...(client as ClientRow),
-    tags,
-    spendToday: spend,
-    leadsToday: leads,
-    formsToday: forms,
-    cplToday: cpl,
-    status: computeStatus(cpl, spend, client.cpl_max),
-    history: (history ?? []).map((m: any) => ({ ...m, forms: m.forms ?? 0 })),
-  };
+  return _fetchClientDetail({ data: { id } });
 }
+
+const upsertClientSchema = z.object({
+  id: z.string().optional(),
+  name: z.string(),
+  meta_ad_account_id: z.string(),
+  meta_page_id: z.string().optional(),
+  meta_whatsapp_number: z.string().optional(),
+  segment: z.enum(["popular", "premium"]),
+  cpl_min: z.number(),
+  cpl_max: z.number(),
+  payment_method: z.enum(["pix", "cartao"]).optional(),
+  pix_active: z.boolean().optional(),
+  monthly_budget: z.number().nullable().optional(),
+  pix_cycle: z.enum(["semanal", "quinzenal", "mensal"]).nullable().optional(),
+  pix_reference_day: z.number().nullable().optional(),
+});
+
+const _upsertClient = createServerFn({ method: "POST" })
+  .inputValidator(upsertClientSchema)
+  .handler(async ({ data }) => {
+    const values = {
+      ...(data.id ? { id: data.id } : {}),
+      name: data.name,
+      metaAdAccountId: data.meta_ad_account_id,
+      metaPageId: data.meta_page_id ?? null,
+      metaWhatsappNumber: data.meta_whatsapp_number ?? null,
+      segment: data.segment,
+      cplMin: data.cpl_min,
+      cplMax: data.cpl_max,
+      active: true,
+      ...(data.payment_method !== undefined ? { paymentMethod: data.payment_method } : {}),
+      ...(data.pix_active !== undefined ? { pixActive: data.pix_active } : {}),
+      ...(data.monthly_budget !== undefined ? { monthlyBudget: data.monthly_budget ?? 0 } : {}),
+      ...(data.pix_cycle !== undefined ? { pixCycle: data.pix_cycle } : {}),
+      ...(data.pix_reference_day !== undefined ? { pixReferenceDay: data.pix_reference_day } : {}),
+    };
+    const [row] = await db
+      .insert(clients)
+      .values(values)
+      .onConflictDoUpdate({ target: clients.id, set: values })
+      .returning({ id: clients.id });
+    return { id: row.id };
+  });
 
 export async function upsertClient(data: {
   id?: string;
@@ -228,60 +331,66 @@ export async function upsertClient(data: {
   pix_cycle?: "semanal" | "quinzenal" | "mensal" | null;
   pix_reference_day?: number | null;
 }): Promise<{ id: string }> {
-  const { data: row, error } = await supabase
-    .from("clients")
-    .upsert({ ...data, active: true })
-    .select("id")
-    .single();
-  if (error) throw error;
-  return { id: (row as any).id };
+  return _upsertClient({ data });
 }
 
 // ── Tags ──────────────────────────────────────────────────────────────────────
 
+const _fetchTags = createServerFn({ method: "GET" }).handler(async () => {
+  return db.select({ id: tags.id, name: tags.name, color: tags.color }).from(tags).orderBy(tags.name);
+});
+
 export async function fetchTags(): Promise<TagRow[]> {
-  const { data, error } = await supabase.from("tags").select("id, name, color").order("name");
-  if (error) throw error;
-  return (data ?? []) as TagRow[];
+  return _fetchTags();
 }
+
+const _createTag = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ name: z.string(), color: z.string() }))
+  .handler(async ({ data }) => {
+    const [row] = await db
+      .insert(tags)
+      .values({ name: data.name, color: data.color })
+      .returning({ id: tags.id, name: tags.name, color: tags.color });
+    return row;
+  });
 
 export async function createTag(name: string, color: string): Promise<TagRow> {
-  const { data, error } = await supabase
-    .from("tags")
-    .insert({ name, color })
-    .select("id, name, color")
-    .single();
-  if (error) throw error;
-  return data as TagRow;
+  return _createTag({ data: { name, color } });
 }
+
+const _setClientTags = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ clientId: z.string(), tagIds: z.array(z.string()) }))
+  .handler(async ({ data }) => {
+    await db.transaction(async (tx) => {
+      await tx.delete(clientTags).where(eq(clientTags.clientId, data.clientId));
+      if (data.tagIds.length > 0) {
+        await tx.insert(clientTags).values(data.tagIds.map((tagId) => ({ clientId: data.clientId, tagId })));
+      }
+    });
+  });
 
 export async function setClientTags(clientId: string, tagIds: string[]): Promise<void> {
-  await supabase.from("client_tags").delete().eq("client_id", clientId);
-  if (tagIds.length === 0) return;
-  const { error } = await supabase
-    .from("client_tags")
-    .insert(tagIds.map((tag_id) => ({ client_id: clientId, tag_id })));
-  if (error) throw error;
+  await _setClientTags({ data: { clientId, tagIds } });
 }
+
+const _toggleClientActive = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string(), active: z.boolean() }))
+  .handler(async ({ data }) => {
+    await db.update(clients).set({ active: data.active }).where(eq(clients.id, data.id));
+  });
 
 export async function toggleClientActive(id: string, active: boolean) {
-  const { error } = await supabase
-    .from("clients")
-    .update({ active })
-    .eq("id", id);
-  if (error) throw error;
+  await _toggleClientActive({ data: { id, active } });
 }
 
-export async function updateClientGoal(
-  id: string,
-  cpl_min: number,
-  cpl_max: number
-) {
-  const { error } = await supabase
-    .from("clients")
-    .update({ cpl_min, cpl_max })
-    .eq("id", id);
-  if (error) throw error;
+const _updateClientGoal = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string(), cpl_min: z.number(), cpl_max: z.number() }))
+  .handler(async ({ data }) => {
+    await db.update(clients).set({ cplMin: data.cpl_min, cplMax: data.cpl_max }).where(eq(clients.id, data.id));
+  });
+
+export async function updateClientGoal(id: string, cpl_min: number, cpl_max: number) {
+  await _updateClientGoal({ data: { id, cpl_min, cpl_max } });
 }
 
 export interface ClientBalance {
@@ -293,24 +402,38 @@ export interface ClientBalance {
   spendToday: number;
 }
 
-export async function fetchClientBalances(): Promise<ClientBalance[]> {
+const _fetchClientBalances = createServerFn({ method: "GET" }).handler(async () => {
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
-  const [{ data: clients }, { data: metrics }] = await Promise.all([
-    supabase.from("clients").select("id, name, segment, payment_method, meta_balance").eq("active", true).order("name"),
-    supabase.from("metrics_daily").select("client_id, spend").eq("date", yesterday),
+  const [clientRows, metricRows] = await Promise.all([
+    db
+      .select({
+        id: clients.id,
+        name: clients.name,
+        segment: clients.segment,
+        paymentMethod: clients.paymentMethod,
+        metaBalance: clients.metaBalance,
+      })
+      .from(clients)
+      .where(eq(clients.active, true))
+      .orderBy(clients.name),
+    db.select({ clientId: metricsDaily.clientId, spend: metricsDaily.spend }).from(metricsDaily).where(eq(metricsDaily.date, yesterday)),
   ]);
 
-  const metricsMap = new Map((metrics ?? []).map((m) => [m.client_id, m.spend as number]));
+  const metricsMap = new Map(metricRows.map((m) => [m.clientId, m.spend]));
 
-  return (clients ?? []).map((c) => ({
+  return clientRows.map((c) => ({
     id: c.id,
     name: c.name,
     segment: c.segment as "popular" | "premium",
-    payment_method: (c.payment_method ?? "pix") as "pix" | "cartao",
-    meta_balance: c.meta_balance ?? null,
+    payment_method: (c.paymentMethod ?? "pix") as "pix" | "cartao",
+    meta_balance: c.metaBalance ?? null,
     spendToday: metricsMap.get(c.id) ?? 0,
   }));
+});
+
+export async function fetchClientBalances(): Promise<ClientBalance[]> {
+  return _fetchClientBalances();
 }
 
 // ─── Notas ───────────────────────────────────────────────────────────────────
@@ -324,58 +447,71 @@ export interface NoteWithClient {
   updated_at: string;
 }
 
+const _fetchNotes = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const rows = await db.query.clientNotes.findMany({
+      where: data.clientId ? eq(clientNotes.clientId, data.clientId) : undefined,
+      orderBy: desc(clientNotes.createdAt),
+      with: { client: { columns: { name: true } } },
+    });
+    return rows.map((row) => ({
+      id: row.id,
+      client_id: row.clientId,
+      client_name: row.client?.name ?? "",
+      content: row.content,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt,
+    }));
+  });
+
 export async function fetchNotes(clientId?: string): Promise<NoteWithClient[]> {
-  let query = supabase
-    .from("client_notes")
-    .select("id, client_id, content, created_at, updated_at, clients(name)")
-    .order("created_at", { ascending: false });
-
-  if (clientId) query = query.eq("client_id", clientId);
-
-  const { data, error } = await query;
-  if (error) throw error;
-
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    client_id: row.client_id,
-    client_name: row.clients?.name ?? "",
-    content: row.content,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  }));
+  return _fetchNotes({ data: { clientId } });
 }
 
-export async function createNote(payload: {
-  client_id: string;
-  content: string;
-}): Promise<NoteWithClient> {
-  const { data, error } = await supabase
-    .from("client_notes")
-    .insert(payload)
-    .select("id, client_id, content, created_at, updated_at, clients(name)")
-    .single();
-  if (error) throw error;
-  return {
-    id: (data as any).id,
-    client_id: (data as any).client_id,
-    client_name: (data as any).clients?.name ?? "",
-    content: (data as any).content,
-    created_at: (data as any).created_at,
-    updated_at: (data as any).updated_at,
-  };
+const _createNote = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ client_id: z.string(), content: z.string() }))
+  .handler(async ({ data }) => {
+    const [row] = await db
+      .insert(clientNotes)
+      .values({ clientId: data.client_id, content: data.content })
+      .returning();
+    const client = await db.query.clients.findFirst({ where: eq(clients.id, row.clientId), columns: { name: true } });
+    return {
+      id: row.id,
+      client_id: row.clientId,
+      client_name: client?.name ?? "",
+      content: row.content,
+      created_at: row.createdAt,
+      updated_at: row.updatedAt,
+    };
+  });
+
+export async function createNote(payload: { client_id: string; content: string }): Promise<NoteWithClient> {
+  return _createNote({ data: payload });
 }
+
+const _updateNote = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string(), content: z.string() }))
+  .handler(async ({ data }) => {
+    await db
+      .update(clientNotes)
+      .set({ content: data.content, updatedAt: new Date().toISOString() })
+      .where(eq(clientNotes.id, data.id));
+  });
 
 export async function updateNote(id: string, content: string): Promise<void> {
-  const { error } = await supabase
-    .from("client_notes")
-    .update({ content, updated_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw error;
+  await _updateNote({ data: { id, content } });
 }
 
+const _deleteNote = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    await db.delete(clientNotes).where(eq(clientNotes.id, data.id));
+  });
+
 export async function deleteNote(id: string): Promise<void> {
-  const { error } = await supabase.from("client_notes").delete().eq("id", id);
-  if (error) throw error;
+  await _deleteNote({ data: { id } });
 }
 
 // ─── Relatórios ──────────────────────────────────────────────────────────────
@@ -391,64 +527,98 @@ export interface ReportWithClient {
   created_at: string;
 }
 
-export async function fetchReports(): Promise<ReportWithClient[]> {
-  const { data, error } = await supabase
-    .from("report_log")
-    .select("id, client_id, period_type, period_start, status, sent_at, created_at, clients(name)")
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-
-  return (data ?? []).map((row: any) => ({
-    id: row.id,
-    client_id: row.client_id,
-    client_name: row.clients?.name ?? "",
-    period_type: row.period_type as PeriodType,
-    period_start: row.period_start,
-    status: row.status as ReportStatus,
-    sent_at: row.sent_at,
-    created_at: row.created_at,
-  }));
-}
-
-export async function createReport(payload: {
-  client_id: string;
-  period_type: PeriodType;
-  period_start: string;
-}): Promise<void> {
-  const { error } = await supabase.from("report_log").insert({
-    ...payload,
-    status: "pendente",
+const _fetchReports = createServerFn({ method: "GET" }).handler(async () => {
+  const rows = await db.query.reportLog.findMany({
+    orderBy: desc(reportLog.createdAt),
+    with: { client: { columns: { name: true } } },
   });
-  if (error) throw error;
+  return rows.map((row) => ({
+    id: row.id,
+    client_id: row.clientId,
+    client_name: row.client?.name ?? "",
+    period_type: row.periodType as PeriodType,
+    period_start: row.periodStart,
+    status: row.status as ReportStatus,
+    sent_at: row.sentAt,
+    created_at: row.createdAt,
+  }));
+});
+
+export async function fetchReports(): Promise<ReportWithClient[]> {
+  return _fetchReports();
 }
+
+const _createReport = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ client_id: z.string(), period_type: z.enum(["semanal", "mensal"]), period_start: z.string() }))
+  .handler(async ({ data }) => {
+    await db.insert(reportLog).values({
+      clientId: data.client_id,
+      periodType: data.period_type,
+      periodStart: data.period_start,
+      status: "pendente",
+    });
+  });
+
+export async function createReport(payload: { client_id: string; period_type: PeriodType; period_start: string }): Promise<void> {
+  await _createReport({ data: payload });
+}
+
+const _markReportSent = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    await db.update(reportLog).set({ status: "enviado", sentAt: new Date().toISOString() }).where(eq(reportLog.id, data.id));
+  });
 
 export async function markReportSent(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("report_log")
-    .update({ status: "enviado", sent_at: new Date().toISOString() })
-    .eq("id", id);
-  if (error) throw error;
+  await _markReportSent({ data: { id } });
 }
 
+const _markReportPending = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    await db.update(reportLog).set({ status: "pendente", sentAt: null }).where(eq(reportLog.id, data.id));
+  });
+
 export async function markReportPending(id: string): Promise<void> {
-  const { error } = await supabase
-    .from("report_log")
-    .update({ status: "pendente", sent_at: null })
-    .eq("id", id);
-  if (error) throw error;
+  await _markReportPending({ data: { id } });
 }
+
+const _updateReport = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      id: z.string(),
+      period_type: z.enum(["semanal", "mensal"]).optional(),
+      period_start: z.string().optional(),
+      sent_at: z.string().nullable().optional(),
+    })
+  )
+  .handler(async ({ data }) => {
+    const { id, ...fields } = data;
+    await db
+      .update(reportLog)
+      .set({
+        ...(fields.period_type !== undefined ? { periodType: fields.period_type } : {}),
+        ...(fields.period_start !== undefined ? { periodStart: fields.period_start } : {}),
+        ...(fields.sent_at !== undefined ? { sentAt: fields.sent_at } : {}),
+      })
+      .where(eq(reportLog.id, id));
+  });
 
 export async function updateReport(
   id: string,
   fields: { period_type?: PeriodType; period_start?: string; sent_at?: string | null }
 ): Promise<void> {
-  const { error } = await supabase.from("report_log").update(fields).eq("id", id);
-  if (error) throw error;
+  await _updateReport({ data: { id, ...fields } });
 }
 
+const _deleteReport = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    await db.delete(reportLog).where(eq(reportLog.id, data.id));
+  });
+
 export async function deleteReport(id: string): Promise<void> {
-  const { error } = await supabase.from("report_log").delete().eq("id", id);
-  if (error) throw error;
+  await _deleteReport({ data: { id } });
 }
 
 // ── Conversation templates ─────────────────────────────────────
@@ -461,14 +631,48 @@ export interface ConversationTemplate {
   created_at: string;
 }
 
-export async function fetchConversationTemplates(): Promise<ConversationTemplate[]> {
-  const { data, error } = await supabase
-    .from("conversation_templates")
-    .select("*")
-    .order("name");
-  if (error) throw error;
-  return data ?? [];
+function toTemplate(row: typeof conversationTemplates.$inferSelect): ConversationTemplate {
+  return {
+    id: row.id,
+    name: row.name,
+    greeting: row.greeting,
+    pre_message: row.preMessage,
+    created_at: row.createdAt,
+  };
 }
+
+const _fetchConversationTemplates = createServerFn({ method: "GET" }).handler(async () => {
+  const rows = await db.select().from(conversationTemplates).orderBy(conversationTemplates.name);
+  return rows.map(toTemplate);
+});
+
+export async function fetchConversationTemplates(): Promise<ConversationTemplate[]> {
+  return _fetchConversationTemplates();
+}
+
+const _upsertConversationTemplate = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      id: z.string().optional(),
+      name: z.string(),
+      greeting: z.string().nullable().optional(),
+      pre_message: z.string().nullable().optional(),
+    })
+  )
+  .handler(async ({ data }) => {
+    const values = {
+      ...(data.id ? { id: data.id } : {}),
+      name: data.name,
+      greeting: data.greeting ?? null,
+      preMessage: data.pre_message ?? null,
+    };
+    const [row] = await db
+      .insert(conversationTemplates)
+      .values(values)
+      .onConflictDoUpdate({ target: conversationTemplates.id, set: values })
+      .returning();
+    return toTemplate(row);
+  });
 
 export async function upsertConversationTemplate(template: {
   id?: string;
@@ -476,24 +680,17 @@ export async function upsertConversationTemplate(template: {
   greeting?: string | null;
   pre_message?: string | null;
 }): Promise<ConversationTemplate> {
-  const payload = {
-    ...(template.id ? { id: template.id } : {}),
-    name: template.name,
-    greeting: template.greeting ?? null,
-    pre_message: template.pre_message ?? null,
-  };
-  const { data, error } = await supabase
-    .from("conversation_templates")
-    .upsert(payload, { onConflict: "id" })
-    .select()
-    .single();
-  if (error) throw error;
-  return data;
+  return _upsertConversationTemplate({ data: template });
 }
 
+const _deleteConversationTemplate = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    await db.delete(conversationTemplates).where(eq(conversationTemplates.id, data.id));
+  });
+
 export async function deleteConversationTemplate(id: string): Promise<void> {
-  const { error } = await supabase.from("conversation_templates").delete().eq("id", id);
-  if (error) throw error;
+  await _deleteConversationTemplate({ data: { id } });
 }
 
 // ── PIX ────────────────────────────────────────────────────────
@@ -507,18 +704,57 @@ export interface PixClient {
   meta_ad_account_id: string;
 }
 
+const _fetchPixClients = createServerFn({ method: "GET" }).handler(async () => {
+  const rows = await db
+    .select({
+      id: clients.id,
+      name: clients.name,
+      monthlyBudget: clients.monthlyBudget,
+      pixCycle: clients.pixCycle,
+      pixReferenceDay: clients.pixReferenceDay,
+      metaAdAccountId: clients.metaAdAccountId,
+    })
+    .from(clients)
+    .where(and(eq(clients.pixActive, true), eq(clients.active, true)))
+    .orderBy(clients.name);
+
+  return rows
+    .filter((c) => c.monthlyBudget !== null && c.pixCycle !== null && c.pixReferenceDay !== null)
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      monthly_budget: c.monthlyBudget as number,
+      pix_cycle: c.pixCycle as "semanal" | "quinzenal" | "mensal",
+      pix_reference_day: c.pixReferenceDay as number,
+      meta_ad_account_id: c.metaAdAccountId,
+    }));
+});
+
 export async function fetchPixClients(): Promise<PixClient[]> {
-  const { data, error } = await supabase
-    .from("clients")
-    .select("id, name, monthly_budget, pix_cycle, pix_reference_day, meta_ad_account_id")
-    .eq("pix_active", true)
-    .eq("active", true)
-    .order("name");
-  if (error) throw error;
-  return (data ?? []).filter(
-    (c) => c.monthly_budget !== null && c.pix_cycle !== null && c.pix_reference_day !== null
-  ) as PixClient[];
+  return _fetchPixClients();
 }
+
+const _updateClientPix = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      id: z.string(),
+      pix_active: z.boolean(),
+      monthly_budget: z.number().nullable(),
+      pix_cycle: z.enum(["semanal", "quinzenal", "mensal"]).nullable(),
+      pix_reference_day: z.number().nullable(),
+    })
+  )
+  .handler(async ({ data }) => {
+    await db
+      .update(clients)
+      .set({
+        pixActive: data.pix_active,
+        monthlyBudget: data.monthly_budget ?? 0,
+        pixCycle: data.pix_cycle,
+        pixReferenceDay: data.pix_reference_day,
+      })
+      .where(eq(clients.id, data.id));
+  });
 
 export async function updateClientPix(
   id: string,
@@ -529,8 +765,7 @@ export async function updateClientPix(
     pix_reference_day: number | null;
   }
 ): Promise<void> {
-  const { error } = await supabase.from("clients").update(fields).eq("id", id);
-  if (error) throw error;
+  await _updateClientPix({ data: { id, ...fields } });
 }
 
 // ── Profiles ─────────────────────────────────────────────────────────────────
@@ -541,24 +776,19 @@ export interface Profile {
 }
 
 export async function fetchCurrentProfile(): Promise<Profile | null> {
-  const { data: { user } } = await supabase.auth.getUser();
+  const { getCurrentUser } = await import("@/server/session");
+  const user = await getCurrentUser();
   if (!user) return null;
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, full_name")
-    .eq("id", user.id)
-    .single();
-  if (error) return null;
-  return data as Profile;
+  return { id: user.id, full_name: user.fullName };
 }
 
+const _fetchProfiles = createServerFn({ method: "GET" }).handler(async () => {
+  const rows = await db.select({ id: profiles.id, fullName: profiles.fullName }).from(profiles).orderBy(profiles.fullName);
+  return rows.map((r) => ({ id: r.id, full_name: r.fullName }));
+});
+
 export async function fetchProfiles(): Promise<Profile[]> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select("id, full_name")
-    .order("full_name");
-  if (error) throw error;
-  return (data ?? []) as Profile[];
+  return _fetchProfiles();
 }
 
 // ── Tasks ─────────────────────────────────────────────────────────────────────
@@ -576,41 +806,75 @@ export interface TaskRow {
   created_at: string;
 }
 
-const TASK_SELECT = `id, title, status, due_date, client_id, assigned_to, created_by, created_at, clients:client_id (name), assignee:assigned_to (full_name)`;
-
-function mapTask(r: any): TaskRow {
+function mapTask(r: {
+  id: string;
+  title: string;
+  status: string;
+  dueDate: string | null;
+  clientId: string | null;
+  assignedTo: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  client?: { name: string } | null;
+  assignee?: { fullName: string } | null;
+}): TaskRow {
   return {
     id: r.id,
     title: r.title,
     status: r.status as TaskStatus,
-    due_date: r.due_date,
-    client_id: r.client_id,
-    client_name: r.clients?.name ?? null,
-    assigned_to: r.assigned_to,
-    assignee_name: r.assignee?.full_name ?? null,
-    created_by: r.created_by,
-    created_at: r.created_at,
+    due_date: r.dueDate,
+    client_id: r.clientId,
+    client_name: r.client?.name ?? null,
+    assigned_to: r.assignedTo,
+    assignee_name: r.assignee?.fullName ?? null,
+    created_by: r.createdBy,
+    created_at: r.createdAt,
   };
 }
 
+const _fetchTasks = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const rows = await db.query.tasks.findMany({
+      where: data.clientId ? eq(tasks.clientId, data.clientId) : undefined,
+      orderBy: desc(tasks.createdAt),
+      with: {
+        client: { columns: { name: true } },
+        assignee: { columns: { fullName: true } },
+      },
+    });
+    return rows.map(mapTask);
+  });
+
 export async function fetchTasks(): Promise<TaskRow[]> {
-  const { data, error } = await supabase
-    .from("tasks")
-    .select(TASK_SELECT)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return ((data ?? []) as any[]).map(mapTask);
+  return _fetchTasks({ data: {} });
 }
 
 export async function fetchTasksByClient(clientId: string): Promise<TaskRow[]> {
-  const { data, error } = await supabase
-    .from("tasks")
-    .select(TASK_SELECT)
-    .eq("client_id", clientId)
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  return ((data ?? []) as any[]).map(mapTask);
+  return _fetchTasks({ data: { clientId } });
 }
+
+const _createTask = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      title: z.string(),
+      status: z.enum(["pendente", "em_andamento", "concluida"]),
+      due_date: z.string().nullable().optional(),
+      client_id: z.string().nullable().optional(),
+      assigned_to: z.string().nullable().optional(),
+    })
+  )
+  .handler(async ({ data }) => {
+    const userId = await getSessionUserId();
+    await db.insert(tasks).values({
+      title: data.title,
+      status: data.status,
+      dueDate: data.due_date ?? null,
+      clientId: data.client_id ?? null,
+      assignedTo: data.assigned_to ?? null,
+      createdBy: userId,
+    });
+  });
 
 export async function createTask(fields: {
   title: string;
@@ -619,13 +883,33 @@ export async function createTask(fields: {
   client_id?: string | null;
   assigned_to?: string | null;
 }): Promise<void> {
-  const { data: { user } } = await supabase.auth.getUser();
-  const { error } = await supabase.from("tasks").insert({
-    ...fields,
-    created_by: user?.id ?? null,
-  });
-  if (error) throw error;
+  await _createTask({ data: fields });
 }
+
+const _updateTask = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      id: z.string(),
+      title: z.string().optional(),
+      status: z.enum(["pendente", "em_andamento", "concluida"]).optional(),
+      due_date: z.string().nullable().optional(),
+      client_id: z.string().nullable().optional(),
+      assigned_to: z.string().nullable().optional(),
+    })
+  )
+  .handler(async ({ data }) => {
+    const { id, ...fields } = data;
+    await db
+      .update(tasks)
+      .set({
+        ...(fields.title !== undefined ? { title: fields.title } : {}),
+        ...(fields.status !== undefined ? { status: fields.status } : {}),
+        ...(fields.due_date !== undefined ? { dueDate: fields.due_date } : {}),
+        ...(fields.client_id !== undefined ? { clientId: fields.client_id } : {}),
+        ...(fields.assigned_to !== undefined ? { assignedTo: fields.assigned_to } : {}),
+      })
+      .where(eq(tasks.id, id));
+  });
 
 export async function updateTask(
   id: string,
@@ -637,13 +921,17 @@ export async function updateTask(
     assigned_to?: string | null;
   }
 ): Promise<void> {
-  const { error } = await supabase.from("tasks").update(fields).eq("id", id);
-  if (error) throw error;
+  await _updateTask({ data: { id, ...fields } });
 }
 
+const _deleteTask = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    await db.delete(tasks).where(eq(tasks.id, data.id));
+  });
+
 export async function deleteTask(id: string): Promise<void> {
-  const { error } = await supabase.from("tasks").delete().eq("id", id);
-  if (error) throw error;
+  await _deleteTask({ data: { id } });
 }
 
 // ── Vendas ────────────────────────────────────────────────────────────────────
@@ -664,51 +952,78 @@ export interface SalesGoalRow {
   goal: number;
 }
 
+function toSaleRow(r: typeof sales.$inferSelect): SaleRow {
+  return { id: r.id, client_id: r.clientId, date: r.date, value: r.value, obs: r.obs, created_at: r.createdAt };
+}
+
+const _fetchSales = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string().optional(), since: z.string(), until: z.string() }))
+  .handler(async ({ data }) => {
+    const rows = await db
+      .select()
+      .from(sales)
+      .where(
+        and(
+          data.clientId ? eq(sales.clientId, data.clientId) : undefined,
+          gte(sales.date, data.since),
+          lte(sales.date, data.until)
+        )
+      )
+      .orderBy(desc(sales.date));
+    return rows.map(toSaleRow);
+  });
+
 export async function fetchSales(since: string, until: string): Promise<SaleRow[]> {
-  const { data, error } = await supabase
-    .from("sales")
-    .select("*")
-    .gte("date", since)
-    .lte("date", until)
-    .order("date", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as SaleRow[];
+  return _fetchSales({ data: { since, until } });
 }
 
 export async function fetchSalesByClient(clientId: string, since: string, until: string): Promise<SaleRow[]> {
-  const { data, error } = await supabase
-    .from("sales")
-    .select("*")
-    .eq("client_id", clientId)
-    .gte("date", since)
-    .lte("date", until)
-    .order("date", { ascending: false });
-  if (error) throw error;
-  return (data ?? []) as SaleRow[];
+  return _fetchSales({ data: { clientId, since, until } });
 }
+
+const _createSale = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ client_id: z.string(), date: z.string(), value: z.number().nullable().optional(), obs: z.string().nullable().optional() }))
+  .handler(async ({ data }) => {
+    await db.insert(sales).values({ clientId: data.client_id, date: data.date, value: data.value ?? null, obs: data.obs ?? null });
+  });
 
 export async function createSale(payload: { client_id: string; date: string; value?: number | null; obs?: string | null }): Promise<void> {
-  const { error } = await supabase.from("sales").insert(payload);
-  if (error) throw error;
+  await _createSale({ data: payload });
 }
+
+const _deleteSale = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    await db.delete(sales).where(eq(sales.id, data.id));
+  });
 
 export async function deleteSale(id: string): Promise<void> {
-  const { error } = await supabase.from("sales").delete().eq("id", id);
-  if (error) throw error;
+  await _deleteSale({ data: { id } });
 }
+
+const _fetchSalesGoals = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ month: z.string() }))
+  .handler(async ({ data }) => {
+    const rows = await db
+      .select({ id: salesGoals.id, clientId: salesGoals.clientId, month: salesGoals.month, goal: salesGoals.goal })
+      .from(salesGoals)
+      .where(eq(salesGoals.month, data.month));
+    return rows.map((r) => ({ id: r.id, client_id: r.clientId, month: r.month, goal: r.goal }));
+  });
 
 export async function fetchSalesGoals(month: string): Promise<SalesGoalRow[]> {
-  const { data, error } = await supabase
-    .from("sales_goals")
-    .select("id, client_id, month, goal")
-    .eq("month", month);
-  if (error) throw error;
-  return (data ?? []) as SalesGoalRow[];
+  return _fetchSalesGoals({ data: { month } });
 }
 
+const _upsertSalesGoal = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ clientId: z.string(), month: z.string(), goal: z.number() }))
+  .handler(async ({ data }) => {
+    await db
+      .insert(salesGoals)
+      .values({ clientId: data.clientId, month: data.month, goal: data.goal })
+      .onConflictDoUpdate({ target: [salesGoals.clientId, salesGoals.month], set: { goal: data.goal } });
+  });
+
 export async function upsertSalesGoal(clientId: string, month: string, goal: number): Promise<void> {
-  const { error } = await supabase
-    .from("sales_goals")
-    .upsert({ client_id: clientId, month, goal }, { onConflict: "client_id,month" });
-  if (error) throw error;
+  await _upsertSalesGoal({ data: { clientId, month, goal } });
 }

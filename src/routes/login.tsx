@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { supabase } from "@/lib/supabase";
+import { getCurrentUser, login as loginFn } from "@/server/session";
 
 export const Route = createFileRoute("/login")({
   head: () => ({
@@ -21,8 +21,8 @@ function Login() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (data.session) navigate({ to: "/" });
+    getCurrentUser().then((user) => {
+      if (user) navigate({ to: "/" });
     });
   }, [navigate]);
 
@@ -33,12 +33,9 @@ function Login() {
     setLoading(true);
     setError("");
 
-    const { error: authError } = await supabase.auth.signInWithPassword({
-      email: email.trim(),
-      password,
-    });
-
-    if (authError) {
+    try {
+      await loginFn({ data: { email: email.trim(), password } });
+    } catch {
       setError("Email ou senha incorretos.");
       setLoading(false);
       return;

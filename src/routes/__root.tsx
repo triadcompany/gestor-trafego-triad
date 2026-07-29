@@ -1,9 +1,8 @@
-import { Outlet, Link, createRootRoute, HeadContent, Scripts, redirect, useRouter } from "@tanstack/react-router";
+import { Outlet, Link, createRootRoute, HeadContent, Scripts, redirect } from "@tanstack/react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { supabase } from "@/lib/supabase";
-import { useEffect } from "react";
+import { getCurrentUser } from "@/server/session";
 
 import appCss from "../styles.css?url";
 
@@ -47,8 +46,8 @@ export const Route = createRootRoute({
     if (location.pathname === "/login" || location.pathname.startsWith("/auth/")) {
       return;
     }
-    const { data } = await supabase.auth.getSession();
-    if (!data.session) {
+    const user = await getCurrentUser();
+    if (!user) {
       throw redirect({ to: "/login" });
     }
   },
@@ -72,17 +71,6 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
-  const router = useRouter();
-
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_OUT") {
-        router.navigate({ to: "/login" });
-      }
-    });
-    return () => subscription.unsubscribe();
-  }, [router]);
-
   return (
     <QueryClientProvider client={queryClient}>
       <TooltipProvider delayDuration={300}>

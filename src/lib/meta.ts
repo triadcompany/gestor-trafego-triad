@@ -1,19 +1,36 @@
-import { supabase } from "./supabase";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
+import { eq, inArray } from "drizzle-orm";
+import { z } from "zod";
+import { db } from "@/db/client";
+import { appConfig, clients as clientsTable, metricsDaily, syncLog } from "@/db/schema";
+
+async function getConfigValues(keys: string[]): Promise<Record<string, string>> {
+  const rows = await db.select({ key: appConfig.key, value: appConfig.value }).from(appConfig).where(inArray(appConfig.key, keys));
+  return Object.fromEntries(rows.map((r) => [r.key, r.value]));
+}
+
+async function setConfigValues(entries: { key: string; value: string }[]): Promise<void> {
+  for (const entry of entries) {
+    await db.insert(appConfig).values(entry).onConflictDoUpdate({ target: appConfig.key, set: { value: entry.value } });
+  }
+}
 
 const GRAPH_VERSION = "v21.0";
 const BASE_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
 // ── Token storage ──────────────────────────────────────────────
 
+const _saveMetaToken = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ token: z.string(), expiresAt: z.string() }))
+  .handler(async ({ data }) => {
+    await setConfigValues([
+      { key: "meta_access_token", value: data.token },
+      { key: "meta_token_expires_at", value: data.expiresAt },
+    ]);
+  });
+
 export async function saveMetaToken(token: string, expiresAt: Date) {
-  const { error } = await supabase.from("app_config").upsert(
-    [
-      { key: "meta_access_token", value: token },
-      { key: "meta_token_expires_at", value: expiresAt.toISOString() },
-    ],
-    { onConflict: "key" }
-  );
-  if (error) throw error;
+  await _saveMetaToken({ data: { token, expiresAt: expiresAt.toISOString() } });
 }
 
 export interface TokenInfo {
@@ -22,18 +39,21 @@ export interface TokenInfo {
   daysUntilExpiry: number | null;
 }
 
+const _getConfigValues = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ keys: z.array(z.string()) }))
+  .handler(async ({ data }) => getConfigValues(data.keys));
+
 export async function getTokenInfo(): Promise<TokenInfo> {
-  const { data } = await supabase
-    .from("app_config")
-    .select("key, value")
-    .in("key", ["meta_access_token", "meta_token_expires_at", "last_synced_at"]);
+  const rows = await _getConfigValues({
+    data: { keys: ["meta_access_token", "meta_token_expires_at", "last_synced_at"] },
+  });
 
-  const tokenRow = data?.find((r) => r.key === "meta_access_token");
-  const expiresRow = data?.find((r) => r.key === "meta_token_expires_at");
+  const tokenValue = rows["meta_access_token"];
+  const expiresValue = rows["meta_token_expires_at"];
 
-  if (!tokenRow?.value) return { token: null, expiresAt: null, daysUntilExpiry: null };
+  if (!tokenValue) return { token: null, expiresAt: null, daysUntilExpiry: null };
 
-  const expiresAt = expiresRow?.value ? new Date(expiresRow.value) : null;
+  const expiresAt = expiresValue ? new Date(expiresValue) : null;
 
   if (expiresAt && expiresAt < new Date()) {
     return { token: null, expiresAt, daysUntilExpiry: 0 };
@@ -43,7 +63,7 @@ export async function getTokenInfo(): Promise<TokenInfo> {
     ? Math.floor((expiresAt.getTime() - Date.now()) / 86400000)
     : null;
 
-  return { token: tokenRow.value, expiresAt, daysUntilExpiry };
+  return { token: tokenValue, expiresAt, daysUntilExpiry };
 }
 
 export async function getMetaToken(): Promise<string | null> {
@@ -66,30 +86,23 @@ export async function requireMetaToken(): Promise<string> {
 }
 
 export async function getOpenAIKey(): Promise<string | null> {
-  const { data } = await supabase
-    .from("app_config")
-    .select("value")
-    .eq("key", "openai_api_key")
-    .maybeSingle();
-  return data?.value ?? null;
+  const rows = await _getConfigValues({ data: { keys: ["openai_api_key"] } });
+  return rows["openai_api_key"] ?? null;
 }
 
+const _saveOpenAIKey = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ key: z.string() }))
+  .handler(async ({ data }) => {
+    await setConfigValues([{ key: "openai_api_key", value: data.key }]);
+  });
+
 export async function saveOpenAIKey(key: string): Promise<void> {
-  const { error } = await supabase.from("app_config").upsert(
-    { key: "openai_api_key", value: key },
-    { onConflict: "key" }
-  );
-  if (error) throw error;
+  await _saveOpenAIKey({ data: { key } });
 }
 
 export async function getLastSyncedAt(): Promise<Date | null> {
-  const { data } = await supabase
-    .from("app_config")
-    .select("value")
-    .eq("key", "last_synced_at")
-    .maybeSingle();
-
-  return data?.value ? new Date(data.value) : null;
+  const rows = await _getConfigValues({ data: { keys: ["last_synced_at"] } });
+  return rows["last_synced_at"] ? new Date(rows["last_synced_at"]) : null;
 }
 
 // ── Account info (balance + payment method) ───────────────────
@@ -191,7 +204,7 @@ function extractMetrics(actions?: Array<{ action_type: string; value: string }>)
   };
 }
 
-export async function syncClientMetrics(
+export const syncClientMetrics = createServerOnlyFn(async function syncClientMetrics(
   clientId: string,
   adAccountId: string,
   token: string
@@ -220,19 +233,19 @@ export async function syncClientMetrics(
   const spend = parseFloat(row?.spend ?? "0");
   const { leads, forms } = extractMetrics(row?.actions);
 
-  await supabase.from("metrics_daily").upsert(
-    { client_id: clientId, date: today, spend, leads, forms },
-    { onConflict: "client_id,date" }
-  );
+  await db
+    .insert(metricsDaily)
+    .values({ clientId, date: today, spend, leads, forms })
+    .onConflictDoUpdate({ target: [metricsDaily.clientId, metricsDaily.date], set: { spend, leads, forms } });
 
   // Fetch balance only — payment_method is manually set in the client form and must never be overwritten by sync
   const { balance } = await fetchAdAccountInfo(adAccountId, token);
   if (balance !== null) {
-    await supabase.from("clients").update({ meta_balance: balance }).eq("id", clientId);
+    await db.update(clientsTable).set({ metaBalance: balance }).where(eq(clientsTable.id, clientId));
   }
 
   return { spend, leads, forms };
-}
+});
 
 export async function fetchAccountInsightsForRange(
   adAccountId: string,
@@ -265,18 +278,18 @@ export async function fetchAccountInsightsForRange(
   return { spend, leads, forms };
 }
 
-export async function syncAllClients(token: string): Promise<MetaSyncResult> {
-  const { data: clients } = await supabase
-    .from("clients")
-    .select("id, meta_ad_account_id")
-    .eq("active", true);
+export const syncAllClients = createServerOnlyFn(async function syncAllClients(token: string): Promise<MetaSyncResult> {
+  const activeClients = await db
+    .select({ id: clientsTable.id, metaAdAccountId: clientsTable.metaAdAccountId })
+    .from(clientsTable)
+    .where(eq(clientsTable.active, true));
 
-  if (!clients || clients.length === 0) {
+  if (activeClients.length === 0) {
     return { synced: 0, errors: [], syncedAt: new Date().toISOString() };
   }
 
   const results = await Promise.allSettled(
-    clients.map((c) => syncClientMetrics(c.id, c.meta_ad_account_id, token))
+    activeClients.map((c) => syncClientMetrics(c.id, c.metaAdAccountId, token))
   );
 
   const errors: string[] = [];
@@ -284,21 +297,21 @@ export async function syncAllClients(token: string): Promise<MetaSyncResult> {
 
   results.forEach((r, i) => {
     if (r.status === "fulfilled") synced++;
-    else errors.push(`${clients[i].meta_ad_account_id}: ${r.reason}`);
+    else errors.push(`${activeClients[i].metaAdAccountId}: ${r.reason}`);
   });
 
   const syncedAt = new Date().toISOString();
 
   await Promise.all([
-    supabase.from("sync_log").insert({
+    db.insert(syncLog).values({
       status: errors.length === 0 ? "success" : "error",
       message: errors.length > 0 ? errors.join("; ") : null,
     }),
-    supabase.from("app_config").upsert({ key: "last_synced_at", value: syncedAt }, { onConflict: "key" }),
+    setConfigValues([{ key: "last_synced_at", value: syncedAt }]),
   ]);
 
   return { synced, errors, syncedAt };
-}
+});
 
 // ── Daily insights (chart) ─────────────────────────────────────
 
@@ -824,7 +837,7 @@ export async function updateAdCreative(
   creative: MetaAdCreative,
   updates: { body?: string; title?: string; description?: string },
   token: string,
-  clientWhatsappNumber?: string // from client record in Supabase — most reliable source
+  clientWhatsappNumber?: string // from client record — most reliable source
 ): Promise<void> {
   // Try direct update on the creative first (works for drafts)
   try {
@@ -1069,6 +1082,16 @@ interface MetaApiError {
   fbtrace_id?: string;
 }
 
+const _recordMetaApiError = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ endpoint: z.string(), safe: z.string() }))
+  .handler(async ({ data }) => {
+    await setConfigValues([
+      { key: "last_meta_api_error", value: data.safe },
+      { key: "last_meta_api_error_at", value: new Date().toISOString() },
+      { key: "last_meta_api_endpoint", value: data.endpoint },
+    ]);
+  });
+
 async function recordMetaApiError(endpoint: string, status: number, error: MetaApiError) {
   try {
     const safe = {
@@ -1082,14 +1105,7 @@ async function recordMetaApiError(endpoint: string, status: number, error: MetaA
       error_user_msg: error.error_user_msg,
       fbtrace_id: error.fbtrace_id,
     };
-    await supabase.from("app_config").upsert(
-      [
-        { key: "last_meta_api_error", value: JSON.stringify(safe) },
-        { key: "last_meta_api_error_at", value: new Date().toISOString() },
-        { key: "last_meta_api_endpoint", value: endpoint },
-      ],
-      { onConflict: "key" }
-    );
+    await _recordMetaApiError({ data: { endpoint, safe: JSON.stringify(safe) } });
   } catch {
     // never let logging break the actual flow
   }
@@ -1230,29 +1246,29 @@ function maskToken(token: string): string {
   return `${token.slice(0, 10)}${"•".repeat(16)}${token.slice(-6)}`;
 }
 
-export async function getLastMetaError(): Promise<LastMetaError | null> {
-  const { data } = await supabase
-    .from("app_config")
-    .select("key, value")
-    .in("key", ["last_meta_api_error", "last_meta_api_error_at", "last_meta_api_endpoint"]);
+const META_ERROR_KEYS = ["last_meta_api_error", "last_meta_api_error_at", "last_meta_api_endpoint"];
 
-  const errRow = data?.find((r) => r.key === "last_meta_api_error");
-  const atRow = data?.find((r) => r.key === "last_meta_api_error_at");
-  if (!errRow?.value) return null;
+export async function getLastMetaError(): Promise<LastMetaError | null> {
+  const rows = await _getConfigValues({ data: { keys: META_ERROR_KEYS } });
+
+  const errValue = rows["last_meta_api_error"];
+  const atValue = rows["last_meta_api_error_at"];
+  if (!errValue) return null;
 
   try {
-    const parsed = JSON.parse(errRow.value) as Omit<LastMetaError, "at">;
-    return { ...parsed, at: atRow?.value ?? new Date().toISOString() };
+    const parsed = JSON.parse(errValue) as Omit<LastMetaError, "at">;
+    return { ...parsed, at: atValue ?? new Date().toISOString() };
   } catch {
     return null;
   }
 }
 
+const _clearLastMetaError = createServerFn({ method: "POST" }).handler(async () => {
+  await db.delete(appConfig).where(inArray(appConfig.key, META_ERROR_KEYS));
+});
+
 export async function clearLastMetaError(): Promise<void> {
-  await supabase
-    .from("app_config")
-    .delete()
-    .in("key", ["last_meta_api_error", "last_meta_api_error_at", "last_meta_api_endpoint"]);
+  await _clearLastMetaError();
 }
 
 export async function runMetaDiagnostics(): Promise<MetaDiagnostics> {

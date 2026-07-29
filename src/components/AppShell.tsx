@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { supabase } from "@/lib/supabase";
+import { logout } from "@/server/session";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { fetchCurrentProfile } from "@/lib/queries";
@@ -36,7 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     exact ? path === to : path === to || path.startsWith(to + "/") || path.startsWith(to);
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    await logout();
     navigate({ to: "/login" });
   };
 

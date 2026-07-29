@@ -479,7 +479,7 @@ function SettingsPage() {
               { label: "Versão", value: "0.1.0" },
               { label: "API Meta", value: "Graph API v21.0" },
               { label: "Sync automático", value: "A cada hora" },
-              { label: "Dados armazenados", value: "Supabase (PostgreSQL)" },
+              { label: "Dados armazenados", value: "PostgreSQL (VPS própria)" },
             ].map(({ label, value }) => (
               <div key={label} className="flex items-center justify-between px-5 py-3">
                 <span className="text-sm text-muted-foreground">{label}</span>
