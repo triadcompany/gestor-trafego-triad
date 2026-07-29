@@ -178,14 +178,23 @@ function NewCampaign() {
     }
   }, [jobStatus, pendingJobId]);
 
-  // Timeout: se o n8n não responder em 60s, libera o botão
+  // Aviso brando aos 60s (sem parar de checar — vídeo pode demorar mais que isso pra processar)
+  useEffect(() => {
+    if (!pendingJobId) return;
+    const timer = setTimeout(() => {
+      toast.info("Ainda processando… pode levar mais alguns minutos, especialmente com vídeo.", { id: "n8n-progress", duration: 15000 });
+    }, 60 * 1000);
+    return () => clearTimeout(timer);
+  }, [pendingJobId]);
+
+  // Timeout definitivo: se o n8n não responder em 5min, aí sim desiste e libera o botão
   useEffect(() => {
     if (!pendingJobId) return;
     const timer = setTimeout(() => {
       toast.dismiss("n8n-progress");
-      toast.error("O n8n não respondeu a tempo. Verifique o workflow e tente novamente.", { duration: 20000 });
+      toast.error("O n8n não respondeu a tempo. Verifique o workflow — o anúncio pode ter sido criado mesmo assim.", { duration: 20000 });
       setPendingJobId(null);
-    }, 60 * 1000);
+    }, 5 * 60 * 1000);
     return () => clearTimeout(timer);
   }, [pendingJobId]);
 
