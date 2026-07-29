@@ -2,7 +2,7 @@ import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { appConfig, clients as clientsTable, metricsDaily, syncLog } from "@/db/schema";
+import { appConfig, campaignSnapshots, clients as clientsTable, metricsDaily, syncLog } from "@/db/schema";
 
 async function getConfigValues(keys: string[]): Promise<Record<string, string>> {
   const rows = await db.select({ key: appConfig.key, value: appConfig.value }).from(appConfig).where(inArray(appConfig.key, keys));
@@ -242,6 +242,45 @@ export const syncClientMetrics = createServerOnlyFn(async function syncClientMet
   const { balance } = await fetchAdAccountInfo(adAccountId, token);
   if (balance !== null) {
     await db.update(clientsTable).set({ metaBalance: balance }).where(eq(clientsTable.id, clientId));
+  }
+
+  // Snapshot por campanha — alimenta a página Visão Geral (campanhas com CPL alto / sem entrega)
+  try {
+    const campaigns = await fetchCampaigns(adAccountId, token, "today");
+    for (const c of campaigns) {
+      await db
+        .insert(campaignSnapshots)
+        .values({
+          clientId,
+          campaignId: c.id,
+          name: c.name,
+          status: c.status,
+          dailyBudget: c.daily_budget,
+          spend: c.spend,
+          leads: c.leads,
+          forms: c.forms,
+          cpl: c.cpl,
+          impressions: c.impressions,
+          clicks: c.link_clicks,
+        })
+        .onConflictDoUpdate({
+          target: [campaignSnapshots.clientId, campaignSnapshots.campaignId],
+          set: {
+            name: c.name,
+            status: c.status,
+            dailyBudget: c.daily_budget,
+            spend: c.spend,
+            leads: c.leads,
+            forms: c.forms,
+            cpl: c.cpl,
+            impressions: c.impressions,
+            clicks: c.link_clicks,
+            syncedAt: new Date().toISOString(),
+          },
+        });
+    }
+  } catch {
+    // não deixa falha ao buscar campanhas quebrar o sync de métricas/saldo
   }
 
   return { spend, leads, forms };

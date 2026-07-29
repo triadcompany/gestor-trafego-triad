@@ -83,6 +83,28 @@ export const metricsDaily = pgTable(
   ]
 );
 
+export const campaignSnapshots = pgTable(
+  "campaign_snapshots",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    campaignId: text("campaign_id").notNull(),
+    name: text("name").notNull(),
+    status: text("status").notNull(),
+    dailyBudget: numericMoney("daily_budget", 10, 2),
+    spend: numericMoney("spend", 10, 2).notNull().default(0),
+    leads: integer("leads").notNull().default(0),
+    forms: integer("forms").notNull().default(0),
+    cpl: numericMoney("cpl", 10, 2),
+    impressions: integer("impressions").notNull().default(0),
+    clicks: integer("clicks").notNull().default(0),
+    syncedAt: timestamp("synced_at").defaultNow().notNull(),
+  },
+  (t) => [unique("campaign_snapshots_client_campaign_key").on(t.clientId, t.campaignId)]
+);
+
 export const syncLog = pgTable(
   "sync_log",
   {
@@ -276,6 +298,7 @@ export const profilesRelations = relations(profiles, ({ many }) => ({
 export const clientsRelations = relations(clients, ({ many }) => ({
   notes: many(clientNotes),
   metrics: many(metricsDaily),
+  campaignSnapshots: many(campaignSnapshots),
   syncLogs: many(syncLog),
   reports: many(reportLog),
   sales: many(sales),
@@ -286,6 +309,10 @@ export const clientsRelations = relations(clients, ({ many }) => ({
 
 export const metricsDailyRelations = relations(metricsDaily, ({ one }) => ({
   client: one(clients, { fields: [metricsDaily.clientId], references: [clients.id] }),
+}));
+
+export const campaignSnapshotsRelations = relations(campaignSnapshots, ({ one }) => ({
+  client: one(clients, { fields: [campaignSnapshots.clientId], references: [clients.id] }),
 }));
 
 export const syncLogRelations = relations(syncLog, ({ one }) => ({
