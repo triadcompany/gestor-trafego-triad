@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
@@ -8,13 +9,15 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
-import { ArrowUp, ArrowDown, SlidersHorizontal, Check, X } from "lucide-react";
+import { ArrowUp, ArrowDown, SlidersHorizontal, Check, X, Copy } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchAllAdSets,
   fetchAllAds,
   getMetaToken,
   updateMetaObject,
+  duplicateAdSet,
+  duplicateAd,
   type MetaCampaign,
   type MetaAdSet,
   type MetaAd,
@@ -36,6 +39,7 @@ interface Row {
   name: string;
   status: string;
   campaign_id?: string;
+  adset_id?: string;
   daily_budget: number | null;
   spend: number;
   leads: number;
@@ -89,6 +93,7 @@ function adToRow(a: MetaAd): Row {
     name: a.name,
     status: a.status,
     campaign_id: a.campaign_id,
+    adset_id: a.adset_id,
     daily_budget: null,
     spend: a.spend ?? 0,
     leads: a.leads ?? 0,
@@ -102,18 +107,22 @@ function adToRow(a: MetaAd): Row {
 }
 
 interface CampaignsExplorerProps {
+  clientId: string;
   adAccountId: string;
   cplMax: number;
+  whatsappNumber?: string;
   datePreset: DatePreset;
   customRange?: CustomDateRange;
   campaigns: MetaCampaign[];
   campaignsLoading: boolean;
-  onOpenCampaign: (campaign: MetaCampaign, initialAdSetId?: string) => void;
+  onOpenCampaign: (campaign: MetaCampaign, initialAdSetId?: string, initialAdId?: string) => void;
 }
 
 export function CampaignsExplorer({
+  clientId,
   adAccountId,
   cplMax,
+  whatsappNumber,
   datePreset,
   customRange,
   campaigns,
@@ -188,6 +197,40 @@ export function CampaignsExplorer({
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar orçamento"),
   });
 
+  const duplicateAdSetMutation = useMutation({
+    mutationFn: async (row: Row) => {
+      const token = await getMetaToken();
+      if (!token) throw new Error("Token não encontrado");
+      if (!row.campaign_id) throw new Error("Campanha do conjunto não encontrada");
+      const newId = await duplicateAdSet(row.id, row.campaign_id, adAccountId, token, whatsappNumber);
+      return { newId, campaignId: row.campaign_id };
+    },
+    onSuccess: ({ newId, campaignId }) => {
+      toast.success("Conjunto duplicado.");
+      queryClient.invalidateQueries({ queryKey: ["explorer-adsets"] });
+      const c = campaigns.find((c) => c.id === campaignId);
+      if (c) onOpenCampaign(c, newId);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao duplicar conjunto"),
+  });
+
+  const duplicateAdMutation = useMutation({
+    mutationFn: async (row: Row) => {
+      const token = await getMetaToken();
+      if (!token) throw new Error("Token não encontrado");
+      if (!row.adset_id) throw new Error("Conjunto do anúncio não encontrado");
+      const newId = await duplicateAd(row.id, row.adset_id, adAccountId, token);
+      return { newId, campaignId: row.campaign_id, adSetId: row.adset_id };
+    },
+    onSuccess: ({ newId, campaignId, adSetId }) => {
+      toast.success("Anúncio duplicado.");
+      queryClient.invalidateQueries({ queryKey: ["explorer-ads"] });
+      const c = campaigns.find((c) => c.id === campaignId);
+      if (c) onOpenCampaign(c, adSetId, newId);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao duplicar anúncio"),
+  });
+
   const toggleCampaignSelected = (id: string) => {
     setSelectedCampaignIds((prev) => {
       const next = new Set(prev);
@@ -201,9 +244,12 @@ export function CampaignsExplorer({
     if (level === "campaign") {
       const c = campaigns.find((c) => c.id === row.id);
       if (c) onOpenCampaign(c);
+    } else if (level === "adset") {
+      const c = campaigns.find((c) => c.id === row.campaign_id);
+      if (c) onOpenCampaign(c, row.id);
     } else {
       const c = campaigns.find((c) => c.id === row.campaign_id);
-      if (c) onOpenCampaign(c, level === "adset" ? row.id : undefined);
+      if (c) onOpenCampaign(c, row.adset_id, row.id);
     }
   };
 
@@ -249,18 +295,19 @@ export function CampaignsExplorer({
                     {COLUMN_LABELS[col]}
                   </TableHead>
                 ))}
+                <TableHead className="w-10" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {isLoading ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <TableRow key={i}>
-                    <TableCell colSpan={orderedColumns.length + 2}><Skeleton className="h-5 w-full" /></TableCell>
+                    <TableCell colSpan={orderedColumns.length + 3}><Skeleton className="h-5 w-full" /></TableCell>
                   </TableRow>
                 ))
               ) : rows.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={orderedColumns.length + 2} className="text-center text-muted-foreground py-8 text-sm">
+                  <TableCell colSpan={orderedColumns.length + 3} className="text-center text-muted-foreground py-8 text-sm">
                     {level === "campaign"
                       ? "Nenhuma campanha encontrada para o período selecionado."
                       : hasFilter
@@ -283,6 +330,13 @@ export function CampaignsExplorer({
                       statusMutation.mutate({ id: row.id, status: row.status === "ACTIVE" ? "PAUSED" : "ACTIVE" })
                     }
                     onSaveBudget={showBudgetColumn ? (value) => budgetMutation.mutate({ id: row.id, dailyBudget: value }) : undefined}
+                    clientId={clientId}
+                    onDuplicateAdSet={level === "adset" ? () => duplicateAdSetMutation.mutate(row) : undefined}
+                    onDuplicateAd={level === "ad" ? () => duplicateAdMutation.mutate(row) : undefined}
+                    duplicating={
+                      (level === "adset" && duplicateAdSetMutation.isPending && duplicateAdSetMutation.variables?.id === row.id) ||
+                      (level === "ad" && duplicateAdMutation.isPending && duplicateAdMutation.variables?.id === row.id)
+                    }
                   />
                 ))
               )}
@@ -371,6 +425,10 @@ function ExplorerRow({
   onClick,
   onToggleStatus,
   onSaveBudget,
+  clientId,
+  onDuplicateAdSet,
+  onDuplicateAd,
+  duplicating,
 }: {
   row: Row;
   level: ExplorerLevel;
@@ -381,6 +439,10 @@ function ExplorerRow({
   onClick: () => void;
   onToggleStatus: () => void;
   onSaveBudget?: (value: number) => void;
+  clientId: string;
+  onDuplicateAdSet?: () => void;
+  onDuplicateAd?: () => void;
+  duplicating?: boolean;
 }) {
   const [editingBudget, setEditingBudget] = useState(false);
   const [budgetInput, setBudgetInput] = useState(row.daily_budget ?? 0);
@@ -476,6 +538,26 @@ function ExplorerRow({
           {renderCell(col)}
         </TableCell>
       ))}
+      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+        {level === "campaign" ? (
+          <Button asChild size="icon" variant="ghost" className="h-7 w-7" title="Duplicar campanha">
+            <Link to="/campaigns/new" search={{ client: clientId, duplicateFrom: row.id, duplicateFromName: row.name }}>
+              <Copy className="h-3.5 w-3.5" />
+            </Link>
+          </Button>
+        ) : (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-7 w-7"
+            title={level === "adset" ? "Duplicar conjunto" : "Duplicar anúncio"}
+            disabled={duplicating}
+            onClick={level === "adset" ? onDuplicateAdSet : onDuplicateAd}
+          >
+            <Copy className="h-3.5 w-3.5" />
+          </Button>
+        )}
+      </TableCell>
     </TableRow>
   );
 }

@@ -142,6 +142,7 @@ function ClientDetail() {
   const [selectedCampaign, setSelectedCampaign] = useState<MetaCampaign | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetInitialAdSetId, setSheetInitialAdSetId] = useState<string | undefined>(undefined);
+  const [sheetInitialAdId, setSheetInitialAdId] = useState<string | undefined>(undefined);
 
   const [datePreset, setDatePreset] = useState<DatePreset | "custom">("today");
   const [customSince, setCustomSince] = useState("");
@@ -538,15 +539,18 @@ function ClientDetail() {
         )}
 
         <CampaignsExplorer
+          clientId={id}
           adAccountId={client.meta_ad_account_id}
           cplMax={client.cpl_max}
+          whatsappNumber={client.meta_whatsapp_number ?? undefined}
           datePreset={metaPreset}
           customRange={customRange}
           campaigns={campaigns ?? []}
           campaignsLoading={campaignsLoading}
-          onOpenCampaign={(c, initialAdSetId) => {
+          onOpenCampaign={(c, initialAdSetId, initialAdId) => {
             setSelectedCampaign(c);
             setSheetInitialAdSetId(initialAdSetId);
+            setSheetInitialAdId(initialAdId);
             setSheetOpen(true);
           }}
         />
@@ -570,6 +574,7 @@ function ClientDetail() {
         open={sheetOpen}
         onOpenChange={setSheetOpen}
         initialAdSetId={sheetInitialAdSetId}
+        initialAdId={sheetInitialAdId}
       />
     </AppShell>
   );

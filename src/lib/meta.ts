@@ -1816,6 +1816,112 @@ export async function duplicateCampaign(
   return newCampaignId;
 }
 
+/**
+ * Duplica um único conjunto de anúncios dentro da mesma campanha (cópia manual,
+ * mesmo padrão de duplicateCampaign — evita o endpoint /copies que exige permissão extra).
+ * Retorna o id do novo conjunto.
+ */
+export async function duplicateAdSet(
+  adSetId: string,
+  campaignId: string,
+  adAccountId: string,
+  token: string,
+  whatsappNumber?: string
+): Promise<string> {
+  const srcRes = await fetch(
+    `${BASE_URL}/${adSetId}?fields=name,daily_budget,billing_event,optimization_goal,bid_strategy,bid_amount,targeting,destination_type,promoted_object,instagram_actor_id&access_token=${encodeURIComponent(token)}`
+  );
+  const adSet = (await srcRes.json()) as {
+    name: string;
+    daily_budget?: string;
+    billing_event?: string;
+    optimization_goal?: string;
+    bid_strategy?: string;
+    bid_amount?: string;
+    targeting?: MetaTargeting;
+    destination_type?: string;
+    promoted_object?: Record<string, string>;
+    instagram_actor_id?: string;
+    error?: MetaApiError;
+  };
+  if (adSet.error) throw new Error(formatMetaError(adSet.error));
+
+  const targeting = adSet.targeting ?? { geo_locations: { countries: ["BR"] } };
+  if (targeting.instagram_positions?.includes("explore_home") && !targeting.instagram_positions.includes("explore")) {
+    targeting.instagram_positions = [...targeting.instagram_positions, "explore"];
+  }
+  if (targeting.instagram_positions) {
+    targeting.instagram_positions = targeting.instagram_positions.filter((p) => !["ig_search"].includes(p));
+  }
+  targeting.targeting_automation = { advantage_audience: 0 };
+
+  const effectiveDestinationType = adSet.destination_type ?? "";
+
+  const adSetParams: Record<string, string> = {
+    name: `${adSet.name} - Cópia`,
+    campaign_id: campaignId,
+    billing_event: "IMPRESSIONS",
+    optimization_goal: "CONVERSATIONS",
+    targeting: JSON.stringify(targeting),
+    status: "PAUSED",
+    access_token: token,
+  };
+
+  if (adSet.daily_budget) adSetParams.daily_budget = adSet.daily_budget;
+  if (effectiveDestinationType) adSetParams.destination_type = effectiveDestinationType;
+  if (adSet.instagram_actor_id) adSetParams.instagram_actor_id = adSet.instagram_actor_id;
+
+  if (adSet.promoted_object || effectiveDestinationType === "WHATSAPP") {
+    const po: Record<string, string> = { ...(adSet.promoted_object ?? {}) };
+    if (effectiveDestinationType === "WHATSAPP" && !po.whatsapp_phone_number) {
+      const waFromCreative = await fetchWhatsappNumberFromAdSet(adSetId, token);
+      const resolved = whatsappNumber ?? waFromCreative;
+      if (resolved) po.whatsapp_phone_number = resolved;
+    }
+    if (Object.keys(po).length > 0) adSetParams.promoted_object = JSON.stringify(po);
+  }
+
+  let newAdSetRes: { id: string };
+  try {
+    newAdSetRes = (await postMeta(`${adAccountId}/adsets`, adSetParams)) as { id: string };
+  } catch (err) {
+    const baseMsg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Falha ao duplicar o conjunto "${adSet.name}": ${baseMsg}`);
+  }
+
+  return newAdSetRes.id;
+}
+
+/**
+ * Duplica um único anúncio dentro do mesmo conjunto (cópia manual — reaproveita o
+ * creative_id do anúncio original, sem depender do endpoint /copies).
+ * Retorna o id do novo anúncio.
+ */
+export async function duplicateAd(adId: string, adSetId: string, adAccountId: string, token: string): Promise<string> {
+  const adDetailRes = await fetch(
+    `${BASE_URL}/${adId}?fields=name,creative&access_token=${encodeURIComponent(token)}`
+  );
+  const adDetail = (await adDetailRes.json()) as {
+    name: string;
+    creative?: { id: string };
+    error?: MetaApiError;
+  };
+  if (adDetail.error) throw new Error(formatMetaError(adDetail.error));
+
+  const creativeId = adDetail.creative?.id;
+  if (!creativeId) throw new Error(`Criativo não encontrado para o anúncio "${adDetail.name}"`);
+
+  const newAdRes = (await postMeta(`${adAccountId}/ads`, {
+    name: `${adDetail.name} - Cópia`,
+    adset_id: adSetId,
+    creative: JSON.stringify({ creative_id: creativeId }),
+    status: "PAUSED",
+    access_token: token,
+  })) as { id: string };
+
+  return newAdRes.id;
+}
+
 export interface CampaignPrefillData {
   name: string;
   objective: string;

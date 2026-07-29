@@ -73,6 +73,8 @@ const IG_POSITIONS = [
 
 interface SearchParams {
   client?: string;
+  duplicateFrom?: string;
+  duplicateFromName?: string;
 }
 
 export const Route = createFileRoute("/campaigns/new")({
@@ -81,6 +83,8 @@ export const Route = createFileRoute("/campaigns/new")({
   }),
   validateSearch: (s: Record<string, unknown>): SearchParams => ({
     client: typeof s.client === "string" ? s.client : undefined,
+    duplicateFrom: typeof s.duplicateFrom === "string" ? s.duplicateFrom : undefined,
+    duplicateFromName: typeof s.duplicateFromName === "string" ? s.duplicateFromName : undefined,
   }),
   component: NewCampaign,
 });
@@ -94,9 +98,11 @@ function NewCampaign() {
 
   // ── Step 1: Campaign ────────────────────────────────────────
   const [clientId, setClientId] = useState(search.client ?? "");
-  const [mode, setMode] = useState<"duplicate" | "scratch">("scratch");
-  const [baseCampaignId, setBaseCampaignId] = useState("");
-  const [campaignName, setCampaignName] = useState("");
+  const [mode, setMode] = useState<"duplicate" | "scratch">(search.duplicateFrom ? "duplicate" : "scratch");
+  const [baseCampaignId, setBaseCampaignId] = useState(search.duplicateFrom ?? "");
+  const [campaignName, setCampaignName] = useState(
+    search.duplicateFromName ? `${search.duplicateFromName} — Cópia` : ""
+  );
   const [campaignType, setCampaignType] = useState<"engagement" | "sales">("engagement");
   const [budget, setBudget] = useState(50);
   const [pageId, setPageId] = useState("");

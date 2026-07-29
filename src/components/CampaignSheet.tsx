@@ -53,6 +53,7 @@ interface CampaignSheetProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialAdSetId?: string;
+  initialAdId?: string;
 }
 
 export function CampaignSheet({
@@ -64,6 +65,7 @@ export function CampaignSheet({
   open,
   onOpenChange,
   initialAdSetId,
+  initialAdId,
 }: CampaignSheetProps) {
   const queryClient = useQueryClient();
 
@@ -111,6 +113,7 @@ export function CampaignSheet({
             whatsappNumber={whatsappNumber}
             onStatusChange={invalidateCampaigns}
             initialAdSetId={initialAdSetId}
+            initialAdId={initialAdId}
           />
         </div>
       </SheetContent>
@@ -220,6 +223,7 @@ function AdSetsSection({
   whatsappNumber,
   onStatusChange,
   initialAdSetId,
+  initialAdId,
 }: {
   campaignId: string;
   clientId: string;
@@ -227,6 +231,7 @@ function AdSetsSection({
   whatsappNumber?: string;
   onStatusChange: () => void;
   initialAdSetId?: string;
+  initialAdId?: string;
 }) {
   const { data: adSets, isLoading } = useQuery({
     queryKey: ["adsets", campaignId],
@@ -254,6 +259,7 @@ function AdSetsSection({
               whatsappNumber={whatsappNumber}
               onStatusChange={onStatusChange}
               startExpanded={adSet.id === initialAdSetId}
+              initialAdId={adSet.id === initialAdSetId ? initialAdId : undefined}
             />
           ))}
         </div>
@@ -268,12 +274,14 @@ function AdSetRow({
   whatsappNumber,
   onStatusChange,
   startExpanded,
+  initialAdId,
 }: {
   adSet: MetaAdSet;
   clientId: string;
   whatsappNumber?: string;
   onStatusChange: () => void;
   startExpanded?: boolean;
+  initialAdId?: string;
 }) {
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(!!startExpanded);
@@ -420,7 +428,14 @@ function AdSetRow({
                 <p className="text-xs text-muted-foreground py-1">Nenhum anúncio encontrado.</p>
               ) : (
                 ads.map((ad) => (
-                  <AdRow key={ad.id} ad={ad} adSetId={adSet.id} token={token ?? ""} whatsappNumber={whatsappNumber} />
+                  <AdRow
+                    key={ad.id}
+                    ad={ad}
+                    adSetId={adSet.id}
+                    token={token ?? ""}
+                    whatsappNumber={whatsappNumber}
+                    startExpanded={ad.id === initialAdId}
+                  />
                 ))
               )}
             </TabsContent>
@@ -441,9 +456,21 @@ function AdSetRow({
 
 // ── Ad row (expandable with creative editor) ───────────────────
 
-function AdRow({ ad, adSetId, token, whatsappNumber }: { ad: MetaAd; adSetId: string; token: string; whatsappNumber?: string }) {
+function AdRow({
+  ad,
+  adSetId,
+  token,
+  whatsappNumber,
+  startExpanded,
+}: {
+  ad: MetaAd;
+  adSetId: string;
+  token: string;
+  whatsappNumber?: string;
+  startExpanded?: boolean;
+}) {
   const queryClient = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(!!startExpanded);
   const isActive = ad.status === "ACTIVE";
 
   const statusMutation = useMutation({
