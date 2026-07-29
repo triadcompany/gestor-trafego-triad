@@ -112,20 +112,6 @@ export const mockClients: Client[] = [
   },
 ];
 
-export const statusLabels: Record<ClientStatus, string> = {
-  "on-target": "No alvo",
-  attention: "Atenção",
-  critical: "Crítico",
-  "no-data": "Sem dados",
-};
-
-export const statusColorClass: Record<ClientStatus, string> = {
-  "on-target": "bg-status-on-target",
-  attention: "bg-status-attention",
-  critical: "bg-status-critical",
-  "no-data": "bg-status-no-data",
-};
-
 export function brl(n: number): string {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: n % 1 === 0 ? 0 : 2 });
 }

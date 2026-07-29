@@ -4,6 +4,7 @@ import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AlertTriangle, AlertCircle, TrendingUp, Wallet, CheckCircle2 } from "lucide-react";
 import { fetchAttentionItems, type AttentionItem } from "@/lib/queries";
+import { STATUS_COLORS } from "@/lib/status-colors";
 
 export const Route = createFileRoute("/visao-geral")({
   head: () => ({
@@ -19,10 +20,7 @@ const TYPE_META: Record<AttentionItem["type"], { label: string; icon: typeof Ale
   saldo_baixo: { label: "Saldo acabando", icon: Wallet },
 };
 
-const SEVERITY_COLORS = {
-  critical: { text: "text-red-500", bg: "bg-red-500/10", border: "border-red-500/20" },
-  attention: { text: "text-yellow-500", bg: "bg-yellow-500/10", border: "border-yellow-500/20" },
-};
+const SEVERITY_COLORS = STATUS_COLORS;
 
 function initials(name: string) {
   return name.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
@@ -67,14 +65,14 @@ function VisaoGeralPage() {
           <SummaryCard
             label="Críticos"
             value={isLoading ? null : String(critical.length)}
-            valueClass={critical.length > 0 ? "text-red-500" : undefined}
-            icon={critical.length > 0 ? <AlertTriangle className="h-4 w-4 text-red-500" /> : undefined}
+            valueClass={critical.length > 0 ? "text-status-critical" : undefined}
+            icon={critical.length > 0 ? <AlertTriangle className="h-4 w-4 text-status-critical" /> : undefined}
           />
           <SummaryCard
             label="Em atenção"
             value={isLoading ? null : String(attention.length)}
-            valueClass={attention.length > 0 ? "text-yellow-500" : undefined}
-            icon={attention.length > 0 ? <AlertCircle className="h-4 w-4 text-yellow-500" /> : undefined}
+            valueClass={attention.length > 0 ? "text-status-attention" : undefined}
+            icon={attention.length > 0 ? <AlertCircle className="h-4 w-4 text-status-attention" /> : undefined}
           />
         </div>
 
@@ -86,7 +84,7 @@ function VisaoGeralPage() {
           </div>
         ) : items.length === 0 ? (
           <div className="rounded-xl border border-border py-16 flex flex-col items-center gap-2 text-center">
-            <CheckCircle2 className="h-8 w-8 text-green-500" />
+            <CheckCircle2 className="h-8 w-8 text-status-on-target" />
             <p className="text-sm font-medium text-foreground">Tudo sob controle</p>
             <p className="text-xs text-muted-foreground">Nenhum item precisa de atenção agora.</p>
           </div>

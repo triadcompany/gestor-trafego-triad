@@ -113,7 +113,7 @@ function DiagnosticoMetaPage() {
                 ) : (
                   <>
                     <Row
-                      icon={<ShieldCheck className="h-4 w-4 text-green-500" />}
+                      icon={<ShieldCheck className="h-4 w-4 text-status-on-target" />}
                       label="Conectado como"
                       value={
                         data.user
@@ -440,7 +440,7 @@ function RawBalanceRow({
         <>
           <div>
             <span className="text-muted-foreground">display_string → parseado: </span>
-            <span className="text-green-400 font-semibold">
+            <span className="text-status-on-target font-semibold">
               {raw.displayBalanceCents !== null
                 ? `R$${(raw.displayBalanceCents / 100).toFixed(2)}`
                 : "—"}
@@ -517,7 +517,7 @@ function Row({
 function PermissionBadge({ status }: { status: PermissionStatus }) {
   if (status === "granted") {
     return (
-      <Badge className="bg-green-500/15 text-green-500 border-green-500/30 hover:bg-green-500/15 gap-1">
+      <Badge className="bg-status-on-target/15 text-status-on-target border-status-on-target/30 hover:bg-status-on-target/15 gap-1">
         <CheckCircle2 className="h-3 w-3" />
         concedida
       </Badge>
@@ -541,11 +541,11 @@ function PermissionBadge({ status }: { status: PermissionStatus }) {
 
 function AccountStatusBadge({ status }: { status: number }) {
   const map: Record<number, { label: string; className: string }> = {
-    1: { label: "ativa", className: "bg-green-500/15 text-green-500 border-green-500/30" },
+    1: { label: "ativa", className: "bg-status-on-target/15 text-status-on-target border-status-on-target/30" },
     2: { label: "desativada", className: "bg-destructive/15 text-destructive border-destructive/30" },
-    3: { label: "não entregue", className: "bg-yellow-500/15 text-yellow-500 border-yellow-500/30" },
-    7: { label: "revisão", className: "bg-yellow-500/15 text-yellow-500 border-yellow-500/30" },
-    9: { label: "em vencimento", className: "bg-yellow-500/15 text-yellow-500 border-yellow-500/30" },
+    3: { label: "não entregue", className: "bg-status-attention/15 text-status-attention border-status-attention/30" },
+    7: { label: "revisão", className: "bg-status-attention/15 text-status-attention border-status-attention/30" },
+    9: { label: "em vencimento", className: "bg-status-attention/15 text-status-attention border-status-attention/30" },
     100: { label: "fechada", className: "bg-muted text-muted-foreground" },
   };
   const m = map[status] ?? { label: `status ${status}`, className: "bg-muted text-muted-foreground" };

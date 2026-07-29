@@ -264,20 +264,20 @@ function AgentePage() {
                   const isDone = msg.status === "confirmed" || msg.status === "cancelled";
                   return (
                     <div key={msg.id} className="flex items-start gap-2 max-w-[85%]">
-                      <div className="h-7 w-7 rounded-full bg-amber-500/20 flex items-center justify-center shrink-0 mt-0.5">
-                        <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />
+                      <div className="h-7 w-7 rounded-full bg-status-attention/20 flex items-center justify-center shrink-0 mt-0.5">
+                        <AlertTriangle className="h-3.5 w-3.5 text-status-attention" />
                       </div>
                       <div className={cn(
                         "border rounded-2xl rounded-tl-sm px-4 py-3 text-sm",
-                        msg.status === "confirmed" ? "bg-green-950/30 border-green-800" :
+                        msg.status === "confirmed" ? "bg-status-on-target/10 border-status-on-target/30" :
                         msg.status === "cancelled" ? "bg-muted border-border opacity-60" :
-                        "bg-amber-950/30 border-amber-800"
+                        "bg-status-attention/10 border-status-attention/30"
                       )}>
                         <p className={cn(
                           "text-xs font-semibold mb-1.5",
-                          msg.status === "confirmed" ? "text-green-400" :
+                          msg.status === "confirmed" ? "text-status-on-target" :
                           msg.status === "cancelled" ? "text-muted-foreground" :
-                          "text-amber-400"
+                          "text-status-attention"
                         )}>
                           {msg.status === "confirmed" ? "✓ Ação executada" :
                            msg.status === "cancelled" ? "✗ Cancelado" :
@@ -288,7 +288,7 @@ function AgentePage() {
                           <div className="flex gap-2 mt-3">
                             <Button
                               size="sm"
-                              className="h-7 text-xs bg-green-700 hover:bg-green-600"
+                              className="h-7 text-xs bg-status-on-target hover:opacity-90 text-white"
                               onClick={() => confirmMutation.mutate({ action: msg.pending_action!, confirmMsgId: msg.id })}
                               disabled={confirmMutation.isPending}
                             >

@@ -27,7 +27,7 @@ export function TokenExpiryBanner() {
       className={`flex items-center justify-between gap-3 px-4 py-2.5 text-sm ${
         expired
           ? "bg-destructive/15 text-destructive border-b border-destructive/20"
-          : "bg-yellow-500/10 text-yellow-400 border-b border-yellow-500/20"
+          : "bg-status-attention/10 text-status-attention border-b border-status-attention/20"
       }`}
     >
       <div className="flex items-center gap-2">

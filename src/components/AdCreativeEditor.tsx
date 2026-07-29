@@ -147,7 +147,7 @@ export function AdCreativeEditor({ adId, adSetId, token, whatsappNumber }: AdCre
     return (
       <div className="space-y-2 py-1">
         <div className="flex items-start gap-2 text-sm">
-          <AlertCircle className="h-4 w-4 shrink-0 text-amber-500 mt-0.5" />
+          <AlertCircle className="h-4 w-4 shrink-0 text-status-attention mt-0.5" />
           <div>
             <p className="text-muted-foreground text-sm">Não foi possível carregar o criativo.</p>
             {error && (

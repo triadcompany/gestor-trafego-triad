@@ -12,6 +12,7 @@ import { RefreshCw, CalendarRange } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { fetchClients, type ClientStatus, type DashboardPeriod } from "@/lib/queries";
 import { brl } from "@/lib/mock-data";
+import { statusColorClass, statusTextClass } from "@/lib/status-colors";
 import { triggerMetaSync } from "@/server/meta-sync";
 import { getLastSyncedAt } from "@/lib/meta";
 import { useAutoSync } from "@/hooks/useAutoSync";
@@ -48,17 +49,17 @@ const cplLabel: Record<DashboardPeriod, string> = {
 };
 
 const STATUS_META: Record<ClientStatus, { label: string; accent: string }> = {
-  "on-target": { label: "No alvo",   accent: "bg-green-500" },
-  attention:   { label: "Atenção",   accent: "bg-yellow-500" },
-  critical:    { label: "Crítico",   accent: "bg-red-500" },
+  "on-target": { label: "No alvo",   accent: statusColorClass["on-target"] },
+  attention:   { label: "Atenção",   accent: statusColorClass.attention },
+  critical:    { label: "Crítico",   accent: statusColorClass.critical },
   "no-data":   { label: "Sem dados", accent: "bg-border" },
 };
 
 function cplStatusClass(cpl: number | null, cplMax: number): string {
   if (cpl === null) return "";
-  if (cpl <= cplMax) return "text-green-500";
-  if (cpl <= cplMax * 1.3) return "text-yellow-500";
-  return "text-red-500";
+  if (cpl <= cplMax) return statusTextClass["on-target"];
+  if (cpl <= cplMax * 1.3) return statusTextClass.attention;
+  return statusTextClass.critical;
 }
 
 function Dashboard() {

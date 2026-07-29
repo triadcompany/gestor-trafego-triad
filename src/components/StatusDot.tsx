@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils";
-import { type ClientStatus, statusColorClass } from "@/lib/mock-data";
+import type { ClientStatus } from "@/lib/database.types";
+import { statusColorClass } from "@/lib/status-colors";
 
 export function StatusDot({ status, className }: { status: ClientStatus; className?: string }) {
   return (

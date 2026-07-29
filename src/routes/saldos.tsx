@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { fetchClientBalances, type ClientBalance } from "@/lib/queries";
 import { getLastSyncedAt } from "@/lib/meta";
 import { triggerMetaSync } from "@/server/meta-sync";
+import { STATUS_COLORS } from "@/lib/status-colors";
 
 export const Route = createFileRoute("/saldos")({
   head: () => ({
@@ -22,11 +23,11 @@ function brl(centavos: number) {
   return (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function balanceStatus(balance: number | null): "ok" | "attention" | "critical" | "unknown" {
-  if (balance === null) return "unknown";
+function balanceStatus(balance: number | null): "on-target" | "attention" | "critical" | "no-data" {
+  if (balance === null) return "no-data";
   if (balance < 20000) return "critical";   // < R$200
   if (balance < 50000) return "attention";  // < R$500
-  return "ok";
+  return "on-target";
 }
 
 function initials(name: string) {
@@ -40,15 +41,8 @@ function estimatedDays(balance: number | null, spendToday: number): string {
   return `~${days.toFixed(1)} dia${days !== 1 ? "s" : ""}`;
 }
 
-const STATUS_COLORS = {
-  ok: { text: "text-green-500", bg: "bg-green-500/10", border: "border-green-500/20", bar: "bg-green-500" },
-  attention: { text: "text-yellow-500", bg: "bg-yellow-500/10", border: "border-yellow-500/20", bar: "bg-yellow-500" },
-  critical: { text: "text-red-500", bg: "bg-red-500/10", border: "border-red-500/20", bar: "bg-red-500" },
-  unknown: { text: "text-muted-foreground", bg: "bg-muted/30", border: "border-border", bar: "bg-muted" },
-};
-
 function sortByStatus(a: ClientBalance, b: ClientBalance) {
-  const order = { critical: 0, attention: 1, ok: 2, unknown: 3 };
+  const order = { critical: 0, attention: 1, "on-target": 2, "no-data": 3 };
   return order[balanceStatus(a.meta_balance)] - order[balanceStatus(b.meta_balance)];
 }
 
@@ -130,15 +124,15 @@ function SaldosPage() {
             label="Contas críticas"
             value={isLoading ? null : String(criticalCount)}
             sub="abaixo de R$ 200"
-            valueClass={criticalCount > 0 ? "text-red-500" : undefined}
-            icon={criticalCount > 0 ? <AlertTriangle className="h-4 w-4 text-red-500" /> : undefined}
+            valueClass={criticalCount > 0 ? "text-status-critical" : undefined}
+            icon={criticalCount > 0 ? <AlertTriangle className="h-4 w-4 text-status-critical" /> : undefined}
           />
           <SummaryCard
             label="Em atenção"
             value={isLoading ? null : String(attentionCount)}
             sub="R$ 200 – R$ 500"
-            valueClass={attentionCount > 0 ? "text-yellow-500" : undefined}
-            icon={attentionCount > 0 ? <AlertCircle className="h-4 w-4 text-yellow-500" /> : undefined}
+            valueClass={attentionCount > 0 ? "text-status-attention" : undefined}
+            icon={attentionCount > 0 ? <AlertCircle className="h-4 w-4 text-status-attention" /> : undefined}
           />
         </div>
 
@@ -182,9 +176,9 @@ function SaldosPage() {
         {/* Legend */}
         <div className="flex justify-center gap-6 mt-4 pt-4 border-t border-border">
           {[
-            { color: "bg-green-500", label: "Saldo ≥ R$ 500" },
-            { color: "bg-yellow-500", label: "R$ 200 – R$ 500" },
-            { color: "bg-red-500", label: "Crítico < R$ 200" },
+            { color: "bg-status-on-target", label: "Saldo ≥ R$ 500" },
+            { color: "bg-status-attention", label: "R$ 200 – R$ 500" },
+            { color: "bg-status-critical", label: "Crítico < R$ 200" },
           ].map(({ color, label }) => (
             <div key={label} className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
               <div className={`w-2 h-2 rounded-full ${color}`} />
@@ -228,12 +222,12 @@ function SummaryCard({
 
 function BalanceRow({ client, maxBalance }: { client: ClientBalance; maxBalance: number }) {
   const isCard = client.payment_method === "cartao";
-  const status = isCard ? "unknown" : balanceStatus(client.meta_balance);
+  const status = isCard ? "no-data" : balanceStatus(client.meta_balance);
   const colors = STATUS_COLORS[status];
   const barPct = !isCard && client.meta_balance !== null ? Math.max((client.meta_balance / maxBalance) * 100, 2) : 0;
 
-  const statusLabel = { ok: "Ok", attention: "Atenção", critical: "Crítico", unknown: "—" }[status];
-  const StatusIcon = { ok: CheckCircle2, attention: AlertCircle, critical: AlertTriangle, unknown: null }[status];
+  const statusLabel = { "on-target": "Ok", attention: "Atenção", critical: "Crítico", "no-data": "—" }[status];
+  const StatusIcon = { "on-target": CheckCircle2, attention: AlertCircle, critical: AlertTriangle, "no-data": null }[status];
 
   return (
     <div className="grid grid-cols-[1fr_140px_110px_110px_90px] gap-0 px-5 py-3.5 border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
@@ -275,7 +269,7 @@ function BalanceRow({ client, maxBalance }: { client: ClientBalance; maxBalance:
 
       {/* Estimativa */}
       <div className="flex items-center justify-end">
-        <span className={`text-sm font-mono ${status === "critical" ? "text-red-500" : status === "attention" ? "text-yellow-500" : "text-muted-foreground"}`}>
+        <span className={`text-sm font-mono ${status === "critical" ? "text-status-critical" : status === "attention" ? "text-status-attention" : "text-muted-foreground"}`}>
           {isCard ? "—" : estimatedDays(client.meta_balance, client.spendToday)}
         </span>
       </div>

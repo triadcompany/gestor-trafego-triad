@@ -103,9 +103,9 @@ function buildRows(clients: PixClient[], today: Date): PixRow[] {
 // ── sub-components ───────────────────────────────────────────────
 
 const CYCLE_STYLES = {
-  semanal:   { label: "Semanal",   bg: "bg-violet-500/10", text: "text-violet-400", border: "border-violet-500/25" },
-  quinzenal: { label: "Quinzenal", bg: "bg-sky-500/10",    text: "text-sky-400",    border: "border-sky-500/25" },
-  mensal:    { label: "Mensal",    bg: "bg-orange-500/10", text: "text-orange-400", border: "border-orange-500/25" },
+  semanal:   { label: "Semanal",   bg: "bg-violet-100 dark:bg-violet-500/10", text: "text-violet-700 dark:text-violet-400", border: "border-violet-300 dark:border-violet-500/25" },
+  quinzenal: { label: "Quinzenal", bg: "bg-sky-100 dark:bg-sky-500/10",       text: "text-sky-700 dark:text-sky-400",       border: "border-sky-300 dark:border-sky-500/25" },
+  mensal:    { label: "Mensal",    bg: "bg-orange-100 dark:bg-orange-500/10", text: "text-orange-700 dark:text-orange-400", border: "border-orange-300 dark:border-orange-500/25" },
 };
 
 function CycleBadge({ cycle }: { cycle: PixClient["pix_cycle"] }) {
@@ -118,8 +118,8 @@ function CycleBadge({ cycle }: { cycle: PixClient["pix_cycle"] }) {
 }
 
 function DueLabel({ days, date }: { days: number; date: Date }) {
-  if (days === 0) return <span className="text-red-400 font-semibold">Hoje, {formatDate(date)}</span>;
-  if (days <= 3)  return <span className="text-amber-400">{formatDate(date)} · em {days} dias</span>;
+  if (days === 0) return <span className="text-status-critical font-semibold">Hoje, {formatDate(date)}</span>;
+  if (days <= 3)  return <span className="text-status-attention">{formatDate(date)} · em {days} dias</span>;
   return <span className="text-muted-foreground">{formatDate(date)} · em {days} dias</span>;
 }
 
@@ -148,7 +148,7 @@ function PixRowItem({ row }: { row: PixRow }) {
   return (
     <div
       className={`flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-0 transition-colors hover:bg-muted/30 ${
-        isToday ? "bg-red-500/5 border-l-2 border-l-red-500" : ""
+        isToday ? "bg-status-critical/5 border-l-2 border-l-status-critical" : ""
       }`}
     >
       {/* avatar */}

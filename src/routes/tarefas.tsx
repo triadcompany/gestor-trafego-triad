@@ -64,9 +64,9 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
 const STATUS_ORDER: TaskStatus[] = ["pendente", "em_andamento", "concluida"];
 
 function statusBadge(status: TaskStatus) {
-  if (status === "pendente") return <Badge variant="outline" className="text-amber-400 border-amber-800">Pendente</Badge>;
-  if (status === "em_andamento") return <Badge variant="outline" className="text-blue-400 border-blue-800">Em andamento</Badge>;
-  return <Badge variant="outline" className="text-green-400 border-green-800">Concluída</Badge>;
+  if (status === "pendente") return <Badge variant="outline" className="text-status-attention border-status-attention/40">Pendente</Badge>;
+  if (status === "em_andamento") return <Badge variant="outline" className="text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-800">Em andamento</Badge>;
+  return <Badge variant="outline" className="text-status-on-target border-status-on-target/40">Concluída</Badge>;
 }
 
 function isOverdue(due_date: string | null): boolean {
@@ -408,7 +408,7 @@ function TaskCard({
         title="Mudar status"
       >
         {task.status === "concluida" ? (
-          <div className="w-4 h-4 rounded-full bg-green-600 flex items-center justify-center">
+          <div className="w-4 h-4 rounded-full bg-status-on-target flex items-center justify-center">
             <span className="text-white text-[9px] font-bold">✓</span>
           </div>
         ) : task.status === "em_andamento" ? (
@@ -425,7 +425,7 @@ function TaskCard({
         <div className="flex flex-wrap items-center gap-2 mt-1.5">
           {statusBadge(task.status)}
           {task.due_date && (
-            <span className={`text-xs font-mono ${overdue ? "text-red-400" : "text-muted-foreground"}`}>
+            <span className={`text-xs font-mono ${overdue ? "text-status-critical" : "text-muted-foreground"}`}>
               {overdue ? "⚠ " : ""}
               {new Date(task.due_date + "T12:00:00").toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
             </span>
@@ -434,7 +434,7 @@ function TaskCard({
             <span className="text-xs text-muted-foreground">{task.client_name}</span>
           )}
           {task.assignee_name && (
-            <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-violet-900/50 text-violet-300 border border-violet-800/60">
+            <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300 border border-violet-300 dark:border-violet-800/60">
               <span className="w-3.5 h-3.5 rounded-full bg-violet-600 flex items-center justify-center text-[9px] font-bold text-white shrink-0">
                 {task.assignee_name[0].toUpperCase()}
               </span>
@@ -637,7 +637,7 @@ function TabButton({
     >
       {children}
       {badge !== undefined && (
-        <span className="ml-2 text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-900">
+        <span className="ml-2 text-[10px] font-mono px-1.5 py-0.5 rounded-full bg-status-attention/10 text-status-attention border border-status-attention/20">
           {badge}
         </span>
       )}

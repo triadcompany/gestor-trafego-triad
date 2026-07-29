@@ -163,18 +163,18 @@ function SettingsPage() {
             <div
               className={`px-5 py-4 flex items-center gap-4 border-b border-border ${
                 tokenStatus === "ok"
-                  ? "bg-green-500/5"
+                  ? "bg-status-on-target/5"
                   : tokenStatus === "expiring"
-                  ? "bg-yellow-500/5"
+                  ? "bg-status-attention/5"
                   : "bg-destructive/5"
               }`}
             >
               {isLoading ? (
                 <RefreshCw className="h-5 w-5 text-muted-foreground animate-spin" />
               ) : tokenStatus === "ok" ? (
-                <ShieldCheck className="h-5 w-5 text-green-500 shrink-0" />
+                <ShieldCheck className="h-5 w-5 text-status-on-target shrink-0" />
               ) : tokenStatus === "expiring" ? (
-                <ShieldAlert className="h-5 w-5 text-yellow-500 shrink-0" />
+                <ShieldAlert className="h-5 w-5 text-status-attention shrink-0" />
               ) : (
                 <ShieldX className="h-5 w-5 text-destructive shrink-0" />
               )}
@@ -184,7 +184,7 @@ function SettingsPage() {
                   <p className="text-sm text-muted-foreground">Verificando token...</p>
                 ) : tokenStatus === "ok" ? (
                   <>
-                    <p className="text-sm font-medium text-green-500">Token ativo</p>
+                    <p className="text-sm font-medium text-status-on-target">Token ativo</p>
                     <p className="text-xs text-muted-foreground mt-0.5">
                       Expira em{" "}
                       <strong>{tokenInfo?.daysUntilExpiry} dias</strong>
@@ -195,7 +195,7 @@ function SettingsPage() {
                   </>
                 ) : tokenStatus === "expiring" ? (
                   <>
-                    <p className="text-sm font-medium text-yellow-500">
+                    <p className="text-sm font-medium text-status-attention">
                       Expira em breve
                     </p>
                     <p className="text-xs text-muted-foreground mt-0.5">
@@ -228,7 +228,7 @@ function SettingsPage() {
                     className="ml-1 text-muted-foreground hover:text-foreground transition-colors"
                   >
                     {copied ? (
-                      <Check className="h-3 w-3 text-green-500" />
+                      <Check className="h-3 w-3 text-status-on-target" />
                     ) : (
                       <Copy className="h-3 w-3" />
                     )}
@@ -347,7 +347,7 @@ function SettingsPage() {
                    <p className="text-sm text-muted-foreground">Verificando...</p>
                 ) : openAIKey ? (
                   <>
-                    <p className="text-sm font-medium text-green-500">Chave configurada</p>
+                    <p className="text-sm font-medium text-status-on-target">Chave configurada</p>
                     <p className="text-xs text-muted-foreground mt-0.5 font-mono">
                       {openAIKey.slice(0, 6)}...{openAIKey.slice(-4)}
                     </p>
@@ -413,7 +413,7 @@ function SettingsPage() {
                   <p className="text-sm text-muted-foreground">Verificando...</p>
                 ) : n8nWebhookUrl ? (
                   <>
-                    <p className="text-sm font-medium text-green-500">Webhook configurado</p>
+                    <p className="text-sm font-medium text-status-on-target">Webhook configurado</p>
                     <p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">
                       {n8nWebhookUrl}
                     </p>

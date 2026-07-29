@@ -98,8 +98,8 @@ function AgendaPage() {
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             ) : connected ? (
               <>
-                <span className="text-xs text-green-400 flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-green-400 inline-block" />
+                <span className="text-xs text-status-on-target flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-status-on-target inline-block" />
                   Google Agenda conectado
                 </span>
                 <Button

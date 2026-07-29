@@ -244,56 +244,56 @@ function VendasPage() {
         {/* Summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
           {/* Total de vendas */}
-          <div className="relative overflow-hidden rounded-xl border border-green-500/30 bg-gradient-to-br from-green-950 to-green-900/60 p-4">
+          <div className="relative overflow-hidden rounded-xl border border-green-500/30 bg-gradient-to-br from-green-50 to-green-100 dark:from-green-950 dark:to-green-900/60 p-4">
             <div className="absolute right-[-12px] top-[-12px] h-20 w-20 rounded-full bg-green-500/10" />
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-green-300">Total de vendas</p>
-            <p className="mt-1 text-4xl font-extrabold text-white">{isLoading ? "—" : totalSales}</p>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-green-700 dark:text-green-300">Total de vendas</p>
+            <p className="mt-1 text-4xl font-extrabold text-green-950 dark:text-white">{isLoading ? "—" : totalSales}</p>
             {totalGoal > 0 && (
               <div className="mt-3 flex items-center gap-2">
-                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-white/10">
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
                   <div
                     className="h-full rounded-full bg-green-400 transition-all"
                     style={{ width: `${Math.min((totalPct ?? 0) * 100, 100)}%` }}
                   />
                 </div>
-                <span className="text-[11px] font-bold text-green-400">{Math.round((totalPct ?? 0) * 100)}%</span>
+                <span className="text-[11px] font-bold text-green-700 dark:text-green-400">{Math.round((totalPct ?? 0) * 100)}%</span>
               </div>
             )}
-            <p className="mt-1 text-[11px] text-green-700">Meta geral: {totalGoal || "—"}</p>
+            <p className="mt-1 text-[11px] text-green-800 dark:text-green-400">Meta geral: {totalGoal || "—"}</p>
           </div>
 
           {/* Faturado */}
-          <div className="relative overflow-hidden rounded-xl border border-indigo-500/30 bg-gradient-to-br from-indigo-950 to-indigo-900/60 p-4">
+          <div className="relative overflow-hidden rounded-xl border border-indigo-500/30 bg-gradient-to-br from-indigo-50 to-indigo-100 dark:from-indigo-950 dark:to-indigo-900/60 p-4">
             <div className="absolute right-[-12px] top-[-12px] h-20 w-20 rounded-full bg-indigo-500/10" />
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-300">Faturado estimado</p>
-            <p className="mt-1 text-4xl font-extrabold text-white">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-indigo-700 dark:text-indigo-300">Faturado estimado</p>
+            <p className="mt-1 text-4xl font-extrabold text-indigo-950 dark:text-white">
               {isLoading ? "—" : totalFaturado !== null ? brl(totalFaturado) : "—"}
             </p>
-            <p className="mt-3 text-[11px] text-indigo-700">
+            <p className="mt-3 text-[11px] text-indigo-800 dark:text-indigo-400">
               {salesWithValue.length} de {totalSales} vendas com valor
             </p>
           </div>
 
           {/* Clientes no alvo */}
-          <div className="relative overflow-hidden rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-950 to-amber-900/60 p-4">
+          <div className="relative overflow-hidden rounded-xl border border-amber-500/30 bg-gradient-to-br from-amber-50 to-amber-100 dark:from-amber-950 dark:to-amber-900/60 p-4">
             <div className="absolute right-[-12px] top-[-12px] h-20 w-20 rounded-full bg-amber-500/10" />
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-300">Clientes no alvo</p>
-            <p className="mt-1 text-4xl font-extrabold text-white">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-amber-700 dark:text-amber-300">Clientes no alvo</p>
+            <p className="mt-1 text-4xl font-extrabold text-amber-950 dark:text-white">
               {isLoading ? "—" : onTargetCount}
-              <span className="text-lg font-normal text-white/30"> / {activeClients.length}</span>
+              <span className="text-lg font-normal text-amber-950/30 dark:text-white/30"> / {activeClients.length}</span>
             </p>
-            <p className="mt-3 text-[11px] text-amber-700">≥ 80% da meta mensal</p>
+            <p className="mt-3 text-[11px] text-amber-800 dark:text-amber-400">≥ 80% da meta mensal</p>
           </div>
         </div>
 
         {/* Table */}
-        <div className="rounded-xl border border-border bg-[#111] overflow-hidden">
+        <div className="rounded-xl border border-border bg-card overflow-hidden">
           <div className="flex items-center justify-between px-5 py-3 border-b border-border">
             <span className="text-sm font-semibold">Por cliente</span>
             <div className="flex items-center gap-2 text-[10px]">
-              <span className="flex items-center gap-1 rounded-full border border-green-500 bg-green-950 px-2 py-0.5 text-green-400">● No alvo</span>
-              <span className="flex items-center gap-1 rounded-full border border-yellow-500 bg-yellow-950 px-2 py-0.5 text-yellow-400">● Atenção</span>
-              <span className="flex items-center gap-1 rounded-full border border-red-500 bg-red-950 px-2 py-0.5 text-red-400">● Crítico</span>
+              <span className="flex items-center gap-1 rounded-full border border-status-on-target bg-status-on-target/10 px-2 py-0.5 text-status-on-target">● No alvo</span>
+              <span className="flex items-center gap-1 rounded-full border border-status-attention bg-status-attention/10 px-2 py-0.5 text-status-attention">● Atenção</span>
+              <span className="flex items-center gap-1 rounded-full border border-status-critical bg-status-critical/10 px-2 py-0.5 text-status-critical">● Crítico</span>
             </div>
           </div>
 
@@ -382,15 +382,15 @@ function ClientRow({
 
   const statusColor =
     pct === null ? "text-muted-foreground"
-    : pct >= 1 ? "text-green-400"
-    : pct >= 0.5 ? "text-yellow-400"
-    : "text-red-400";
+    : pct >= 1 ? "text-status-on-target"
+    : pct >= 0.5 ? "text-status-attention"
+    : "text-status-critical";
 
   const barColor =
     pct === null ? ""
-    : pct >= 1 ? "bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.5)]"
-    : pct >= 0.5 ? "bg-yellow-400 shadow-[0_0_8px_rgba(250,204,21,0.4)]"
-    : "bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.4)]";
+    : pct >= 1 ? "bg-status-on-target shadow-[0_0_8px_rgba(74,222,128,0.5)]"
+    : pct >= 0.5 ? "bg-status-attention shadow-[0_0_8px_rgba(250,204,21,0.4)]"
+    : "bg-status-critical shadow-[0_0_8px_rgba(248,113,113,0.4)]";
 
   const handleSave = () => {
     const n = parseInt(draftGoal, 10);
@@ -419,7 +419,7 @@ function ClientRow({
               onKeyDown={(e) => { if (e.key === "Enter") handleSave(); if (e.key === "Escape") setEditing(false); }}
               className="w-12 rounded-md border border-indigo-500 bg-background px-1.5 py-0.5 text-center text-sm focus:outline-none"
             />
-            <button onClick={handleSave} className="text-green-400 hover:text-green-300"><Check className="h-3.5 w-3.5" /></button>
+            <button onClick={handleSave} className="text-status-on-target hover:opacity-80"><Check className="h-3.5 w-3.5" /></button>
             <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5" /></button>
           </div>
         ) : goal !== null ? (
@@ -433,7 +433,7 @@ function ClientRow({
         ) : (
           <button
             onClick={() => { setDraftGoal(""); setEditing(true); }}
-            className="rounded-md border border-dashed border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:border-indigo-500 hover:text-indigo-400 transition-colors"
+            className="rounded-md border border-dashed border-border px-2 py-0.5 text-[10px] text-muted-foreground hover:border-indigo-500 hover:text-indigo-700 dark:hover:text-indigo-400 transition-colors"
           >
             + definir
           </button>
@@ -442,7 +442,7 @@ function ClientRow({
       <td className="px-3 py-3 w-40">
         {goal !== null && pct !== null ? (
           <div className="flex items-center gap-2">
-            <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/10">
+            <div className="h-2 flex-1 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
               <div className={`h-full rounded-full transition-all ${barColor}`} style={{ width: `${Math.min(pct * 100, 100)}%` }} />
             </div>
             <span className={`min-w-[34px] text-[11px] font-bold ${statusColor}`}>{Math.round(pct * 100)}%</span>
@@ -458,7 +458,7 @@ function ClientRow({
         <div className="flex items-center justify-end gap-1">
           <button
             onClick={onAddSale}
-            className="rounded-md bg-indigo-950 px-2.5 py-1 text-[11px] font-medium text-indigo-400 hover:bg-indigo-900 transition-colors"
+            className="rounded-md bg-indigo-100 dark:bg-indigo-950 px-2.5 py-1 text-[11px] font-medium text-indigo-700 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900 transition-colors"
           >
             + venda
           </button>
@@ -528,7 +528,7 @@ function ClientDrawer({
   const faturado = withValue.length > 0 ? withValue.reduce((a, s) => a + (s.value ?? 0), 0) : null;
   const pct = goal !== null && goal > 0 ? count / goal : null;
 
-  const statusColor = pct === null ? "text-muted-foreground" : pct >= 1 ? "text-green-400" : pct >= 0.5 ? "text-yellow-400" : "text-red-400";
+  const statusColor = pct === null ? "text-muted-foreground" : pct >= 1 ? "text-status-on-target" : pct >= 0.5 ? "text-status-attention" : "text-status-critical";
 
   return (
     <>
@@ -541,22 +541,22 @@ function ClientDrawer({
 
       {/* Mini resumo */}
       <div className="grid grid-cols-2 gap-3 px-5 py-4 border-b border-border shrink-0">
-        <div className="rounded-lg border border-green-500/30 bg-green-950/40 p-3 text-center">
+        <div className="rounded-lg border border-green-500/30 bg-green-50 dark:bg-green-950/40 p-3 text-center">
           <div className={`text-2xl font-extrabold ${statusColor}`}>{count}</div>
-          <div className="text-[10px] text-green-300">
+          <div className="text-[10px] text-green-700 dark:text-green-300">
             vendas {goal !== null ? `/ meta ${goal}` : ""}
           </div>
         </div>
-        <div className="rounded-lg border border-indigo-500/30 bg-indigo-950/40 p-3 text-center">
-          <div className="text-2xl font-extrabold text-indigo-300">{faturado !== null ? brl(faturado) : "—"}</div>
-          <div className="text-[10px] text-indigo-300">faturado estimado</div>
+        <div className="rounded-lg border border-indigo-500/30 bg-indigo-50 dark:bg-indigo-950/40 p-3 text-center">
+          <div className="text-2xl font-extrabold text-indigo-700 dark:text-indigo-300">{faturado !== null ? brl(faturado) : "—"}</div>
+          <div className="text-[10px] text-indigo-700 dark:text-indigo-300">faturado estimado</div>
         </div>
       </div>
 
       {/* Formulário */}
       <div className="px-5 py-3 border-b border-border shrink-0">
         {showForm ? (
-          <div className="rounded-lg border border-border bg-[#141414] p-3 space-y-3">
+          <div className="rounded-lg border border-border bg-muted/40 p-3 space-y-3">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Nova venda</p>
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1">
@@ -617,7 +617,7 @@ function ClientDrawer({
         ) : (
           <div className="space-y-2">
             {sales.map((sale) => (
-              <div key={sale.id} className="rounded-lg border border-border bg-[#111] px-3 py-2.5 flex items-start justify-between gap-3">
+              <div key={sale.id} className="rounded-lg border border-border bg-muted/40 px-3 py-2.5 flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="text-xs text-muted-foreground">{sale.date}</p>
                   <p className="text-xs text-muted-foreground/60 mt-0.5 truncate">
@@ -625,13 +625,13 @@ function ClientDrawer({
                   </p>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <span className={`text-sm font-bold ${sale.value ? "text-green-400" : "text-muted-foreground"}`}>
+                  <span className={`text-sm font-bold ${sale.value ? "text-status-on-target" : "text-muted-foreground"}`}>
                     {sale.value !== null ? brl(sale.value) : "—"}
                   </span>
                   <button
                     onClick={() => deleteMutation.mutate(sale.id)}
                     disabled={deleteMutation.isPending}
-                    className="text-muted-foreground/40 hover:text-red-400 transition-colors"
+                    className="text-muted-foreground/40 hover:text-destructive transition-colors"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>

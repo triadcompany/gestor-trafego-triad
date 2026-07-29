@@ -39,6 +39,7 @@ import {
   ReferenceArea,
 } from "recharts";
 import { fetchClientDetail, updateClientGoal, updateClientPix, fetchNotes, createNote, updateNote, deleteNote, fetchTasksByClient, createTask, updateTask, deleteTask, fetchAllClients, type TaskRow } from "@/lib/queries";
+import { statusTextClass } from "@/lib/status-colors";
 import { TagBadge } from "@/components/TagBadge";
 import { NoteCard } from "@/components/NoteCard";
 import { NoteComposer } from "@/components/NoteComposer";
@@ -734,16 +735,16 @@ function ClientPixSettings({ client }: { client: import("@/lib/queries").ClientD
           {mutation.isPending ? "Salvando…" : "Salvar PIX"}
         </Button>
         {mutation.isSuccess && (
-          <span className="ml-3 text-xs text-green-500">Salvo!</span>
+          <span className="ml-3 text-xs text-status-on-target">Salvo!</span>
         )}
       </div>
   );
 }
 
 const TASK_STATUS_CONFIG: Record<TaskStatus, { label: string; next: TaskStatus; classes: string }> = {
-  pendente:     { label: "Pendente",    next: "em_andamento", classes: "bg-muted text-muted-foreground hover:bg-yellow-500/20 hover:text-yellow-400" },
-  em_andamento: { label: "Em andamento", next: "concluida",   classes: "bg-yellow-500/15 text-yellow-400 hover:bg-green-500/20 hover:text-green-400" },
-  concluida:    { label: "Concluída",   next: "pendente",     classes: "bg-green-500/15 text-green-400 hover:bg-muted hover:text-muted-foreground" },
+  pendente:     { label: "Pendente",    next: "em_andamento", classes: "bg-muted text-muted-foreground hover:bg-status-attention/20 hover:text-status-attention" },
+  em_andamento: { label: "Em andamento", next: "concluida",   classes: "bg-status-attention/15 text-status-attention hover:bg-status-on-target/20 hover:text-status-on-target" },
+  concluida:    { label: "Concluída",   next: "pendente",     classes: "bg-status-on-target/15 text-status-on-target hover:bg-muted hover:text-muted-foreground" },
 };
 
 function ClientTasks({ clientId }: { clientId: string }) {
@@ -983,10 +984,10 @@ function CampaignsTotals({ campaigns, cplMax }: { campaigns: MetaCampaign[]; cpl
     totalCpl === null
       ? "text-foreground"
       : totalCpl <= cplMax
-      ? "text-green-500"
+      ? statusTextClass["on-target"]
       : totalCpl <= cplMax * 1.3
-      ? "text-yellow-500"
-      : "text-red-500";
+      ? statusTextClass.attention
+      : statusTextClass.critical;
 
   return (
     <Card className="p-3 mb-3 overflow-x-auto">
@@ -1041,10 +1042,10 @@ function CampaignRow({
     c.cpl === null
       ? ""
       : c.cpl <= cplMax
-      ? "text-green-500"
+      ? statusTextClass["on-target"]
       : c.cpl <= cplMax * 1.3
-      ? "text-yellow-500"
-      : "text-red-500";
+      ? statusTextClass.attention
+      : statusTextClass.critical;
 
   return (
     <TableRow

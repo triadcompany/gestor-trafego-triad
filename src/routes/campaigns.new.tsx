@@ -499,8 +499,8 @@ function NewCampaign() {
     return (
       <AppShell>
         <div className="px-4 md:px-8 py-12 max-w-xl mx-auto text-center">
-          <div className="mx-auto h-14 w-14 rounded-full bg-green-500/20 flex items-center justify-center mb-4">
-            <Check className="h-7 w-7 text-green-500" />
+          <div className="mx-auto h-14 w-14 rounded-full bg-status-on-target/20 flex items-center justify-center mb-4">
+            <Check className="h-7 w-7 text-status-on-target" />
           </div>
           <h1 className="text-2xl font-semibold mb-2">Campanha criada!</h1>
           <p className="text-muted-foreground mb-1">
@@ -581,13 +581,13 @@ function NewCampaign() {
                   step === n
                     ? "bg-primary text-primary-foreground"
                     : step > n
-                    ? "text-green-500 cursor-pointer hover:bg-green-500/10"
+                    ? "text-status-on-target cursor-pointer hover:bg-status-on-target/10"
                     : "text-muted-foreground",
                 ].join(" ")}
               >
                 <span className={[
                   "inline-flex h-5 w-5 shrink-0 rounded-full items-center justify-center text-xs font-semibold",
-                  step === n ? "bg-white/20" : step > n ? "bg-green-500 text-white" : "bg-muted",
+                  step === n ? "bg-white/20" : step > n ? "bg-status-on-target text-white" : "bg-muted",
                 ].join(" ")}>
                   {step > n ? <Check className="h-3 w-3" /> : n}
                 </span>
@@ -661,7 +661,7 @@ function NewCampaign() {
                         {clientCampaigns.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
                             <span className="flex items-center gap-2">
-                              <span className={`inline-block w-2 h-2 rounded-full ${c.status === "ACTIVE" ? "bg-green-500" : "bg-muted-foreground"}`} />
+                              <span className={`inline-block w-2 h-2 rounded-full ${c.status === "ACTIVE" ? "bg-status-on-target" : "bg-muted-foreground"}`} />
                               {c.name}
                             </span>
                           </SelectItem>
@@ -729,7 +729,7 @@ function NewCampaign() {
                       <Label>
                         ID da Página
                         {selectedClient?.meta_page_id && (
-                          <span className="ml-1.5 text-xs text-green-500 font-normal">pré-preenchido</span>
+                          <span className="ml-1.5 text-xs text-status-on-target font-normal">pré-preenchido</span>
                         )}
                       </Label>
                       <Input
@@ -742,7 +742,7 @@ function NewCampaign() {
                       <Label>
                         WhatsApp
                         {selectedClient?.meta_whatsapp_number && (
-                          <span className="ml-1.5 text-xs text-green-500 font-normal">pré-preenchido</span>
+                          <span className="ml-1.5 text-xs text-status-on-target font-normal">pré-preenchido</span>
                         )}
                       </Label>
                       <Input

@@ -88,11 +88,11 @@ export function ReportTable({ reports, isLoading, onMarkSent, onMarkPending, onU
       {/* Summary chips */}
       <div className="flex gap-2 flex-wrap">
         {pendingCount > 0 && (
-          <span className="text-[11px] font-mono px-3 py-1 rounded-full bg-amber-950 text-amber-400 border border-amber-900">
+          <span className="text-[11px] font-mono px-3 py-1 rounded-full bg-status-attention/10 text-status-attention border border-status-attention/20">
             {pendingCount} pendente{pendingCount !== 1 ? "s" : ""}
           </span>
         )}
-        <span className="text-[11px] font-mono px-3 py-1 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-900">
+        <span className="text-[11px] font-mono px-3 py-1 rounded-full bg-status-on-target/10 text-status-on-target border border-status-on-target/20">
           {sentThisMonth} enviado{sentThisMonth !== 1 ? "s" : ""} este mês
         </span>
       </div>
@@ -195,14 +195,14 @@ export function ReportTable({ reports, isLoading, onMarkSent, onMarkPending, onU
                     r.status === "pendente" ? (
                       <button
                         onClick={() => onMarkSent(r.id)}
-                        className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-amber-950 text-amber-400 border border-amber-900 hover:bg-amber-900 transition-colors cursor-pointer"
+                        className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-status-attention/10 text-status-attention border border-status-attention/20 hover:bg-status-attention/20 transition-colors cursor-pointer"
                       >
                         Pendente
                       </button>
                     ) : (
                       <button
                         onClick={() => onMarkPending(r.id)}
-                        className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-900 hover:bg-red-950 hover:text-red-400 hover:border-red-900 transition-colors cursor-pointer"
+                        className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 rounded-full bg-status-on-target/10 text-status-on-target border border-status-on-target/20 hover:bg-destructive/15 hover:text-destructive hover:border-destructive/30 transition-colors cursor-pointer"
                         title="Clique para reverter para pendente"
                       >
                         <CheckCircle2 className="h-3 w-3" />
@@ -218,7 +218,7 @@ export function ReportTable({ reports, isLoading, onMarkSent, onMarkPending, onU
                     <>
                       <button
                         onClick={() => saveEdit(r)}
-                        className="p-1 rounded text-emerald-400 hover:bg-emerald-950 transition-colors"
+                        className="p-1 rounded text-status-on-target hover:bg-status-on-target/10 transition-colors"
                         title="Salvar"
                       >
                         <Check className="h-3.5 w-3.5" />
@@ -242,7 +242,7 @@ export function ReportTable({ reports, isLoading, onMarkSent, onMarkPending, onU
                       </button>
                       <button
                         onClick={() => handleDelete(r.id)}
-                        className="p-1 rounded text-muted-foreground hover:text-red-400 hover:bg-red-950 transition-colors"
+                        className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
                         title="Excluir"
                       >
                         <Trash2 className="h-3.5 w-3.5" />

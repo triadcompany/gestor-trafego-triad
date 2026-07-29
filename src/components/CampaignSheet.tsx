@@ -42,6 +42,7 @@ import {
 import { TargetingEditor } from "@/components/TargetingEditor";
 import { AdCreativeEditor } from "@/components/AdCreativeEditor";
 import { brl } from "@/lib/mock-data";
+import { statusTextClass } from "@/lib/status-colors";
 
 interface CampaignSheetProps {
   campaign: MetaCampaign | null;
@@ -153,9 +154,9 @@ function CampaignSection({
 
   const cplColor =
     campaign.cpl === null ? "text-foreground"
-    : campaign.cpl <= cplMax ? "text-green-500"
-    : campaign.cpl <= cplMax * 1.3 ? "text-yellow-500"
-    : "text-red-500";
+    : campaign.cpl <= cplMax ? statusTextClass["on-target"]
+    : campaign.cpl <= cplMax * 1.3 ? statusTextClass.attention
+    : statusTextClass.critical;
 
   return (
     <div className="px-5 py-4 space-y-4">

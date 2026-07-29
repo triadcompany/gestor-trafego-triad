@@ -1,10 +1,11 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X, AlertTriangle } from "lucide-react";
+import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X, AlertTriangle, Sun, Moon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/server/session";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { fetchCurrentProfile, fetchAttentionItems } from "@/lib/queries";
+import { useTheme } from "@/components/ThemeProvider";
 
 const navItems = [
   { to: "/visao-geral", label: "Visão Geral", shortLabel: "Atenção", icon: AlertTriangle, exact: false },
@@ -38,6 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     queryFn: fetchAttentionItems,
   });
   const criticalCount = attentionItems.filter((i) => i.severity === "critical").length;
+  const { theme, toggleTheme } = useTheme();
 
   const isActive = (to: string, exact: boolean) =>
     exact ? path === to : path === to || path.startsWith(to + "/") || path.startsWith(to);
@@ -87,7 +89,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <Icon className="h-4 w-4" />
                 {item.label}
                 {item.to === "/visao-geral" && criticalCount > 0 && (
-                  <span className="ml-auto text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20">
+                  <span className="ml-auto text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-status-critical/10 text-status-critical border border-status-critical/20">
                     {criticalCount}
                   </span>
                 )}
@@ -98,9 +100,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="p-3 border-t border-sidebar-border">
           <div className="flex items-center justify-between gap-2">
             <span className="text-xs text-muted-foreground truncate">{profile?.full_name ?? "—"}</span>
-            <button onClick={handleLogout} className="text-muted-foreground hover:text-foreground transition-colors shrink-0" title="Sair">
-              <LogOut className="h-4 w-4" />
-            </button>
+            <div className="flex items-center gap-1 shrink-0">
+              <button
+                onClick={toggleTheme}
+                className="text-muted-foreground hover:text-foreground transition-colors p-1"
+                title={theme === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
+              >
+                {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+              </button>
+              <button onClick={handleLogout} className="text-muted-foreground hover:text-foreground transition-colors p-1" title="Sair">
+                <LogOut className="h-4 w-4" />
+              </button>
+            </div>
           </div>
         </div>
       </aside>
@@ -167,7 +178,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <Icon className="h-5 w-5 shrink-0" />
                     {item.label}
                     {item.to === "/visao-geral" && criticalCount > 0 && (
-                      <span className="ml-auto text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-red-500/10 text-red-500 border border-red-500/20">
+                      <span className="ml-auto text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-status-critical/10 text-status-critical border border-status-critical/20">
                         {criticalCount}
                       </span>
                     )}
@@ -182,13 +193,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 <div className="min-w-0">
                   <p className="text-sm font-medium truncate">{profile?.full_name ?? "—"}</p>
                 </div>
-                <button
-                  onClick={handleLogout}
-                  className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors shrink-0"
-                >
-                  <LogOut className="h-4 w-4" />
-                  Sair
-                </button>
+                <div className="flex items-center gap-3 shrink-0">
+                  <button
+                    onClick={toggleTheme}
+                    className="text-muted-foreground hover:text-foreground transition-colors"
+                    title={theme === "dark" ? "Mudar para tema claro" : "Mudar para tema escuro"}
+                  >
+                    {theme === "dark" ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                  </button>
+                  <button
+                    onClick={handleLogout}
+                    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <LogOut className="h-4 w-4" />
+                    Sair
+                  </button>
+                </div>
               </div>
             </div>
           </div>
