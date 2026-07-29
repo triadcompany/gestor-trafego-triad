@@ -148,6 +148,15 @@ function NewCampaign() {
 
   const selectedClient = clients.find((c) => c.id === clientId);
 
+  // Pre-fill ID da Página / WhatsApp quando o cliente já vem pré-selecionado pela URL
+  // (handleClientChange só roda quando o usuário troca o cliente manualmente)
+  useEffect(() => {
+    if (!search.client || !selectedClient) return;
+    setPageId((prev) => prev || selectedClient.meta_page_id || "");
+    setWhatsappNumber((prev) => prev || selectedClient.meta_whatsapp_number || "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedClient?.id]);
+
   // ── n8n job polling ─────────────────────────────────────────
   const { data: jobStatus } = useQuery({
     queryKey: ["n8n-job", pendingJobId],
