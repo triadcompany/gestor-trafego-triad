@@ -1010,6 +1010,15 @@ export interface MetaAdSet {
   status: string;
   daily_budget: number | null;
   optimization_goal: string;
+  campaign_id?: string;
+  spend?: number;
+  leads?: number;
+  forms?: number;
+  cpl?: number | null;
+  impressions?: number;
+  link_clicks?: number;
+  ctr?: number | null;
+  cpm?: number | null;
 }
 
 export interface MetaAd {
@@ -1017,6 +1026,16 @@ export interface MetaAd {
   name: string;
   status: string;
   thumbnail_url?: string;
+  campaign_id?: string;
+  adset_id?: string;
+  spend?: number;
+  leads?: number;
+  forms?: number;
+  cpl?: number | null;
+  impressions?: number;
+  link_clicks?: number;
+  ctr?: number | null;
+  cpm?: number | null;
 }
 
 export async function fetchAdSets(campaignId: string, token: string): Promise<MetaAdSet[]> {
@@ -1058,6 +1077,177 @@ export async function fetchAds(adSetId: string, token: string): Promise<MetaAd[]
     status: a.status,
     thumbnail_url: a.creative?.thumbnail_url,
   }));
+}
+
+function insightsParamsFor(level: "adset" | "ad", fields: string, token: string, datePreset: DatePreset, customRange?: CustomDateRange) {
+  const base: Record<string, string> = { fields, level, access_token: token };
+  if (customRange) base["time_range"] = JSON.stringify(customRange);
+  else base["date_preset"] = datePreset;
+  return new URLSearchParams(base);
+}
+
+export async function fetchAllAdSets(
+  adAccountId: string,
+  token: string,
+  datePreset: DatePreset = "today",
+  customRange?: CustomDateRange
+): Promise<MetaAdSet[]> {
+  const adSetsParams = new URLSearchParams({
+    fields: "id,name,status,daily_budget,optimization_goal,campaign_id",
+    limit: "200",
+    access_token: token,
+  });
+  const insightsParams = insightsParamsFor(
+    "adset",
+    "adset_id,spend,actions,impressions,inline_link_clicks,ctr,cpm",
+    token,
+    datePreset,
+    customRange
+  );
+
+  const [adSetsRes, insightsRes] = await Promise.all([
+    fetch(`${BASE_URL}/${adAccountId}/adsets?${adSetsParams}`),
+    fetch(`${BASE_URL}/${adAccountId}/insights?${insightsParams}`),
+  ]);
+
+  const [adSetsJson, insightsJson] = await Promise.all([
+    adSetsRes.json() as Promise<{
+      data?: Array<{ id: string; name: string; status: string; daily_budget?: string; optimization_goal?: string; campaign_id: string }>;
+      error?: { message: string };
+    }>,
+    insightsRes.json() as Promise<{
+      data?: Array<{
+        adset_id: string;
+        spend?: string;
+        impressions?: string;
+        inline_link_clicks?: string;
+        ctr?: string;
+        cpm?: string;
+        actions?: Array<{ action_type: string; value: string }>;
+      }>;
+    }>,
+  ]);
+
+  if (adSetsJson.error) throw new Error(adSetsJson.error.message);
+
+  const insightsMap = new Map((insightsJson.data ?? []).map((row) => [row.adset_id, row]));
+
+  return (adSetsJson.data ?? [])
+    .filter((a) => a.status !== "ARCHIVED" && a.status !== "DELETED")
+    .map((a) => {
+      const ins = insightsMap.get(a.id);
+      const spend = parseFloat(ins?.spend ?? "0");
+      const impressions = parseInt(ins?.impressions ?? "0", 10);
+      const linkClicks = parseInt(ins?.inline_link_clicks ?? "0", 10);
+      const ctr = ins?.ctr ? parseFloat(ins.ctr) : null;
+      const cpm = ins?.cpm ? parseFloat(ins.cpm) : null;
+      const { leads, forms } = extractMetrics(ins?.actions);
+      const totalConversions = leads + forms;
+
+      return {
+        id: a.id,
+        name: a.name,
+        status: a.status,
+        daily_budget: a.daily_budget ? parseFloat(a.daily_budget) / 100 : null,
+        optimization_goal: a.optimization_goal ?? "",
+        campaign_id: a.campaign_id,
+        spend,
+        leads,
+        forms,
+        cpl: totalConversions > 0 ? Math.round((spend / totalConversions) * 100) / 100 : null,
+        impressions,
+        link_clicks: linkClicks,
+        ctr,
+        cpm,
+      };
+    })
+    .sort((a, b) => {
+      if (a.status === "ACTIVE" && b.status !== "ACTIVE") return -1;
+      if (a.status !== "ACTIVE" && b.status === "ACTIVE") return 1;
+      return (b.spend ?? 0) - (a.spend ?? 0);
+    });
+}
+
+export async function fetchAllAds(
+  adAccountId: string,
+  token: string,
+  datePreset: DatePreset = "today",
+  customRange?: CustomDateRange
+): Promise<MetaAd[]> {
+  const adsParams = new URLSearchParams({
+    fields: "id,name,status,campaign_id,adset_id,creative{thumbnail_url}",
+    limit: "200",
+    access_token: token,
+  });
+  const insightsParams = insightsParamsFor(
+    "ad",
+    "ad_id,spend,actions,impressions,inline_link_clicks,ctr,cpm",
+    token,
+    datePreset,
+    customRange
+  );
+
+  const [adsRes, insightsRes] = await Promise.all([
+    fetch(`${BASE_URL}/${adAccountId}/ads?${adsParams}`),
+    fetch(`${BASE_URL}/${adAccountId}/insights?${insightsParams}`),
+  ]);
+
+  const [adsJson, insightsJson] = await Promise.all([
+    adsRes.json() as Promise<{
+      data?: Array<{ id: string; name: string; status: string; campaign_id: string; adset_id: string; creative?: { thumbnail_url?: string } }>;
+      error?: { message: string };
+    }>,
+    insightsRes.json() as Promise<{
+      data?: Array<{
+        ad_id: string;
+        spend?: string;
+        impressions?: string;
+        inline_link_clicks?: string;
+        ctr?: string;
+        cpm?: string;
+        actions?: Array<{ action_type: string; value: string }>;
+      }>;
+    }>,
+  ]);
+
+  if (adsJson.error) throw new Error(adsJson.error.message);
+
+  const insightsMap = new Map((insightsJson.data ?? []).map((row) => [row.ad_id, row]));
+
+  return (adsJson.data ?? [])
+    .filter((a) => a.status !== "ARCHIVED" && a.status !== "DELETED")
+    .map((a) => {
+      const ins = insightsMap.get(a.id);
+      const spend = parseFloat(ins?.spend ?? "0");
+      const impressions = parseInt(ins?.impressions ?? "0", 10);
+      const linkClicks = parseInt(ins?.inline_link_clicks ?? "0", 10);
+      const ctr = ins?.ctr ? parseFloat(ins.ctr) : null;
+      const cpm = ins?.cpm ? parseFloat(ins.cpm) : null;
+      const { leads, forms } = extractMetrics(ins?.actions);
+      const totalConversions = leads + forms;
+
+      return {
+        id: a.id,
+        name: a.name,
+        status: a.status,
+        thumbnail_url: a.creative?.thumbnail_url,
+        campaign_id: a.campaign_id,
+        adset_id: a.adset_id,
+        spend,
+        leads,
+        forms,
+        cpl: totalConversions > 0 ? Math.round((spend / totalConversions) * 100) / 100 : null,
+        impressions,
+        link_clicks: linkClicks,
+        ctr,
+        cpm,
+      };
+    })
+    .sort((a, b) => {
+      if (a.status === "ACTIVE" && b.status !== "ACTIVE") return -1;
+      if (a.status !== "ACTIVE" && b.status === "ACTIVE") return 1;
+      return (b.spend ?? 0) - (a.spend ?? 0);
+    });
 }
 
 export async function updateMetaObject(

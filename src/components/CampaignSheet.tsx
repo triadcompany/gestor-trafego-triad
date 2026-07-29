@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Sheet,
@@ -52,6 +52,7 @@ interface CampaignSheetProps {
   whatsappNumber?: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  initialAdSetId?: string;
 }
 
 export function CampaignSheet({
@@ -62,6 +63,7 @@ export function CampaignSheet({
   whatsappNumber,
   open,
   onOpenChange,
+  initialAdSetId,
 }: CampaignSheetProps) {
   const queryClient = useQueryClient();
 
@@ -108,6 +110,7 @@ export function CampaignSheet({
             isActive={isActive}
             whatsappNumber={whatsappNumber}
             onStatusChange={invalidateCampaigns}
+            initialAdSetId={initialAdSetId}
           />
         </div>
       </SheetContent>
@@ -216,12 +219,14 @@ function AdSetsSection({
   isActive,
   whatsappNumber,
   onStatusChange,
+  initialAdSetId,
 }: {
   campaignId: string;
   clientId: string;
   isActive: boolean;
   whatsappNumber?: string;
   onStatusChange: () => void;
+  initialAdSetId?: string;
 }) {
   const { data: adSets, isLoading } = useQuery({
     queryKey: ["adsets", campaignId],
@@ -242,7 +247,14 @@ function AdSetsSection({
       ) : (
         <div className="space-y-2">
           {adSets.map((adSet) => (
-            <AdSetRow key={adSet.id} adSet={adSet} clientId={clientId} whatsappNumber={whatsappNumber} onStatusChange={onStatusChange} />
+            <AdSetRow
+              key={adSet.id}
+              adSet={adSet}
+              clientId={clientId}
+              whatsappNumber={whatsappNumber}
+              onStatusChange={onStatusChange}
+              startExpanded={adSet.id === initialAdSetId}
+            />
           ))}
         </div>
       )}
@@ -255,14 +267,16 @@ function AdSetRow({
   clientId,
   whatsappNumber,
   onStatusChange,
+  startExpanded,
 }: {
   adSet: MetaAdSet;
   clientId: string;
   whatsappNumber?: string;
   onStatusChange: () => void;
+  startExpanded?: boolean;
 }) {
   const queryClient = useQueryClient();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(!!startExpanded);
   const [tab, setTab] = useState<"ads" | "targeting">("ads");
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(adSet.name);
@@ -271,6 +285,11 @@ function AdSetRow({
   const [token, setToken] = useState<string | null>(null);
 
   const isActive = adSet.status === "ACTIVE";
+
+  useEffect(() => {
+    if (startExpanded) getMetaToken().then(setToken);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Fetch token once when expanding
   const handleExpand = async () => {

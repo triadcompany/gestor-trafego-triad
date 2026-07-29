@@ -45,6 +45,7 @@ import { NoteCard } from "@/components/NoteCard";
 import { NoteComposer } from "@/components/NoteComposer";
 import type { TaskStatus } from "@/lib/database.types";
 import { CampaignSheet } from "@/components/CampaignSheet";
+import { CampaignsExplorer } from "@/components/CampaignsExplorer";
 import {
   fetchCampaigns,
   fetchCampaignById,
@@ -140,6 +141,7 @@ function ClientDetail() {
   const [chartMetric, setChartMetric] = useState<"cpl" | "spend" | "leads" | "forms">("cpl");
   const [selectedCampaign, setSelectedCampaign] = useState<MetaCampaign | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [sheetInitialAdSetId, setSheetInitialAdSetId] = useState<string | undefined>(undefined);
 
   const [datePreset, setDatePreset] = useState<DatePreset | "custom">("today");
   const [customSince, setCustomSince] = useState("");
@@ -535,50 +537,19 @@ function ClientDetail() {
           <CampaignsTotals campaigns={campaigns} cplMax={client.cpl_max} />
         )}
 
-        <Card className="overflow-hidden mb-8">
-          <div className="overflow-x-auto overflow-y-auto max-h-[480px]">
-            <Table>
-              <TableHeader className="sticky top-0 bg-card z-10">
-                <TableRow>
-                  <TableHead>Campanha</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Orçamento/dia</TableHead>
-                  <TableHead className="text-right">Gasto</TableHead>
-                  <TableHead className="text-right">Leads</TableHead>
-                  <TableHead className="text-right">CPL</TableHead>
-                  <TableHead className="text-right">Impressões</TableHead>
-                  <TableHead className="text-right">Cliques</TableHead>
-                  <TableHead className="text-right">CTR</TableHead>
-                  <TableHead className="text-right">CPM</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {campaignsLoading ? (
-                  Array.from({ length: 3 }).map((_, i) => (
-                    <TableRow key={i}>
-                      <TableCell colSpan={10}><Skeleton className="h-5 w-full" /></TableCell>
-                    </TableRow>
-                  ))
-                ) : !campaigns || campaigns.length === 0 ? (
-                  <TableRow>
-                    <TableCell colSpan={10} className="text-center text-muted-foreground py-8 text-sm">
-                      Nenhuma campanha encontrada para o período selecionado.
-                    </TableCell>
-                  </TableRow>
-                ) : (
-                  campaigns.map((c) => (
-                    <CampaignRow
-                      key={c.id}
-                      campaign={c}
-                      cplMax={client.cpl_max}
-                      onClick={() => { setSelectedCampaign(c); setSheetOpen(true); }}
-                    />
-                  ))
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
+        <CampaignsExplorer
+          adAccountId={client.meta_ad_account_id}
+          cplMax={client.cpl_max}
+          datePreset={metaPreset}
+          customRange={customRange}
+          campaigns={campaigns ?? []}
+          campaignsLoading={campaignsLoading}
+          onOpenCampaign={(c, initialAdSetId) => {
+            setSelectedCampaign(c);
+            setSheetInitialAdSetId(initialAdSetId);
+            setSheetOpen(true);
+          }}
+        />
 
         {/* Tarefas + Anotações lado a lado */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -598,6 +569,7 @@ function ClientDetail() {
         whatsappNumber={client.meta_whatsapp_number ?? undefined}
         open={sheetOpen}
         onOpenChange={setSheetOpen}
+        initialAdSetId={sheetInitialAdSetId}
       />
     </AppShell>
   );
@@ -1027,73 +999,6 @@ function Divider() {
   return <div className="w-px h-8 bg-border shrink-0" />;
 }
 
-function CampaignRow({
-  campaign: c,
-  cplMax,
-  onClick,
-}: {
-  campaign: MetaCampaign;
-  cplMax: number;
-  onClick: () => void;
-}) {
-  const isActive = c.status === "ACTIVE";
-
-  const cplColor =
-    c.cpl === null
-      ? ""
-      : c.cpl <= cplMax
-      ? statusTextClass["on-target"]
-      : c.cpl <= cplMax * 1.3
-      ? statusTextClass.attention
-      : statusTextClass.critical;
-
-  return (
-    <TableRow
-      className={`cursor-pointer hover:bg-muted/50 transition-colors ${isActive ? "" : "opacity-50"}`}
-      onClick={onClick}
-    >
-      <TableCell className="font-medium max-w-[220px] truncate" title={c.name}>
-        {c.name}
-      </TableCell>
-      <TableCell>
-        <Badge variant={isActive ? "default" : "secondary"}>
-          {isActive ? "Ativa" : "Pausada"}
-        </Badge>
-      </TableCell>
-      <TableCell className="text-right tabular-nums">
-        {c.daily_budget !== null ? brl(c.daily_budget) : "—"}
-      </TableCell>
-      <TableCell className="text-right tabular-nums">
-        {c.spend > 0 ? brl(c.spend) : "—"}
-      </TableCell>
-      <TableCell className="text-right tabular-nums">
-        {c.leads > 0 || (c.forms ?? 0) > 0 ? (
-          <span>
-            {c.leads > 0 ? c.leads : "—"}
-            {(c.forms ?? 0) > 0 && (
-              <span className="ml-1 text-xs text-muted-foreground" title="Formulários">+{c.forms}f</span>
-            )}
-          </span>
-        ) : "—"}
-      </TableCell>
-      <TableCell className={`text-right tabular-nums font-medium ${cplColor}`}>
-        {c.cpl !== null ? brl(c.cpl) : "—"}
-      </TableCell>
-      <TableCell className="text-right tabular-nums">
-        {c.impressions > 0 ? c.impressions.toLocaleString("pt-BR") : "—"}
-      </TableCell>
-      <TableCell className="text-right tabular-nums">
-        {c.link_clicks > 0 ? c.link_clicks.toLocaleString("pt-BR") : "—"}
-      </TableCell>
-      <TableCell className="text-right tabular-nums">
-        {c.ctr !== null ? `${c.ctr.toFixed(2)}%` : "—"}
-      </TableCell>
-      <TableCell className="text-right tabular-nums">
-        {c.cpm !== null ? brl(c.cpm) : "—"}
-      </TableCell>
-    </TableRow>
-  );
-}
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
