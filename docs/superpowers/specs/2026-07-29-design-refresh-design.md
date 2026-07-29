@@ -15,7 +15,8 @@ Durante a investigação, foi confirmado que **~230 ocorrências em 20 arquivos*
 
 ## Decisões já validadas com o usuário
 
-- **Direção visual**: "Nórdico Calmo" — paleta azul suave e neutra, fonte DM Sans (validado via mockups no companion visual).
+- **Direção visual**: "Cinza Escuro + Laranja" — fundo neutro (sem tom azulado), laranja como cor de destaque, fonte DM Sans (validado via mockups no companion visual; a direção original "Nórdico Calmo", azul suave, foi aprovada primeiro mas trocada depois do usuário ver em produção).
+- **Menu lateral**: agrupado por seção (Visão, Clientes, Operação, Ferramentas) em vez de lista única de 12 itens soltos — reduz a sensação de "parede de itens".
 - **Comportamento do tema**: segue a preferência do sistema operacional por padrão; usuário pode alternar manualmente e a escolha fica salva (localStorage), sobrepondo a preferência do sistema dali em diante.
 - **Escopo**: migração completa de uma vez, cobrindo todos os arquivos com cor hardcoded identificados.
 - **Abordagem técnica do toggle**: `ThemeProvider` próprio (React context + localStorage + `matchMedia('(prefers-color-scheme: dark)')`), sem biblioteca nova. Rejeitado `next-themes` (pensada pra Next.js, dependência desnecessária pra ~40 linhas de lógica) e rejeitado CSS-only via `prefers-color-scheme` (não permite alternância manual, requisito explícito do usuário).
@@ -26,15 +27,15 @@ Valores de referência (a converter para oklch na implementação, mantendo a co
 
 | Token | Light | Dark |
 |---|---|---|
-| `background` | `#eef1f6` | `#1b2536` |
-| `foreground` | `#28344a` | `#e7edf7` |
-| `card` | `#ffffff` | `#222e42` |
-| `card-foreground` | `#28344a` | `#e7edf7` |
-| `primary` (acento) | `#3b82c4` | `#7ab3ea` |
-| `muted-foreground` | `#7c8aa5` | `#7f8ba3` |
-| `border` | `#e2e8f0` | `#263346` |
-| `sidebar` | `#ffffff` | `#141d2c` |
-| `sidebar-accent` (item ativo) | `#e1ebfa` | `#1f2c40` |
+| `background` | `#f2f2f3` | `#1c1c1e` |
+| `foreground` | `#262626` | `#ececec` |
+| `card` | `#ffffff` | `#242426` |
+| `card-foreground` | `#262626` | `#ececec` |
+| `primary` (acento, laranja) | `#e5670f` | `#e5670f` |
+| `muted-foreground` | `#6b6b6b` | `#8f8f93` |
+| `border` | `#e5e5e6` | `#2a2a2d` |
+| `sidebar` | `#ffffff` | `#141416` |
+| `sidebar-accent` (item ativo) | `#fde8d7` | laranja translúcido (16%) |
 | `status-critical` | `#dc4c4c` | `#f08080` |
 | `status-attention` | `#c48a1f` | `#e0b25a` |
 | `status-on-target` | `#2f9e6e` (verde suave, mesma família de saturação contida da paleta) | `#6cc9a0` |
