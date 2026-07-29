@@ -7,19 +7,39 @@ import { useState, useEffect } from "react";
 import { fetchCurrentProfile, fetchAttentionItems } from "@/lib/queries";
 import { useTheme } from "@/components/ThemeProvider";
 
-const navItems = [
-  { to: "/visao-geral", label: "Visão Geral", shortLabel: "Atenção", icon: AlertTriangle, exact: false },
-  { to: "/", label: "Dashboard", shortLabel: "Início", icon: LayoutDashboard, exact: true },
-  { to: "/clients", label: "Clientes", shortLabel: "Clientes", icon: Users, exact: false },
-  { to: "/saldos", label: "Saldos", shortLabel: "Saldos", icon: Wallet, exact: false },
-  { to: "/pix", label: "PIX", shortLabel: "PIX", icon: QrCode, exact: false },
-  { to: "/tarefas", label: "Tarefas", shortLabel: "Tarefas", icon: ClipboardList, exact: false },
-  { to: "/vendas", label: "Vendas", shortLabel: "Vendas", icon: TrendingUp, exact: false },
-  { to: "/agente", label: "Agente IA", shortLabel: "Agente", icon: Bot, exact: false },
-  { to: "/campaigns/new", label: "Nova Campanha", shortLabel: "Campanha", icon: PlusSquare, exact: false },
-  { to: "/agenda", label: "Agenda", shortLabel: "Agenda", icon: CalendarDays, exact: false },
-  { to: "/diagnostico-meta", label: "Diagnóstico", shortLabel: "Diagnóst.", icon: Stethoscope, exact: false },
-  { to: "/settings", label: "Configurações", shortLabel: "Config.", icon: Settings, exact: false },
+const navGroups = [
+  {
+    label: "Visão",
+    items: [
+      { to: "/visao-geral", label: "Visão Geral", icon: AlertTriangle, exact: false },
+      { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
+    ],
+  },
+  {
+    label: "Clientes",
+    items: [
+      { to: "/clients", label: "Clientes", icon: Users, exact: false },
+      { to: "/saldos", label: "Saldos", icon: Wallet, exact: false },
+      { to: "/pix", label: "PIX", icon: QrCode, exact: false },
+    ],
+  },
+  {
+    label: "Operação",
+    items: [
+      { to: "/tarefas", label: "Tarefas", icon: ClipboardList, exact: false },
+      { to: "/vendas", label: "Vendas", icon: TrendingUp, exact: false },
+      { to: "/agenda", label: "Agenda", icon: CalendarDays, exact: false },
+    ],
+  },
+  {
+    label: "Ferramentas",
+    items: [
+      { to: "/agente", label: "Agente IA", icon: Bot, exact: false },
+      { to: "/campaigns/new", label: "Nova Campanha", icon: PlusSquare, exact: false },
+      { to: "/diagnostico-meta", label: "Diagnóstico", icon: Stethoscope, exact: false },
+      { to: "/settings", label: "Configurações", icon: Settings, exact: false },
+    ],
+  },
 ] as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -71,31 +91,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </div>
-        <nav className="flex-1 p-3 space-y-1">
-          {navItems.map((item) => {
-            const active = isActive(item.to, item.exact);
-            const Icon = item.icon;
-            return (
-              <Link
-                key={item.to}
-                to={item.to}
-                className={cn(
-                  "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
-                  active
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                    : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-                {item.to === "/visao-geral" && criticalCount > 0 && (
-                  <span className="ml-auto text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-status-critical/10 text-status-critical border border-status-critical/20">
-                    {criticalCount}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+          {navGroups.map((group) => (
+            <div key={group.label}>
+              <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                {group.label}
+              </div>
+              <div className="space-y-1">
+                {group.items.map((item) => {
+                  const active = isActive(item.to, item.exact);
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      className={cn(
+                        "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                        active
+                          ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                          : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                      )}
+                    >
+                      <Icon className="h-4 w-4" />
+                      {item.label}
+                      {item.to === "/visao-geral" && criticalCount > 0 && (
+                        <span className="ml-auto text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-status-critical/10 text-status-critical border border-status-critical/20">
+                          {criticalCount}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </nav>
         <div className="p-3 border-t border-sidebar-border">
           <div className="flex items-center justify-between gap-2">
@@ -160,31 +189,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
 
             {/* Itens de navegação */}
-            <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-              {navItems.map((item) => {
-                const active = isActive(item.to, item.exact);
-                const Icon = item.icon;
-                return (
-                  <Link
-                    key={item.to}
-                    to={item.to}
-                    className={cn(
-                      "flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-colors",
-                      active
-                        ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
-                        : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
-                    )}
-                  >
-                    <Icon className="h-5 w-5 shrink-0" />
-                    {item.label}
-                    {item.to === "/visao-geral" && criticalCount > 0 && (
-                      <span className="ml-auto text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-status-critical/10 text-status-critical border border-status-critical/20">
-                        {criticalCount}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
+            <nav className="flex-1 overflow-y-auto p-3 space-y-4">
+              {navGroups.map((group) => (
+                <div key={group.label}>
+                  <div className="px-4 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                    {group.label}
+                  </div>
+                  <div className="space-y-1">
+                    {group.items.map((item) => {
+                      const active = isActive(item.to, item.exact);
+                      const Icon = item.icon;
+                      return (
+                        <Link
+                          key={item.to}
+                          to={item.to}
+                          className={cn(
+                            "flex items-center gap-3 px-4 py-3 rounded-lg text-sm transition-colors",
+                            active
+                              ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
+                              : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                          )}
+                        >
+                          <Icon className="h-5 w-5 shrink-0" />
+                          {item.label}
+                          {item.to === "/visao-geral" && criticalCount > 0 && (
+                            <span className="ml-auto text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-status-critical/10 text-status-critical border border-status-critical/20">
+                              {criticalCount}
+                            </span>
+                          )}
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
             </nav>
 
             {/* Rodapé com usuário e logout */}
