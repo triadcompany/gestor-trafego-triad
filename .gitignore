@@ -23,6 +23,9 @@ dist-ssr
 # Segredos locais (DATABASE_URL, JWT_SECRET, etc.)
 .env
 
+# Mockups temporários do brainstorming (raiz do repo — docs/superpowers é outra coisa)
+/.superpowers/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
