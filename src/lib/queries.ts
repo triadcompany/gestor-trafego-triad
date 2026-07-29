@@ -147,19 +147,23 @@ const _fetchActiveClients = createServerFn({ method: "GET" }).handler(async () =
   return rows.map(toClientRow);
 });
 
-const _fetchMetricsForDate = createServerFn({ method: "GET" })
+const _fetchClientsForDate = createServerFn({ method: "GET" })
   .inputValidator(z.object({ date: z.string() }))
   .handler(async ({ data }) => {
-    return db
-      .select({
-        clientId: metricsDaily.clientId,
-        spend: metricsDaily.spend,
-        leads: metricsDaily.leads,
-        forms: metricsDaily.forms,
-        cpl: metricsDaily.cpl,
-      })
-      .from(metricsDaily)
-      .where(eq(metricsDaily.date, data.date));
+    const [clientRows, metricRows] = await Promise.all([
+      db.select().from(clients).where(eq(clients.active, true)).orderBy(clients.name),
+      db
+        .select({
+          clientId: metricsDaily.clientId,
+          spend: metricsDaily.spend,
+          leads: metricsDaily.leads,
+          forms: metricsDaily.forms,
+          cpl: metricsDaily.cpl,
+        })
+        .from(metricsDaily)
+        .where(eq(metricsDaily.date, data.date)),
+    ]);
+    return { clientRows: clientRows.map(toClientRow), metricRows };
   });
 
 export async function fetchClients(
@@ -167,14 +171,14 @@ export async function fetchClients(
   customRange?: { since: string; until: string },
 ): Promise<ClientWithToday[]> {
   const { start, end } = periodDateRange(period, customRange);
-  const clientRows = await _fetchActiveClients();
 
-  // Single-day (today / yesterday): use metrics_daily cache — fast e sempre atualizado pelo auto-sync
+  // Single-day (today / yesterday): usa metrics_daily cache — fast e sempre atualizado pelo auto-sync.
+  // Uma única RPC (clientes + métricas juntos) em vez de duas, pra economizar uma ida-e-volta de rede.
   if (start === end) {
-    const rows = await _fetchMetricsForDate({ data: { date: start } });
+    const { clientRows, metricRows } = await _fetchClientsForDate({ data: { date: start } });
 
     const metricsMap = new Map<string, { spend: number; leads: number; forms: number; cpl: number | null }>();
-    for (const m of rows) {
+    for (const m of metricRows) {
       metricsMap.set(m.clientId, { spend: m.spend, leads: m.leads, forms: m.forms ?? 0, cpl: m.cpl });
     }
 
@@ -187,6 +191,8 @@ export async function fetchClients(
       return { ...c, spendToday: spend, leadsToday: leads, formsToday: forms, cplToday: cpl, status: computeStatus(cpl, spend, c.cpl_max) };
     });
   }
+
+  const clientRows = await _fetchActiveClients();
 
   // Multi-day: busca totais agregados direto na API do Meta (metrics_daily só guarda o dia atual)
   const token = await getMetaToken();

@@ -26,6 +26,12 @@ export default defineConfig(({ mode }) => {
       ],
     },
     server: { host: "::", port: 8080 },
-    plugins: [tailwindcss(), tsConfigPaths({ projects: ["./tsconfig.json"] }), tanstackStart(), nitro(), viteReact()],
+    plugins: [
+      tailwindcss(),
+      tsConfigPaths({ projects: ["./tsconfig.json"] }),
+      tanstackStart(),
+      nitro({ compressPublicAssets: { gzip: true, brotli: true } }),
+      viteReact(),
+    ],
   };
 });
