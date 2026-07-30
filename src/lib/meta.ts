@@ -1704,16 +1704,11 @@ export async function duplicateCampaign(
 
     // ── Corrige targeting ──────────────────────────────────────
     const targeting = adSet.targeting ?? { geo_locations: { countries: ["BR"] } };
-    // explore_home exige explore junto (regra Meta)
-    if (targeting.instagram_positions?.includes("explore_home") && !targeting.instagram_positions.includes("explore")) {
-      targeting.instagram_positions = [...targeting.instagram_positions, "explore"];
-    }
-    // Remove posicionamentos de search que causam conflito com outros
-    if (targeting.instagram_positions) {
-      targeting.instagram_positions = targeting.instagram_positions.filter(
-        (p) => !["ig_search"].includes(p)
-      );
-    }
+    // Posicionamentos manuais ficam de fora de propósito — modo Advantage+ (automático) da Meta,
+    // recomendado e sem o bug de exibição da própria Meta com posicionamento manual via API.
+    delete targeting.publisher_platforms;
+    delete targeting.facebook_positions;
+    delete targeting.instagram_positions;
     // Público Advantage sempre desabilitado
     targeting.targeting_automation = { advantage_audience: 0 };
 
@@ -1840,12 +1835,12 @@ export async function duplicateAdSet(
   if (adSet.error) throw new Error(formatMetaError(adSet.error));
 
   const targeting = adSet.targeting ?? { geo_locations: { countries: ["BR"] } };
-  if (targeting.instagram_positions?.includes("explore_home") && !targeting.instagram_positions.includes("explore")) {
-    targeting.instagram_positions = [...targeting.instagram_positions, "explore"];
-  }
-  if (targeting.instagram_positions) {
-    targeting.instagram_positions = targeting.instagram_positions.filter((p) => !["ig_search"].includes(p));
-  }
+  // Posicionamentos manuais (publisher_platforms/facebook_positions/instagram_positions) ficam
+  // de fora de propósito — deixa no modo Advantage+ (automático) da Meta, que é o recomendado
+  // e evita um bug de exibição da própria Meta com posicionamento manual em objetos criados via API.
+  delete targeting.publisher_platforms;
+  delete targeting.facebook_positions;
+  delete targeting.instagram_positions;
   targeting.targeting_automation = { advantage_audience: 0 };
 
   const effectiveDestinationType = adSet.destination_type ?? "";
@@ -2110,28 +2105,6 @@ export async function createCampaignFromScratch(
 
   const campaignId = campaign.id;
 
-  const publisher_platforms: string[] = [];
-  const facebook_positions: string[] = [];
-  const instagram_positions: string[] = [];
-
-  if (opts.placements.facebook) {
-    publisher_platforms.push("facebook");
-    const rawFbPos = opts.fbPositions?.length ? opts.fbPositions : ["feed", "story"];
-    // reels not supported for WHATSAPP destination
-    facebook_positions.push(...rawFbPos.filter((p) => p !== "reels"));
-  }
-  if (opts.placements.instagram) {
-    publisher_platforms.push("instagram");
-    instagram_positions.push(...(opts.igPositions?.length ? opts.igPositions : ["stream", "story"]));
-    // explore_home requires explore (Meta rule)
-    if (instagram_positions.includes("explore_home") && !instagram_positions.includes("explore")) {
-      instagram_positions.push("explore");
-    }
-    // ig_search conflicts with other placements
-    const igSearchIdx = instagram_positions.indexOf("ig_search");
-    if (igSearchIdx !== -1) instagram_positions.splice(igSearchIdx, 1);
-  }
-
   const t = opts.targeting;
   let geoLocations: Record<string, unknown>;
   if (t?.locations?.length) {
@@ -2156,9 +2129,8 @@ export async function createCampaignFromScratch(
   if (t?.genderMode === "male") targeting.genders = [1];
   else if (t?.genderMode === "female") targeting.genders = [2];
   if (t?.interests?.length) targeting.flexible_spec = [{ interests: t.interests }];
-  if (publisher_platforms.length) targeting.publisher_platforms = publisher_platforms;
-  if (facebook_positions.length) targeting.facebook_positions = facebook_positions;
-  if (instagram_positions.length) targeting.instagram_positions = instagram_positions;
+  // Posicionamentos manuais ficam de fora de propósito — modo Advantage+ (automático) da Meta,
+  // recomendado e sem o bug de exibição da própria Meta com posicionamento manual via API.
   // Público Advantage sempre desabilitado
   targeting.targeting_automation = { advantage_audience: 0 };
 
