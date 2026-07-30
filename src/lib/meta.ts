@@ -1817,7 +1817,7 @@ export async function duplicateAdSet(
   whatsappNumber?: string
 ): Promise<string> {
   const srcRes = await fetch(
-    `${BASE_URL}/${adSetId}?fields=name,daily_budget,billing_event,optimization_goal,bid_strategy,bid_amount,targeting,destination_type,promoted_object,instagram_actor_id&access_token=${encodeURIComponent(token)}`
+    `${BASE_URL}/${adSetId}?fields=name,daily_budget,billing_event,optimization_goal,bid_strategy,bid_amount,bid_constraints,targeting,destination_type,promoted_object,instagram_actor_id&access_token=${encodeURIComponent(token)}`
   );
   const adSet = (await srcRes.json()) as {
     name: string;
@@ -1826,6 +1826,7 @@ export async function duplicateAdSet(
     optimization_goal?: string;
     bid_strategy?: string;
     bid_amount?: string;
+    bid_constraints?: Record<string, unknown>;
     targeting?: MetaTargeting;
     destination_type?: string;
     promoted_object?: Record<string, string>;
@@ -1858,6 +1859,11 @@ export async function duplicateAdSet(
   if (adSet.daily_budget) adSetParams.daily_budget = adSet.daily_budget;
   if (effectiveDestinationType) adSetParams.destination_type = effectiveDestinationType;
   if (adSet.instagram_actor_id) adSetParams.instagram_actor_id = adSet.instagram_actor_id;
+  // Estratégia de lance — algumas (limite de lance, ROAS mínimo) exigem valor/restrição junto,
+  // senão a Meta rejeita a criação do conjunto por falta de "restrições de lance".
+  if (adSet.bid_strategy) adSetParams.bid_strategy = adSet.bid_strategy;
+  if (adSet.bid_amount) adSetParams.bid_amount = adSet.bid_amount;
+  if (adSet.bid_constraints) adSetParams.bid_constraints = JSON.stringify(adSet.bid_constraints);
 
   if (adSet.promoted_object || effectiveDestinationType === "WHATSAPP") {
     const po: Record<string, string> = { ...(adSet.promoted_object ?? {}) };
