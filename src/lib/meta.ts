@@ -2249,6 +2249,7 @@ export interface AdCreativeOptions {
   pageId: string;
   whatsappNumber: string; // digits only, e.g. "559988215838"
   whatsappMessage?: string;
+  whatsappGreeting?: string;
   primaryText: string;
   headline: string;
   description?: string;
@@ -2256,6 +2257,42 @@ export interface AdCreativeOptions {
   imageHash?: string;
   videoId?: string;
   thumbnailUrl?: string; // existing thumbnail for video creatives (e.g. from duplicate flow)
+}
+
+// Formato validado direto na API da Meta (POST /adcreatives com page_welcome_message em
+// link_data/video_data, irmão de call_to_action — não dentro de call_to_action.value).
+// Não precisa de template_id: a Meta aceita e aplica a mensagem sem esse campo.
+function buildWelcomeMessage(greeting: string, autofillMessage: string): string {
+  const quickReplies = [{ title: "Gostaria de obter mais informações", content_type: "text" }];
+  return JSON.stringify({
+    type: "VISUAL_EDITOR",
+    version: 2,
+    landing_screen_type: "welcome_message",
+    media_type: "text",
+    text_format: {
+      customer_action_type: "autofill_message",
+      message: { autofill_message: { content: autofillMessage }, text: greeting },
+    },
+    image_format: {
+      customer_action_type: "quick_replies",
+      message: {
+        attachment: { type: "template", payload: { template_type: "generic", elements: [{ title: "", buttons: [] }] } },
+        quick_replies: quickReplies,
+        text: greeting,
+      },
+    },
+    video_format: {
+      customer_action_type: "quick_replies",
+      message: {
+        attachment: { type: "video", payload: { attachment_id: "" } },
+        quick_replies: quickReplies,
+        text: greeting,
+      },
+    },
+    user_edit: true,
+    surface: "visual_editor_new",
+    welcome_message_edited: true,
+  });
 }
 
 export async function createAdCreative(
@@ -2272,6 +2309,10 @@ export async function createAdCreative(
     value: { app_destination: "WHATSAPP", whatsapp_number: opts.whatsappNumber },
   };
 
+  const pageWelcomeMessage = opts.whatsappGreeting
+    ? buildWelcomeMessage(opts.whatsappGreeting, opts.whatsappMessage || opts.whatsappGreeting)
+    : undefined;
+
   const objectStorySpec =
     opts.mediaType === "image"
       ? {
@@ -2283,6 +2324,7 @@ export async function createAdCreative(
             ...(opts.description ? { description: opts.description } : {}),
             link: waLink,
             call_to_action: callToAction,
+            ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
           },
         }
       : {
@@ -2294,6 +2336,7 @@ export async function createAdCreative(
             ...(opts.description ? { description: opts.description } : {}),
             ...(opts.thumbnailUrl ? { image_url: opts.thumbnailUrl } : {}),
             call_to_action: callToAction,
+            ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
           },
         };
 

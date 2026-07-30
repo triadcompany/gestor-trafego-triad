@@ -127,6 +127,7 @@ function NewCampaign() {
   const [headline, setHeadline] = useState("");
   const [adDescription, setAdDescription] = useState("");
   const [whatsappMessage, setWhatsappMessage] = useState("");
+  const [whatsappGreeting, setWhatsappGreeting] = useState("");
 
   // ── Duplicate prefill ────────────────────────────────────────
   const [existingVideoId, setExistingVideoId] = useState<string | undefined>();
@@ -278,6 +279,7 @@ function NewCampaign() {
       queryClient.invalidateQueries({ queryKey: ["conversation-templates"] });
       setSelectedTemplateId(tpl.id);
       setWhatsappMessage(tpl.pre_message ?? "");
+      setWhatsappGreeting(tpl.greeting ?? "");
       setTemplateMode("select");
       toast.success("Modelo salvo.");
     },
@@ -287,7 +289,10 @@ function NewCampaign() {
   const handleTemplateSelect = (id: string) => {
     setSelectedTemplateId(id);
     const t = templates.find((t) => t.id === id);
-    if (t) setWhatsappMessage(t.pre_message ?? "");
+    if (t) {
+      setWhatsappMessage(t.pre_message ?? "");
+      setWhatsappGreeting(t.greeting ?? "");
+    }
   };
 
   const openNewTemplate = () => {
@@ -452,6 +457,7 @@ function NewCampaign() {
           pageId,
           whatsappNumber: normalizedPhone,
           whatsappMessage: whatsappMessage || undefined,
+          whatsappGreeting: whatsappGreeting || undefined,
           primaryText,
           headline,
           description: adDescription || undefined,
@@ -569,6 +575,7 @@ function NewCampaign() {
               setHeadline("");
               setAdDescription("");
               setWhatsappMessage("");
+              setWhatsappGreeting("");
               setStep(1);
             }}>
               Criar outra
