@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Checkbox } from "@/components/ui/checkbox";
 import { X, Search, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -17,6 +18,23 @@ import {
   type MetaInterest,
   type MetaLocationResult,
 } from "@/lib/meta";
+
+// ── Facebook & Instagram position options ────────────────────
+
+const FB_POSITIONS: { value: string; label: string }[] = [
+  { value: "feed", label: "Feed" },
+  { value: "story", label: "Stories" },
+  { value: "reels", label: "Reels" },
+  { value: "right_hand_column", label: "Coluna direita" },
+  { value: "instream_video", label: "Vídeo in-stream" },
+];
+
+const IG_POSITIONS: { value: string; label: string }[] = [
+  { value: "stream", label: "Feed" },
+  { value: "story", label: "Stories" },
+  { value: "explore", label: "Explorar" },
+  { value: "reels", label: "Reels" },
+];
 
 // ── Main component ────────────────────────────────────────────
 
@@ -31,6 +49,10 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
   const [genderMode, setGenderMode] = useState<"all" | "male" | "female">("all");
   const [interests, setInterests] = useState<MetaInterest[]>([]);
   const [locations, setLocations] = useState<MetaLocationResult[]>([]);
+  const [placementMode, setPlacementMode] = useState<"advantage_plus" | "manual">("advantage_plus");
+  const [platforms, setPlatforms] = useState({ facebook: true, instagram: true });
+  const [fbPositions, setFbPositions] = useState<string[]>(["feed", "story"]);
+  const [igPositions, setIgPositions] = useState<string[]>(["stream", "story"]);
   const [dirty, setDirty] = useState(false);
 
   const { data: targeting, isLoading } = useQuery({
@@ -47,6 +69,17 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
     setInterests(targeting.flexible_spec?.[0]?.interests ?? []);
     const cities = (targeting.geo_locations?.cities ?? []) as MetaLocationResult[];
     setLocations(cities);
+    if (targeting.publisher_platforms?.length) {
+      setPlacementMode("manual");
+      setPlatforms({
+        facebook: targeting.publisher_platforms.includes("facebook"),
+        instagram: targeting.publisher_platforms.includes("instagram"),
+      });
+      setFbPositions(targeting.facebook_positions ?? ["feed", "story"]);
+      setIgPositions(targeting.instagram_positions ?? ["stream", "story"]);
+    } else {
+      setPlacementMode("advantage_plus");
+    }
     setDirty(false);
   }, [targeting]);
 
@@ -58,8 +91,24 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
           ? { cities: locations.map((l) => ({ key: l.key })) }
           : { countries: ["BR"] },
         targeting_automation: { advantage_audience: 0 },
-        // Posicionamentos manuais ficam de fora de propósito — modo Advantage+ (automático) da
-        // Meta, recomendado e sem o bug de exibição da própria Meta com posicionamento manual via API.
+        ...(placementMode === "manual" ? {
+          publisher_platforms: [
+            ...(platforms.facebook ? ["facebook"] : []),
+            ...(platforms.instagram ? ["instagram"] : []),
+          ],
+          ...(platforms.facebook ? { facebook_positions: fbPositions } : {}),
+          ...(platforms.instagram ? {
+            instagram_positions: (() => {
+              let pos = igPositions;
+              // explore_home requires explore (Meta rule)
+              if (pos.includes("explore_home") && !pos.includes("explore")) pos = [...pos, "explore"];
+              // ig_search conflicts with other placements
+              pos = pos.filter((p) => p !== "ig_search");
+              return pos;
+            })(),
+          } : {}),
+        } : {}),
+        // Advantage+: nenhum campo de posicionamento é enviado, deixando a Meta escolher.
         ...(ageMin > 18 ? { age_min: ageMin } : {}),
         ...(ageMax < 65 ? { age_max: ageMax } : {}),
         ...(genderMode !== "all" ? { genders: genderMode === "male" ? [1] : [2] } : {}),
@@ -158,9 +207,89 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
 
       {/* Posicionamentos */}
       <FieldSection title="Posicionamentos">
-        <p className="text-xs text-muted-foreground">
-          Automático (Advantage+) — a Meta escolhe os melhores posicionamentos entre Facebook e Instagram.
-        </p>
+        <div className="space-y-4">
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => { setPlacementMode("advantage_plus"); mark(); }}
+              className={`flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                placementMode === "advantage_plus" ? "border-primary bg-primary/5" : "border-border"
+              }`}
+            >
+              <div className="font-medium">Advantage+ <span className="text-xs text-muted-foreground font-normal">(recomendado)</span></div>
+              <div className="text-xs text-muted-foreground mt-0.5">A Meta escolhe automaticamente</div>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setPlacementMode("manual"); mark(); }}
+              className={`flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                placementMode === "manual" ? "border-primary bg-primary/5" : "border-border"
+              }`}
+            >
+              <div className="font-medium">Manual</div>
+              <div className="text-xs text-muted-foreground mt-0.5">Você escolhe onde aparece</div>
+            </button>
+          </div>
+
+          {placementMode === "manual" && (
+            <>
+              <div className="flex gap-4">
+                {[
+                  { key: "facebook" as const, label: "Facebook" },
+                  { key: "instagram" as const, label: "Instagram" },
+                ].map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer">
+                    <Checkbox
+                      checked={platforms[key]}
+                      onCheckedChange={(v) => { setPlatforms((p) => ({ ...p, [key]: !!v })); mark(); }}
+                    />
+                    <span className="text-sm">{label}</span>
+                  </label>
+                ))}
+              </div>
+
+              {platforms.facebook && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Posições Facebook</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {FB_POSITIONS.map(({ value, label }) => (
+                      <label key={value} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={fbPositions.includes(value)}
+                          onCheckedChange={(v) => {
+                            setFbPositions((p) => v ? [...p, value] : p.filter((x) => x !== value));
+                            mark();
+                          }}
+                        />
+                        <span className="text-sm">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {platforms.instagram && (
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground font-medium uppercase tracking-wide">Posições Instagram</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {IG_POSITIONS.map(({ value, label }) => (
+                      <label key={value} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={igPositions.includes(value)}
+                          onCheckedChange={(v) => {
+                            setIgPositions((p) => v ? [...p, value] : p.filter((x) => x !== value));
+                            mark();
+                          }}
+                        />
+                        <span className="text-sm">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
       </FieldSection>
 
       <Button

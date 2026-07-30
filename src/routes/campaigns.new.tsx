@@ -114,6 +114,7 @@ function NewCampaign() {
   const [genderMode, setGenderMode] = useState<"all" | "male" | "female">("all");
   const [locations, setLocations] = useState<SelectedLocation[]>([]);
   const [interests, setInterests] = useState<MetaInterest[]>([]);
+  const [placementMode, setPlacementMode] = useState<"advantage_plus" | "manual">("advantage_plus");
   const [platforms, setPlatforms] = useState({ facebook: true, instagram: true });
   const [fbPositions, setFbPositions] = useState(["feed", "story"]);
   const [igPositions, setIgPositions] = useState(["stream", "story"]);
@@ -438,6 +439,7 @@ function NewCampaign() {
           pageId,
           whatsappNumber: whatsappNumber || undefined,
           dailyBudget: budget,
+          placementMode,
           placements: platforms,
           fbPositions: platforms.facebook ? fbPositions : [],
           igPositions: platforms.instagram ? igPositions : [],
@@ -875,6 +877,30 @@ function NewCampaign() {
             <Card className="p-5 space-y-4">
               <SectionTitle>Posicionamentos</SectionTitle>
 
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPlacementMode("advantage_plus")}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                    placementMode === "advantage_plus" ? "border-primary bg-primary/5" : "border-border"
+                  }`}
+                >
+                  <div className="font-medium">Advantage+ <span className="text-xs text-muted-foreground font-normal">(recomendado)</span></div>
+                  <div className="text-xs text-muted-foreground mt-0.5">A Meta escolhe os melhores posicionamentos automaticamente</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPlacementMode("manual")}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                    placementMode === "manual" ? "border-primary bg-primary/5" : "border-border"
+                  }`}
+                >
+                  <div className="font-medium">Manual</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Você escolhe onde o anúncio aparece</div>
+                </button>
+              </div>
+
+              {placementMode === "manual" && (
               <div className="flex gap-4">
                 {(["facebook", "instagram"] as const).map((p) => (
                   <label key={p} className="flex items-center gap-2 cursor-pointer">
@@ -886,8 +912,9 @@ function NewCampaign() {
                   </label>
                 ))}
               </div>
+              )}
 
-              {platforms.facebook && (
+              {placementMode === "manual" && platforms.facebook && (
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Facebook</p>
                   <div className="grid grid-cols-2 gap-1.5">
@@ -906,7 +933,7 @@ function NewCampaign() {
                 </div>
               )}
 
-              {platforms.instagram && (
+              {placementMode === "manual" && platforms.instagram && (
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Instagram</p>
                   <div className="grid grid-cols-2 gap-1.5">

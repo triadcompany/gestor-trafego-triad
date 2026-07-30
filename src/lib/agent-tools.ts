@@ -379,6 +379,7 @@ export async function executeConfirmedAction(
           whatsappNumber: client.meta_whatsapp_number,
           dailyBudget: args.daily_budget_brl as number,
           campaignType: (args.campaign_type as "engagement" | "sales") ?? "engagement",
+          placementMode: "manual",
           placements: {
             facebook: placements === "facebook" || placements === "ambos",
             instagram: placements === "instagram" || placements === "ambos",

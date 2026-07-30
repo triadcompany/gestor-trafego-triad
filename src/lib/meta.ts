@@ -2073,6 +2073,7 @@ export interface CreateFromScratchOptions {
   pageId: string;
   whatsappNumber?: string;
   dailyBudget: number; // BRL
+  placementMode: "advantage_plus" | "manual";
   placements: { facebook: boolean; instagram: boolean };
   fbPositions?: string[];
   igPositions?: string[];
@@ -2129,8 +2130,36 @@ export async function createCampaignFromScratch(
   if (t?.genderMode === "male") targeting.genders = [1];
   else if (t?.genderMode === "female") targeting.genders = [2];
   if (t?.interests?.length) targeting.flexible_spec = [{ interests: t.interests }];
-  // Posicionamentos manuais ficam de fora de propósito — modo Advantage+ (automático) da Meta,
-  // recomendado e sem o bug de exibição da própria Meta com posicionamento manual via API.
+
+  if (opts.placementMode === "manual") {
+    const publisher_platforms: string[] = [];
+    const facebook_positions: string[] = [];
+    const instagram_positions: string[] = [];
+
+    if (opts.placements.facebook) {
+      publisher_platforms.push("facebook");
+      const rawFbPos = opts.fbPositions?.length ? opts.fbPositions : ["feed", "story"];
+      // reels not supported for WHATSAPP destination
+      facebook_positions.push(...rawFbPos.filter((p) => p !== "reels"));
+    }
+    if (opts.placements.instagram) {
+      publisher_platforms.push("instagram");
+      instagram_positions.push(...(opts.igPositions?.length ? opts.igPositions : ["stream", "story"]));
+      // explore_home requires explore (Meta rule)
+      if (instagram_positions.includes("explore_home") && !instagram_positions.includes("explore")) {
+        instagram_positions.push("explore");
+      }
+      // ig_search conflicts with other placements
+      const igSearchIdx = instagram_positions.indexOf("ig_search");
+      if (igSearchIdx !== -1) instagram_positions.splice(igSearchIdx, 1);
+    }
+
+    if (publisher_platforms.length) targeting.publisher_platforms = publisher_platforms;
+    if (facebook_positions.length) targeting.facebook_positions = facebook_positions;
+    if (instagram_positions.length) targeting.instagram_positions = instagram_positions;
+  }
+  // Advantage+ (padrão): nenhum campo de posicionamento é enviado, deixando a Meta escolher.
+
   // Público Advantage sempre desabilitado
   targeting.targeting_automation = { advantage_audience: 0 };
 
