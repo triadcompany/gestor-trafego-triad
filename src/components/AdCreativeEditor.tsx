@@ -83,6 +83,7 @@ export function AdCreativeEditor({ adId, adSetId, token, whatsappNumber }: AdCre
     if (!file) return;
     setNewMediaFile(file);
     setNewMediaPreview(URL.createObjectURL(file));
+    setDirty(true);
     e.target.value = "";
   };
 
@@ -92,45 +93,45 @@ export function AdCreativeEditor({ adId, adSetId, token, whatsappNumber }: AdCre
     setNewMediaPreview(null);
   };
 
+  // Um único save: se tem mídia nova selecionada, troca mídia E texto juntos (evita
+  // que o texto digitado se perca por trás de um criativo reconstruído com dados antigos).
+  // Sem mídia nova, só atualiza o texto.
   const saveMutation = useMutation({
     mutationFn: async () => {
       if (!creative?.id) throw new Error("ID do criativo não encontrado.");
-      await updateAdCreative(adId, creative, { body: primaryText, title: headline, description }, token, whatsappNumber);
-    },
-    onSuccess: () => {
-      toast.success("Criativo atualizado. O anúncio pode entrar em revisão brevemente.");
-      setDirty(false);
-      queryClient.invalidateQueries({ queryKey: ["creative", adId] });
-      queryClient.invalidateQueries({ queryKey: ["ads", adSetId] });
-    },
-    onError: (e) => {
-      const msg = e instanceof Error ? e.message : "Erro ao salvar";
-      if (msg === "ACTIVE_CREATIVE_NO_SPEC") {
-        toast.error("Não foi possível obter a estrutura do criativo ativo. Edite diretamente no Meta Ads Manager.", { duration: 10000 });
+      if (newMediaFile) {
+        const pid = "swap-progress";
+        await swapAdCreativeMedia(
+          adId,
+          creative,
+          newMediaFile,
+          token,
+          whatsappNumber,
+          (msg) => toast.loading(msg, { id: pid }),
+          { body: primaryText, title: headline, description }
+        );
+        toast.dismiss(pid);
       } else {
-        toast.error(msg, { duration: 8000 });
+        await updateAdCreative(adId, creative, { body: primaryText, title: headline, description }, token, whatsappNumber);
       }
     },
-  });
-
-  const swapMutation = useMutation({
-    mutationFn: async () => {
-      if (!creative || !newMediaFile) throw new Error("Nenhum arquivo selecionado.");
-      const pid = "swap-progress";
-      await swapAdCreativeMedia(adId, creative, newMediaFile, token, whatsappNumber, (msg) =>
-        toast.loading(msg, { id: pid })
-      );
-      toast.dismiss(pid);
-    },
     onSuccess: () => {
-      toast.success("Mídia atualizada com sucesso.");
+      toast.success(
+        newMediaFile ? "Criativo e mídia atualizados." : "Criativo atualizado. O anúncio pode entrar em revisão brevemente."
+      );
+      setDirty(false);
       clearNewMedia();
       queryClient.invalidateQueries({ queryKey: ["creative", adId] });
       queryClient.invalidateQueries({ queryKey: ["ads", adSetId] });
     },
     onError: (e) => {
       toast.dismiss("swap-progress");
-      toast.error(e instanceof Error ? e.message : "Erro ao trocar mídia", { duration: 8000 });
+      const msg = e instanceof Error ? e.message : "Erro ao salvar";
+      if (msg === "ACTIVE_CREATIVE_NO_SPEC") {
+        toast.error("Não foi possível obter a estrutura do criativo ativo. Edite diretamente no Meta Ads Manager.", { duration: 10000 });
+      } else {
+        toast.error(msg, { duration: 8000 });
+      }
     },
   });
 
@@ -249,21 +250,10 @@ export function AdCreativeEditor({ adId, adSetId, token, whatsappNumber }: AdCre
         </div>
       </div>
 
-      {/* Save new media */}
       {newMediaFile && (
-        <Button
-          onClick={() => swapMutation.mutate()}
-          disabled={swapMutation.isPending}
-          className="w-full"
-          size="sm"
-          variant="secondary"
-        >
-          {swapMutation.isPending ? (
-            <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />Enviando mídia...</>
-          ) : (
-            `Salvar ${isVideo ? "vídeo" : "imagem"}`
-          )}
-        </Button>
+        <p className="text-xs text-muted-foreground -mt-2">
+          A nova mídia é salva junto com o texto ao clicar em "Salvar alterações" abaixo.
+        </p>
       )}
 
       {/* Primary text */}
@@ -335,7 +325,7 @@ export function AdCreativeEditor({ adId, adSetId, token, whatsappNumber }: AdCre
       >
         {saveMutation.isPending ? (
           <><Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />Salvando...</>
-        ) : dirty ? "Salvar alterações de texto" : "Sem alterações"}
+        ) : dirty ? "Salvar alterações" : "Sem alterações"}
       </Button>
     </div>
   );

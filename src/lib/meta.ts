@@ -811,15 +811,17 @@ export async function swapAdCreativeMedia(
   mediaFile: File,
   token: string,
   clientWhatsappNumber?: string,
-  onProgress?: (msg: string) => void
+  onProgress?: (msg: string) => void,
+  textOverrides?: { body?: string; title?: string; description?: string }
 ): Promise<void> {
   const accountId = await fetchAdAccountId(adId, token);
   const isVideo = !!(creative.video_id || creative.object_story_spec?.video_data?.video_id);
   const pageId = creative.actor_id ?? creative.object_story_spec?.page_id;
   const resolvedWa = (clientWhatsappNumber ?? creative.whatsapp_number ?? "").replace(/\D/g, "");
-  const primaryText = creative.body ?? creative.object_story_spec?.video_data?.message ?? creative.object_story_spec?.link_data?.message ?? "";
-  const title = creative.title ?? creative.object_story_spec?.video_data?.title ?? creative.object_story_spec?.link_data?.name ?? "";
-  const description = creative.description ?? "";
+  // Prioriza o texto atual do formulário (pode ter edições não salvas) sobre o criativo já publicado na Meta
+  const primaryText = textOverrides?.body ?? creative.body ?? creative.object_story_spec?.video_data?.message ?? creative.object_story_spec?.link_data?.message ?? "";
+  const title = textOverrides?.title ?? creative.title ?? creative.object_story_spec?.video_data?.title ?? creative.object_story_spec?.link_data?.name ?? "";
+  const description = textOverrides?.description ?? creative.description ?? "";
 
   if (!pageId) throw new Error("page_id não encontrado no criativo.");
 
