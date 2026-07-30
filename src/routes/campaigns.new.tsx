@@ -260,8 +260,9 @@ function NewCampaign() {
   });
 
   const { data: templates = [], isError: templatesError } = useQuery({
-    queryKey: ["conversation-templates"],
-    queryFn: fetchConversationTemplates,
+    queryKey: ["conversation-templates", clientId],
+    queryFn: () => fetchConversationTemplates(clientId),
+    enabled: !!clientId,
     retry: false,
   });
 
@@ -271,12 +272,13 @@ function NewCampaign() {
     mutationFn: (data: { id?: string; name: string; greeting: string; preMessage: string }) =>
       upsertConversationTemplate({
         id: data.id,
+        clientId,
         name: data.name,
         greeting: data.greeting || null,
         pre_message: data.preMessage || null,
       }),
     onSuccess: (tpl) => {
-      queryClient.invalidateQueries({ queryKey: ["conversation-templates"] });
+      queryClient.invalidateQueries({ queryKey: ["conversation-templates", clientId] });
       setSelectedTemplateId(tpl.id);
       setWhatsappMessage(tpl.pre_message ?? "");
       setWhatsappGreeting(tpl.greeting ?? "");
@@ -332,6 +334,9 @@ function NewCampaign() {
     const c = clients.find((cl) => cl.id === id);
     setPageId(c?.meta_page_id ?? "");
     setWhatsappNumber(c?.meta_whatsapp_number ?? "");
+    setSelectedTemplateId("");
+    setWhatsappMessage("");
+    setWhatsappGreeting("");
   };
 
   const handleBaseCampaignChange = (id: string) => {

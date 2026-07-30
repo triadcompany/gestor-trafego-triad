@@ -716,6 +716,7 @@ export async function deleteReport(id: string): Promise<void> {
 
 export interface ConversationTemplate {
   id: string;
+  client_id: string | null;
   name: string;
   greeting: string | null;
   pre_message: string | null;
@@ -725,6 +726,7 @@ export interface ConversationTemplate {
 function toTemplate(row: typeof conversationTemplates.$inferSelect): ConversationTemplate {
   return {
     id: row.id,
+    client_id: row.clientId,
     name: row.name,
     greeting: row.greeting,
     pre_message: row.preMessage,
@@ -732,19 +734,26 @@ function toTemplate(row: typeof conversationTemplates.$inferSelect): Conversatio
   };
 }
 
-const _fetchConversationTemplates = createServerFn({ method: "GET" }).handler(async () => {
-  const rows = await db.select().from(conversationTemplates).orderBy(conversationTemplates.name);
-  return rows.map(toTemplate);
-});
+const _fetchConversationTemplates = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async ({ data }) => {
+    const rows = await db
+      .select()
+      .from(conversationTemplates)
+      .where(eq(conversationTemplates.clientId, data.clientId))
+      .orderBy(conversationTemplates.name);
+    return rows.map(toTemplate);
+  });
 
-export async function fetchConversationTemplates(): Promise<ConversationTemplate[]> {
-  return _fetchConversationTemplates();
+export async function fetchConversationTemplates(clientId: string): Promise<ConversationTemplate[]> {
+  return _fetchConversationTemplates({ data: { clientId } });
 }
 
 const _upsertConversationTemplate = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       id: z.string().optional(),
+      clientId: z.string(),
       name: z.string(),
       greeting: z.string().nullable().optional(),
       pre_message: z.string().nullable().optional(),
@@ -753,6 +762,7 @@ const _upsertConversationTemplate = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const values = {
       ...(data.id ? { id: data.id } : {}),
+      clientId: data.clientId,
       name: data.name,
       greeting: data.greeting ?? null,
       preMessage: data.pre_message ?? null,
@@ -767,6 +777,7 @@ const _upsertConversationTemplate = createServerFn({ method: "POST" })
 
 export async function upsertConversationTemplate(template: {
   id?: string;
+  clientId: string;
   name: string;
   greeting?: string | null;
   pre_message?: string | null;

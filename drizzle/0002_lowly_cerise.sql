@@ -1,0 +1,2 @@
+ALTER TABLE "conversation_templates" ADD COLUMN "client_id" uuid;--> statement-breakpoint
+ALTER TABLE "conversation_templates" ADD CONSTRAINT "conversation_templates_client_id_clients_id_fk" FOREIGN KEY ("client_id") REFERENCES "public"."clients"("id") ON DELETE cascade ON UPDATE no action;

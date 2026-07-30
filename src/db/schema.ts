@@ -207,6 +207,7 @@ export const clientTags = pgTable(
 
 export const conversationTemplates = pgTable("conversation_templates", {
   id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   greeting: text("greeting"),
   preMessage: text("pre_message"),
