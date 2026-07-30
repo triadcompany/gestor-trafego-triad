@@ -2083,6 +2083,7 @@ export interface CreateFromScratchOptions {
   placements: { facebook: boolean; instagram: boolean };
   fbPositions?: string[];
   igPositions?: string[];
+  bidAmount?: number; // BRL — limite de lance, só usado quando placementMode === "manual"
   token: string;
   campaignType?: "engagement" | "sales";
   instagramActorId?: string;
@@ -2100,13 +2101,16 @@ export async function createCampaignFromScratch(
 ): Promise<{ campaignId: string; adSetId: string }> {
   const objective = opts.campaignType === "sales" ? "OUTCOME_SALES" : "OUTCOME_ENGAGEMENT";
 
+  const useManualBid = opts.placementMode === "manual" && !!opts.bidAmount;
+
   const campaign = await postMeta(`${opts.adAccountId}/campaigns`, {
     name: opts.name,
     objective,
     status: "PAUSED",
     special_ad_categories: "[]",
     daily_budget: String(Math.round(opts.dailyBudget * 100)),
-    bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+    bid_strategy: useManualBid ? "LOWEST_COST_WITH_BID_CAP" : "LOWEST_COST_WITHOUT_CAP",
+    ...(useManualBid ? { bid_amount: String(Math.round(opts.bidAmount! * 100)) } : {}),
     access_token: opts.token,
   }) as { id: string };
 

@@ -115,6 +115,7 @@ function NewCampaign() {
   const [locations, setLocations] = useState<SelectedLocation[]>([]);
   const [interests, setInterests] = useState<MetaInterest[]>([]);
   const [placementMode, setPlacementMode] = useState<"advantage_plus" | "manual">("advantage_plus");
+  const [bidAmount, setBidAmount] = useState<number | "">("");
   const [platforms, setPlatforms] = useState({ facebook: true, instagram: true });
   const [fbPositions, setFbPositions] = useState(["feed", "story"]);
   const [igPositions, setIgPositions] = useState(["stream", "story"]);
@@ -453,6 +454,7 @@ function NewCampaign() {
           placements: platforms,
           fbPositions: platforms.facebook ? fbPositions : [],
           igPositions: platforms.instagram ? igPositions : [],
+          bidAmount: placementMode === "manual" && bidAmount !== "" ? bidAmount : undefined,
           campaignType,
           instagramActorId,
           targeting: { ageMin, ageMax, genderMode, locations, interests },
@@ -752,6 +754,46 @@ function NewCampaign() {
                   </div>
 
                   <div className="space-y-2">
+                    <Label>Configuração</Label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPlacementMode("advantage_plus")}
+                        className={`flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                          placementMode === "advantage_plus" ? "border-primary bg-primary/5" : "border-border"
+                        }`}
+                      >
+                        <div className="font-medium">Automático <span className="text-xs text-muted-foreground font-normal">(recomendado)</span></div>
+                        <div className="text-xs text-muted-foreground mt-0.5">Posicionamentos Advantage+ e lance automático — configuração simplificada da Meta</div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPlacementMode("manual")}
+                        className={`flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                          placementMode === "manual" ? "border-primary bg-primary/5" : "border-border"
+                        }`}
+                      >
+                        <div className="font-medium">Manual</div>
+                        <div className="text-xs text-muted-foreground mt-0.5">Você escolhe posicionamentos e pode definir um limite de lance</div>
+                      </button>
+                    </div>
+                  </div>
+
+                  {placementMode === "manual" && (
+                    <div className="space-y-2">
+                      <Label>Limite de lance (R$) <span className="text-muted-foreground font-normal text-xs ml-1">opcional</span></Label>
+                      <Input
+                        type="number"
+                        value={bidAmount}
+                        onChange={(e) => setBidAmount(e.target.value === "" ? "" : Number(e.target.value))}
+                        min={0}
+                        step={0.5}
+                        placeholder="Deixe em branco para lance automático"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
                     <Label>Orçamento diário (R$)</Label>
                     <Input
                       type="number"
@@ -889,28 +931,9 @@ function NewCampaign() {
             <Card className="p-5 space-y-4">
               <SectionTitle>Posicionamentos</SectionTitle>
 
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPlacementMode("advantage_plus")}
-                  className={`flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                    placementMode === "advantage_plus" ? "border-primary bg-primary/5" : "border-border"
-                  }`}
-                >
-                  <div className="font-medium">Advantage+ <span className="text-xs text-muted-foreground font-normal">(recomendado)</span></div>
-                  <div className="text-xs text-muted-foreground mt-0.5">A Meta escolhe os melhores posicionamentos automaticamente</div>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPlacementMode("manual")}
-                  className={`flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
-                    placementMode === "manual" ? "border-primary bg-primary/5" : "border-border"
-                  }`}
-                >
-                  <div className="font-medium">Manual</div>
-                  <div className="text-xs text-muted-foreground mt-0.5">Você escolhe onde o anúncio aparece</div>
-                </button>
-              </div>
+              {placementMode === "advantage_plus" && (
+                <p className="text-xs text-muted-foreground">Automático (Advantage+) — definido no Passo 1.</p>
+              )}
 
               {placementMode === "manual" && (
               <div className="flex gap-4">
