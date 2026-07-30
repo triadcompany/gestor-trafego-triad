@@ -880,18 +880,9 @@ export async function updateAdCreative(
   token: string,
   clientWhatsappNumber?: string // from client record — most reliable source
 ): Promise<void> {
-  // Try direct update on the creative first (works for drafts)
-  try {
-    const params: Record<string, string> = {};
-    if (updates.body !== undefined) params.body = updates.body;
-    if (updates.title !== undefined) params.title = updates.title;
-    if (updates.description !== undefined) params.description = updates.description;
-    await updateMetaObject(creative.id, params, token);
-    return;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : "";
-    if (!msg.includes("100")) throw err;
-  }
+  // NOTA: não tentar PATCH direto em creative.id — a Meta aceita o POST e responde sucesso
+  // mesmo sem aplicar nada (criativos já usados em anúncio são efetivamente imutáveis pra
+  // body/title/description). Só recriar o criativo (estratégias abaixo) garante a mudança.
 
   const accountId = await fetchAdAccountId(adId, token);
 
