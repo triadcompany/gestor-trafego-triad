@@ -9,7 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Input } from "@/components/ui/input";
-import { ArrowUp, ArrowDown, SlidersHorizontal, Check, X, Copy } from "lucide-react";
+import { ArrowUp, ArrowDown, SlidersHorizontal, Check, X, Copy, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchAllAdSets,
@@ -231,6 +231,21 @@ export function CampaignsExplorer({
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao duplicar anúncio"),
   });
 
+  const nameMutation = useMutation({
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const token = await getMetaToken();
+      if (!token) throw new Error("Token não encontrado");
+      await updateMetaObject(id, { name }, token);
+    },
+    onSuccess: () => {
+      toast.success("Nome atualizado.");
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      queryClient.invalidateQueries({ queryKey: ["explorer-adsets"] });
+      queryClient.invalidateQueries({ queryKey: ["explorer-ads"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao renomear"),
+  });
+
   const toggleCampaignSelected = (id: string) => {
     setSelectedCampaignIds((prev) => {
       const next = new Set(prev);
@@ -330,6 +345,7 @@ export function CampaignsExplorer({
                       statusMutation.mutate({ id: row.id, status: row.status === "ACTIVE" ? "PAUSED" : "ACTIVE" })
                     }
                     onSaveBudget={showBudgetColumn ? (value) => budgetMutation.mutate({ id: row.id, dailyBudget: value }) : undefined}
+                    onSaveName={(name) => nameMutation.mutate({ id: row.id, name })}
                     clientId={clientId}
                     onDuplicateAdSet={level === "adset" ? () => duplicateAdSetMutation.mutate(row) : undefined}
                     onDuplicateAd={level === "ad" ? () => duplicateAdMutation.mutate(row) : undefined}
@@ -425,6 +441,7 @@ function ExplorerRow({
   onClick,
   onToggleStatus,
   onSaveBudget,
+  onSaveName,
   clientId,
   onDuplicateAdSet,
   onDuplicateAd,
@@ -439,6 +456,7 @@ function ExplorerRow({
   onClick: () => void;
   onToggleStatus: () => void;
   onSaveBudget?: (value: number) => void;
+  onSaveName: (name: string) => void;
   clientId: string;
   onDuplicateAdSet?: () => void;
   onDuplicateAd?: () => void;
@@ -446,6 +464,8 @@ function ExplorerRow({
 }) {
   const [editingBudget, setEditingBudget] = useState(false);
   const [budgetInput, setBudgetInput] = useState(row.daily_budget ?? 0);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(row.name);
   const isActive = row.status === "ACTIVE";
 
   const cplColor =
@@ -469,6 +489,9 @@ function ExplorerRow({
         );
       case "daily_budget":
         if (level === "ad") return "—";
+        if (level === "campaign" && row.daily_budget === null) {
+          return <span className="text-muted-foreground" title="Campanha usa orçamento por conjunto, não um valor único">Por conjunto</span>;
+        }
         if (!onSaveBudget) return row.daily_budget !== null ? brl(row.daily_budget) : "—";
         return editingBudget ? (
           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
@@ -530,8 +553,37 @@ function ExplorerRow({
           <Checkbox checked={selected} onCheckedChange={() => onToggleSelected()} onClick={(e) => e.stopPropagation()} />
         )}
       </TableCell>
-      <TableCell className="font-medium max-w-[220px] truncate" title={row.name}>
-        {row.name}
+      <TableCell className="font-medium max-w-[220px]" onClick={(e) => editingName && e.stopPropagation()}>
+        {editingName ? (
+          <div className="flex items-center gap-1">
+            <Input
+              value={nameInput}
+              onChange={(e) => setNameInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") { onSaveName(nameInput); setEditingName(false); }
+                if (e.key === "Escape") { setNameInput(row.name); setEditingName(false); }
+              }}
+              className="h-7 text-sm"
+              autoFocus
+            />
+            <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => { onSaveName(nameInput); setEditingName(false); }}>
+              <Check className="h-3.5 w-3.5" />
+            </Button>
+            <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => { setNameInput(row.name); setEditingName(false); }}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ) : (
+          <div className="flex items-center gap-1.5 group">
+            <span className="truncate" title={row.name}>{row.name}</span>
+            <button
+              className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground hover:text-foreground"
+              onClick={(e) => { e.stopPropagation(); setNameInput(row.name); setEditingName(true); }}
+            >
+              <Pencil className="h-3 w-3" />
+            </button>
+          </div>
+        )}
       </TableCell>
       {columns.map((col) => (
         <TableCell key={col} className={col === "status" ? "" : "text-right tabular-nums"}>
