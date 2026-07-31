@@ -359,7 +359,7 @@ function EditCampaign() {
           token,
           whatsappNumber,
           (msg) => toast.loading(msg, { id: pid }),
-          undefined,
+          { body: primaryText, title: headline, description: adDescription },
           conversationOverrides
         );
         toast.dismiss(pid);
