@@ -563,56 +563,81 @@ function ClientDetail() {
             </div>
           </div>
 
-          {compareEnabled && (
-            <div className="flex flex-col gap-2 mb-4">
-              {(
-                [
-                  {
-                    label: periodLabel,
-                    spend: periodSpend,
-                    leads: periodLeads,
-                    forms: periodForms,
-                    cpl: periodCpl,
-                    impressions: periodImpressions,
-                    clicks: periodClicks,
-                    ctr: periodCtr,
-                    cpm: periodCpm,
-                  },
-                  {
-                    label: periodLabelB,
-                    spend: periodSpendB,
-                    leads: periodLeadsB,
-                    forms: periodFormsB,
-                    cpl: periodCplB,
-                    impressions: periodImpressionsB,
-                    clicks: periodClicksB,
-                    ctr: periodCtrB,
-                    cpm: periodCpmB,
-                  },
-                ]
-              ).map((p) => (
-                <div key={p.label} className="rounded-xl border border-border bg-card p-3 flex items-center gap-1 overflow-x-auto">
-                  <span className="text-xs font-medium text-muted-foreground mr-3 shrink-0 min-w-[100px]">{p.label}</span>
-                  <TotalStat label="Gasto" value={p.spend > 0 ? brl(p.spend) : "—"} />
-                  <Divider />
-                  <TotalStat
-                    label="Leads"
-                    value={p.leads > 0 || p.forms > 0 ? `${p.leads}${p.forms > 0 ? ` +${p.forms}f` : ""}` : "—"}
-                  />
-                  <Divider />
-                  <TotalStat label="CPL médio" value={p.cpl !== null ? brl(p.cpl) : "—"} />
-                  <Divider />
-                  <TotalStat label="Impressões" value={p.impressions > 0 ? p.impressions.toLocaleString("pt-BR") : "—"} />
-                  <Divider />
-                  <TotalStat label="Cliques" value={p.clicks > 0 ? p.clicks.toLocaleString("pt-BR") : "—"} />
-                  <Divider />
-                  <TotalStat label="CTR médio" value={p.ctr !== null ? `${p.ctr.toFixed(2)}%` : "—"} />
-                  <Divider />
-                  <TotalStat label="CPM médio" value={p.cpm !== null ? brl(p.cpm) : "—"} />
-                </div>
-              ))}
-            </div>
-          )}
+          {compareEnabled && (() => {
+            const periods = [
+              {
+                label: periodLabel,
+                spend: periodSpend,
+                leads: periodLeads,
+                forms: periodForms,
+                cpl: periodCpl,
+                impressions: periodImpressions,
+                clicks: periodClicks,
+                ctr: periodCtr,
+                cpm: periodCpm,
+              },
+              {
+                label: periodLabelB,
+                spend: periodSpendB,
+                leads: periodLeadsB,
+                forms: periodFormsB,
+                cpl: periodCplB,
+                impressions: periodImpressionsB,
+                clicks: periodClicksB,
+                ctr: periodCtrB,
+                cpm: periodCpmB,
+              },
+            ];
+            const direction = {
+              leads: "higher",
+              cpl: "lower",
+              ctr: "higher",
+              cpm: "lower",
+            } as const;
+            const isBest = (metric: keyof typeof direction, value: number | null, idx: number) => {
+              const other = periods[1 - idx][metric];
+              if (value === null || other === null || other === value) return false;
+              return direction[metric] === "higher" ? value > other : value < other;
+            };
+            return (
+              <div className="flex flex-col gap-2 mb-4">
+                {periods.map((p, idx) => (
+                  <div key={p.label} className="rounded-xl border border-border bg-card p-3 flex items-center gap-1 overflow-x-auto">
+                    <span className="text-xs font-medium text-muted-foreground mr-3 shrink-0 min-w-[100px]">{p.label}</span>
+                    <TotalStat label="Gasto" value={p.spend > 0 ? brl(p.spend) : "—"} />
+                    <Divider />
+                    <TotalStat
+                      label="Leads"
+                      value={p.leads > 0 || p.forms > 0 ? `${p.leads}${p.forms > 0 ? ` +${p.forms}f` : ""}` : "—"}
+                      valueClass={isBest("leads", p.leads, idx) ? "text-status-on-target" : ""}
+                    />
+                    <Divider />
+                    <TotalStat
+                      label="CPL médio"
+                      value={p.cpl !== null ? brl(p.cpl) : "—"}
+                      valueClass={isBest("cpl", p.cpl, idx) ? "text-status-on-target" : ""}
+                    />
+                    <Divider />
+                    <TotalStat label="Impressões" value={p.impressions > 0 ? p.impressions.toLocaleString("pt-BR") : "—"} />
+                    <Divider />
+                    <TotalStat label="Cliques" value={p.clicks > 0 ? p.clicks.toLocaleString("pt-BR") : "—"} />
+                    <Divider />
+                    <TotalStat
+                      label="CTR médio"
+                      value={p.ctr !== null ? `${p.ctr.toFixed(2)}%` : "—"}
+                      valueClass={isBest("ctr", p.ctr, idx) ? "text-status-on-target" : ""}
+                    />
+                    <Divider />
+                    <TotalStat
+                      label="CPM médio"
+                      value={p.cpm !== null ? brl(p.cpm) : "—"}
+                      valueClass={isBest("cpm", p.cpm, idx) ? "text-status-on-target" : ""}
+                    />
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
 
           {insightsLoading ? (
             <Skeleton className="h-72 w-full" />
