@@ -417,9 +417,12 @@ export async function fetchDailyInsights(
 export type DatePreset =
   | "today"
   | "yesterday"
+  | "last_3d"
+  | "last_7d"
   | "this_week_mon_today"
   | "last_week_mon_sun"
   | "this_month"
+  | "last_month"
   | "maximum";
 
 export interface CustomDateRange {

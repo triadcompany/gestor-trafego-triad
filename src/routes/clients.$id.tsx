@@ -70,9 +70,12 @@ export const Route = createFileRoute("/clients/$id")({
 const DATE_PRESETS: { value: DatePreset | "custom"; label: string }[] = [
   { value: "today", label: "Hoje" },
   { value: "yesterday", label: "Ontem" },
+  { value: "last_3d", label: "Últimos 3 dias" },
+  { value: "last_7d", label: "Últimos 7 dias" },
   { value: "this_week_mon_today", label: "Esta semana" },
   { value: "last_week_mon_sun", label: "Semana passada" },
   { value: "this_month", label: "Este mês" },
+  { value: "last_month", label: "Mês passado" },
   { value: "maximum", label: "Máximo" },
   { value: "custom", label: "Personalizado" },
 ];
@@ -80,9 +83,12 @@ const DATE_PRESETS: { value: DatePreset | "custom"; label: string }[] = [
 const PERIOD_LABELS: Record<DatePreset | "custom", string> = {
   today: "hoje",
   yesterday: "ontem",
+  last_3d: "últimos 3 dias",
+  last_7d: "últimos 7 dias",
   this_week_mon_today: "esta semana",
   last_week_mon_sun: "semana passada",
   this_month: "este mês",
+  last_month: "mês passado",
   maximum: "todo o período",
   custom: "período personalizado",
 };
