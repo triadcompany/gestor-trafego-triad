@@ -548,9 +548,9 @@ function ClientDetail() {
               {(
                 [
                   { key: "cpl", icon: TrendingUp, label: "CPL" },
-                  { key: "spend", icon: DollarSign, label: "Gasto" },
                   { key: "leads", icon: UsersIcon, label: "Leads" },
                   { key: "forms", icon: ClipboardList, label: "Forms" },
+                  { key: "spend", icon: DollarSign, label: "Gasto" },
                 ] as const
               ).map(({ key, icon: Icon, label }) => (
                 <button
