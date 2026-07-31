@@ -496,7 +496,7 @@ function ClientDetail() {
                   <Line
                     type="monotone"
                     dataKey={chartMetric}
-                    stroke={chartMetric === "cpl" ? "var(--primary)" : chartMetric === "spend" ? "hsl(var(--chart-2))" : chartMetric === "leads" ? "hsl(var(--chart-3))" : "hsl(var(--chart-4))"}
+                    stroke={chartMetric === "cpl" ? "var(--primary)" : chartMetric === "spend" ? "var(--chart-2)" : chartMetric === "leads" ? "var(--chart-3)" : "var(--chart-4)"}
                     strokeWidth={2}
                     dot={{ r: 2 }}
                     activeDot={{ r: 5 }}
