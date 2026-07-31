@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -12,6 +12,13 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   ArrowLeft,
   Check,
   X,
@@ -19,8 +26,14 @@ import {
   Loader2,
   Image,
   Video,
+  AlertCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import {
+  fetchConversationTemplates,
+  upsertConversationTemplate,
+  type ConversationTemplate,
+} from "@/lib/queries";
 import {
   fetchBaseCampaignPrefill,
   getMetaToken,
@@ -100,6 +113,7 @@ function EditCampaign() {
   const { id: campaignId } = Route.useParams();
   const { clientId } = Route.useSearch();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -123,6 +137,15 @@ function EditCampaign() {
   const [adDescription, setAdDescription] = useState("");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+
+  // Configuração da conversa
+  const [whatsappMessage, setWhatsappMessage] = useState("");
+  const [whatsappGreeting, setWhatsappGreeting] = useState("");
+  const [templateMode, setTemplateMode] = useState<"select" | "new" | "edit">("select");
+  const [selectedTemplateId, setSelectedTemplateId] = useState("");
+  const [tplName, setTplName] = useState("");
+  const [tplGreeting, setTplGreeting] = useState("");
+  const [tplPreMessage, setTplPreMessage] = useState("");
   const [existingThumbnailUrl, setExistingThumbnailUrl] = useState<string | undefined>();
   const [existingVideoId, setExistingVideoId] = useState<string | undefined>();
   const [existingImageHash, setExistingImageHash] = useState<string | undefined>();
@@ -169,6 +192,74 @@ function EditCampaign() {
     setWhatsappNumber(prefill.whatsappNumber || undefined);
     setPrefillLoaded(true);
   }, [prefill, prefillLoaded, campaignId]);
+
+  const { data: templates = [], isError: templatesError } = useQuery({
+    queryKey: ["conversation-templates", clientId],
+    queryFn: () => fetchConversationTemplates(clientId ?? ""),
+    enabled: !!clientId,
+    retry: false,
+  });
+
+  const selectedTemplate = templates.find((t: ConversationTemplate) => t.id === selectedTemplateId) ?? null;
+
+  const saveTemplateMutation = useMutation({
+    mutationFn: (data: { id?: string; name: string; greeting: string; preMessage: string }) =>
+      upsertConversationTemplate({
+        id: data.id,
+        clientId: clientId ?? "",
+        name: data.name,
+        greeting: data.greeting || null,
+        pre_message: data.preMessage || null,
+      }),
+    onSuccess: (tpl) => {
+      queryClient.invalidateQueries({ queryKey: ["conversation-templates", clientId] });
+      setSelectedTemplateId(tpl.id);
+      setWhatsappMessage(tpl.pre_message ?? "");
+      setWhatsappGreeting(tpl.greeting ?? "");
+      setTemplateMode("select");
+      toast.success("Modelo salvo.");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar modelo"),
+  });
+
+  const handleTemplateSelect = (id: string) => {
+    setSelectedTemplateId(id);
+    const t = templates.find((t: ConversationTemplate) => t.id === id);
+    if (t) {
+      setWhatsappMessage(t.pre_message ?? "");
+      setWhatsappGreeting(t.greeting ?? "");
+    }
+  };
+
+  const openNewTemplate = () => {
+    setTplName(""); setTplGreeting(""); setTplPreMessage("");
+    setTemplateMode("new");
+  };
+
+  const openEditTemplate = () => {
+    if (!selectedTemplate) return;
+    setTplName(selectedTemplate.name);
+    setTplGreeting(selectedTemplate.greeting ?? "");
+    setTplPreMessage(selectedTemplate.pre_message ?? "");
+    setTemplateMode("edit");
+  };
+
+  const openDuplicateTemplate = () => {
+    if (!selectedTemplate) return;
+    setTplName(`${selectedTemplate.name} — Cópia`);
+    setTplGreeting(selectedTemplate.greeting ?? "");
+    setTplPreMessage(selectedTemplate.pre_message ?? "");
+    setTemplateMode("new");
+  };
+
+  const handleSaveTemplate = () => {
+    saveTemplateMutation.mutate({
+      id: templateMode === "edit" ? selectedTemplateId : undefined,
+      name: tplName,
+      greeting: tplGreeting,
+      preMessage: tplPreMessage,
+    });
+  };
 
   const handleFileSelect = useCallback((file: File) => {
     setMediaFile(file);
@@ -255,6 +346,10 @@ function EditCampaign() {
       const token = await getMetaToken();
       if (!token) throw new Error("Token Meta não encontrado.");
 
+      const conversationOverrides = whatsappGreeting
+        ? { whatsappGreeting, whatsappMessage }
+        : undefined;
+
       if (mediaFile) {
         const pid = "creative-progress";
         await swapAdCreativeMedia(
@@ -263,7 +358,9 @@ function EditCampaign() {
           mediaFile,
           token,
           whatsappNumber,
-          (msg) => toast.loading(msg, { id: pid })
+          (msg) => toast.loading(msg, { id: pid }),
+          undefined,
+          conversationOverrides
         );
         toast.dismiss(pid);
       } else {
@@ -273,7 +370,8 @@ function EditCampaign() {
           creative,
           { body: primaryText, title: headline, description: adDescription },
           token,
-          whatsappNumber
+          whatsappNumber,
+          conversationOverrides
         );
       }
     },
@@ -595,6 +693,105 @@ function EditCampaign() {
               </div>
             </Card>
 
+            <Card className="p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <SectionTitle>Configuração da conversa</SectionTitle>
+                {templateMode === "select" && (
+                  <button
+                    type="button"
+                    onClick={openNewTemplate}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    + Nova
+                  </button>
+                )}
+              </div>
+
+              {templateMode === "select" ? (
+                <>
+                  <div className="flex gap-2">
+                    <div className="flex-1">
+                      <Select value={selectedTemplateId} onValueChange={handleTemplateSelect}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecionar modelo salvo..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {templates.map((t: ConversationTemplate) => (
+                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {selectedTemplate && (
+                      <div className="flex gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={openEditTemplate}
+                          className="text-xs px-2.5 py-1.5 border border-border rounded-md text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                        >
+                          Editar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={openDuplicateTemplate}
+                          className="text-xs px-2.5 py-1.5 border border-border rounded-md text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                        >
+                          Duplicar
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  {templatesError ? (
+                    <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/10 rounded-md p-2.5">
+                      <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                      <span>Não foi possível carregar os templates de conversa. Tente novamente em instantes.</span>
+                    </div>
+                  ) : selectedTemplate ? (
+                    <div className="bg-muted/40 rounded-lg p-3 space-y-2.5">
+                      {selectedTemplate.greeting && (
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Saudação</p>
+                          <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">{selectedTemplate.greeting}</p>
+                        </div>
+                      )}
+                      {selectedTemplate.pre_message && (
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Mensagem pronta</p>
+                          <p className="text-xs text-foreground/90">{selectedTemplate.pre_message}</p>
+                        </div>
+                      )}
+                      {!selectedTemplate.greeting && !selectedTemplate.pre_message && (
+                        <p className="text-xs text-muted-foreground">Modelo sem conteúdo.</p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-muted-foreground">Sem modelo — a mensagem de boas-vindas atual do anúncio é mantida.</p>
+                  )}
+                </>
+              ) : (
+                <TemplateForm
+                  name={tplName}
+                  greeting={tplGreeting}
+                  preMessage={tplPreMessage}
+                  onNameChange={setTplName}
+                  onGreetingChange={setTplGreeting}
+                  onPreMessageChange={setTplPreMessage}
+                  onSave={handleSaveTemplate}
+                  onCancel={() => setTemplateMode("select")}
+                  saving={saveTemplateMutation.isPending}
+                />
+              )}
+
+              <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/40 rounded-lg p-3">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+                <span>
+                  Abrirá o WhatsApp:{" "}
+                  <strong className="text-foreground">{whatsappNumber || "não configurado"}</strong>
+                </span>
+              </div>
+            </Card>
+
             <div className="flex justify-between gap-3">
               <Button variant="outline" onClick={() => setStep(2)}>← Voltar</Button>
               <div className="flex gap-2">
@@ -615,6 +812,58 @@ function EditCampaign() {
         )}
       </div>
     </AppShell>
+  );
+}
+
+// ── Conversation template form ────────────────────────────────
+
+function TemplateForm({
+  name, greeting, preMessage,
+  onNameChange, onGreetingChange, onPreMessageChange,
+  onSave, onCancel, saving,
+}: {
+  name: string; greeting: string; preMessage: string;
+  onNameChange: (v: string) => void;
+  onGreetingChange: (v: string) => void;
+  onPreMessageChange: (v: string) => void;
+  onSave: () => void; onCancel: () => void; saving: boolean;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="space-y-1.5">
+        <Label>Nome do modelo</Label>
+        <Input value={name} onChange={(e) => onNameChange(e.target.value)} placeholder="Ex: Hyundai HB20 2025" />
+      </div>
+      <div className="space-y-1.5">
+        <Label>
+          Saudação
+          <span className="text-muted-foreground font-normal text-xs ml-1.5">opcional — mensagem que a empresa envia</span>
+        </Label>
+        <Textarea
+          value={greeting}
+          onChange={(e) => onGreetingChange(e.target.value)}
+          placeholder={"🚗 Bem-vindo! Somos especializados em..."}
+          className="min-h-[80px] resize-none text-sm"
+        />
+      </div>
+      <div className="space-y-1.5">
+        <Label>
+          Mensagem pronta
+          <span className="text-muted-foreground font-normal text-xs ml-1.5">opcional — enviada pelo cliente</span>
+        </Label>
+        <Input
+          value={preMessage}
+          onChange={(e) => onPreMessageChange(e.target.value)}
+          placeholder="Ex: Olá, tenho interesse no HB20 2025."
+        />
+      </div>
+      <div className="flex gap-2">
+        <Button size="sm" onClick={onSave} disabled={!name.trim() || saving}>
+          {saving ? <><Loader2 className="h-3 w-3 mr-1 animate-spin" />Salvando...</> : "Salvar"}
+        </Button>
+        <Button size="sm" variant="outline" onClick={onCancel}>Cancelar</Button>
+      </div>
+    </div>
   );
 }
 

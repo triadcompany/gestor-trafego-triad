@@ -616,6 +616,7 @@ export interface MetaAdCreative {
         type: string;
         value?: { app_destination?: string; whatsapp_number?: string; message?: string; link?: string };
       };
+      page_welcome_message?: unknown;
     };
     video_data?: {
       video_id?: string;
@@ -626,6 +627,7 @@ export interface MetaAdCreative {
         type: string;
         value?: { app_destination?: string; whatsapp_number?: string };
       };
+      page_welcome_message?: unknown;
     };
   };
   asset_feed_spec?: {
@@ -702,8 +704,8 @@ export async function fetchAdWithCreative(adId: string, token: string): Promise<
 
   // Step 2: get object_story_spec — try via ad endpoint (different access than creative endpoint)
   for (const fields of [
-    "creative{object_story_spec{page_id,video_data{video_id,message,title,description,call_to_action}}}",
-    "creative{object_story_spec{page_id,link_data{image_hash,link,message,name,description,call_to_action}}}",
+    "creative{object_story_spec{page_id,video_data{video_id,message,title,description,call_to_action,page_welcome_message}}}",
+    "creative{object_story_spec{page_id,link_data{image_hash,link,message,name,description,call_to_action,page_welcome_message}}}",
   ]) {
     try {
       const json = await get(fields);
@@ -821,7 +823,8 @@ export async function swapAdCreativeMedia(
   token: string,
   clientWhatsappNumber?: string,
   onProgress?: (msg: string) => void,
-  textOverrides?: { body?: string; title?: string; description?: string }
+  textOverrides?: { body?: string; title?: string; description?: string },
+  conversationOverrides?: { whatsappGreeting?: string; whatsappMessage?: string }
 ): Promise<void> {
   const accountId = await fetchAdAccountId(adId, token);
   const isVideo = !!(creative.video_id || creative.object_story_spec?.video_data?.video_id);
@@ -831,6 +834,9 @@ export async function swapAdCreativeMedia(
   const primaryText = textOverrides?.body ?? creative.body ?? creative.object_story_spec?.video_data?.message ?? creative.object_story_spec?.link_data?.message ?? "";
   const title = textOverrides?.title ?? creative.title ?? creative.object_story_spec?.video_data?.title ?? creative.object_story_spec?.link_data?.name ?? "";
   const description = textOverrides?.description ?? creative.description ?? "";
+  const pageWelcomeMessage = conversationOverrides?.whatsappGreeting
+    ? buildWelcomeMessage(conversationOverrides.whatsappGreeting, conversationOverrides.whatsappMessage || conversationOverrides.whatsappGreeting)
+    : undefined;
 
   if (!pageId) throw new Error("page_id não encontrado no criativo.");
 
@@ -851,6 +857,7 @@ export async function swapAdCreativeMedia(
           ...(description ? { description } : {}),
           ...(thumbUrl ? { image_url: thumbUrl } : {}),
           call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: resolvedWa } },
+          ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
         },
       }),
       access_token: token,
@@ -875,6 +882,7 @@ export async function swapAdCreativeMedia(
         ...(waLink
           ? { link: waLink, call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: resolvedWa } } }
           : {}),
+        ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
       },
     }),
     access_token: token,
@@ -887,13 +895,19 @@ export async function updateAdCreative(
   creative: MetaAdCreative,
   updates: { body?: string; title?: string; description?: string },
   token: string,
-  clientWhatsappNumber?: string // from client record — most reliable source
+  clientWhatsappNumber?: string, // from client record — most reliable source
+  conversationOverrides?: { whatsappGreeting?: string; whatsappMessage?: string }
 ): Promise<void> {
   // NOTA: não tentar PATCH direto em creative.id — a Meta aceita o POST e responde sucesso
   // mesmo sem aplicar nada (criativos já usados em anúncio são efetivamente imutáveis pra
   // body/title/description). Só recriar o criativo (estratégias abaixo) garante a mudança.
 
   const accountId = await fetchAdAccountId(adId, token);
+  // Sem override explícito, preserva a page_welcome_message que já veio no criativo original
+  // (senão ela some silenciosamente toda vez que o criativo é recriado por uma edição de texto/mídia).
+  const pageWelcomeMessage = conversationOverrides?.whatsappGreeting
+    ? buildWelcomeMessage(conversationOverrides.whatsappGreeting, conversationOverrides.whatsappMessage || conversationOverrides.whatsappGreeting)
+    : undefined;
 
   // Try via object_story_spec — only if we have the required media reference
   const spec = creative.object_story_spec;
@@ -911,6 +925,7 @@ export async function updateAdCreative(
             ...(updates.body !== undefined ? { message: updates.body } : {}),
             ...(updates.title !== undefined ? { title: updates.title } : {}),
             ...(updates.description !== undefined ? { description: updates.description } : {}),
+            ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
           },
         }
       : {
@@ -920,6 +935,7 @@ export async function updateAdCreative(
             ...(updates.body !== undefined ? { message: updates.body } : {}),
             ...(updates.title !== undefined ? { name: updates.title } : {}),
             ...(updates.description !== undefined ? { description: updates.description } : {}),
+            ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
           },
         };
 
@@ -971,6 +987,9 @@ export async function updateAdCreative(
           ...(updates.description ? { description: updates.description } : {}),
           ...(creative.thumbnail_url ? { image_url: creative.thumbnail_url } : {}),
           call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: resolvedWa } },
+          ...((pageWelcomeMessage ?? creative.object_story_spec?.video_data?.page_welcome_message)
+            ? { page_welcome_message: pageWelcomeMessage ?? creative.object_story_spec?.video_data?.page_welcome_message }
+            : {}),
         },
       }),
       access_token: token,
