@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows } from "lucide-react";
 import {
   Tooltip as UITooltip,
   TooltipContent,
@@ -148,6 +148,11 @@ function ClientDetail() {
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
 
+  const [compareEnabled, setCompareEnabled] = useState(false);
+  const [datePresetB, setDatePresetB] = useState<DatePreset | "custom">("yesterday");
+  const [customSinceB, setCustomSinceB] = useState("");
+  const [customUntilB, setCustomUntilB] = useState("");
+
   const navigate = useNavigate();
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [switcherSearch, setSwitcherSearch] = useState("");
@@ -171,6 +176,14 @@ function ClientDetail() {
   const periodReady = datePreset !== "custom" || !!customRange;
   const metaPreset = datePreset === "custom" ? "today" : datePreset;
 
+  const customRangeB: CustomDateRange | undefined =
+    datePresetB === "custom" && customSinceB && customUntilB
+      ? { since: customSinceB, until: customUntilB }
+      : undefined;
+
+  const periodReadyB = datePresetB !== "custom" || !!customRangeB;
+  const metaPresetB = datePresetB === "custom" ? "today" : datePresetB;
+
   const {
     data: insights = [],
     isLoading: insightsLoading,
@@ -190,6 +203,27 @@ function ClientDetail() {
   const periodForms = insights.reduce((s, h) => s + (h.forms ?? 0), 0);
   const periodCpl =
     periodLeads > 0 ? Math.round((periodSpend / periodLeads) * 100) / 100 : null;
+
+  const { data: insightsB = [] } = useQuery({
+    queryKey: ["insights-b", id, datePresetB, customSinceB, customUntilB],
+    queryFn: async () => {
+      if (!client) return [];
+      const token = await getMetaToken();
+      if (!token) throw new Error("Token não encontrado");
+      return fetchDailyInsights(client.meta_ad_account_id, token, metaPresetB, customRangeB);
+    },
+    enabled: !!client && periodReadyB && compareEnabled,
+  });
+
+  const periodSpendB = insightsB.reduce((s, h) => s + h.spend, 0);
+  const periodLeadsB = insightsB.reduce((s, h) => s + h.leads, 0);
+  const periodCplB =
+    periodLeadsB > 0 ? Math.round((periodSpendB / periodLeadsB) * 100) / 100 : null;
+
+  function pctChange(current: number | null, previous: number | null): number | null {
+    if (current === null || previous === null || previous === 0) return null;
+    return Math.round(((current - previous) / previous) * 1000) / 10;
+  }
 
   const {
     data: campaigns,
@@ -267,6 +301,15 @@ function ClientDetail() {
 
   const metaAdsUrl = `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${client.meta_ad_account_id.replace("act_", "")}`;
   const periodLabel = PERIOD_LABELS[datePreset];
+  const periodLabelB = PERIOD_LABELS[datePresetB];
+
+  const chartData = compareEnabled
+    ? Array.from({ length: Math.max(insights.length, insightsB.length) }, (_, i) => ({
+        dayIndex: `Dia ${i + 1}`,
+        [chartMetric]: insights[i]?.[chartMetric] ?? null,
+        [`${chartMetric}B`]: insightsB[i]?.[chartMetric] ?? null,
+      }))
+    : insights.map((h) => ({ ...h, date: h.date.slice(5) }));
 
   return (
     <AppShell>
@@ -370,6 +413,50 @@ function ClientDetail() {
               </>
             )}
 
+            <Button
+              variant={compareEnabled ? "default" : "outline"}
+              size="sm"
+              className="gap-2"
+              onClick={() => setCompareEnabled((v) => !v)}
+            >
+              <GitCompareArrows className="h-4 w-4" />
+              Comparar período
+            </Button>
+
+            {compareEnabled && (
+              <>
+                <span className="text-muted-foreground text-sm">vs</span>
+                <Select value={datePresetB} onValueChange={(v) => setDatePresetB(v as DatePreset | "custom")}>
+                  <SelectTrigger className="w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {DATE_PRESETS.map((p) => (
+                      <SelectItem key={p.value} value={p.value}>{p.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+
+                {datePresetB === "custom" && (
+                  <>
+                    <Input
+                      type="date"
+                      value={customSinceB}
+                      onChange={(e) => setCustomSinceB(e.target.value)}
+                      className="h-9 text-sm w-36"
+                    />
+                    <span className="text-muted-foreground text-sm">–</span>
+                    <Input
+                      type="date"
+                      value={customUntilB}
+                      onChange={(e) => setCustomUntilB(e.target.value)}
+                      className="h-9 text-sm w-36"
+                    />
+                  </>
+                )}
+              </>
+            )}
+
             <Button variant="outline" size="sm" asChild>
               <a href={metaAdsUrl} target="_blank" rel="noopener noreferrer" className="gap-2">
                 <ExternalLink className="h-4 w-4" />
@@ -445,6 +532,7 @@ function ClientDetail() {
           <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
             <h2 className="text-sm font-medium">
               {chartMetric === "cpl" ? "CPL" : chartMetric === "spend" ? "Gasto" : chartMetric === "leads" ? "Leads" : "Formulários"} — {periodLabel}
+              {compareEnabled && <span className="text-muted-foreground"> vs {periodLabelB}</span>}
             </h2>
             <div className="flex items-center gap-1 rounded-lg border border-border p-1 bg-muted/30">
               {(
@@ -470,6 +558,35 @@ function ClientDetail() {
               ))}
             </div>
           </div>
+
+          {compareEnabled && (
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              {(
+                [
+                  { label: "CPL", current: periodCpl, previous: periodCplB, format: brl, goodDirection: "down" as const },
+                  { label: "Gasto", current: periodSpend, previous: periodSpendB, format: brl, goodDirection: null },
+                  { label: "Leads", current: periodLeads, previous: periodLeadsB, format: (v: number) => String(v), goodDirection: "up" as const },
+                ]
+              ).map(({ label, current, previous, format, goodDirection }) => {
+                const change = pctChange(current, previous);
+                const isGood = change === null || goodDirection === null
+                  ? null
+                  : goodDirection === "down" ? change < 0 : change > 0;
+                return (
+                  <div key={label} className="rounded-xl border border-border bg-card p-3">
+                    <div className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">{label}</div>
+                    <div className="text-lg font-mono font-bold">{current !== null ? format(current) : "—"}</div>
+                    {change !== null && previous !== null && (
+                      <div className={`text-xs font-mono mt-0.5 ${isGood === null ? "text-muted-foreground" : isGood ? "text-status-on-target" : "text-status-critical"}`}>
+                        {change > 0 ? "↑" : change < 0 ? "↓" : "→"} {Math.abs(change)}% vs {format(previous)}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
           {insightsLoading ? (
             <Skeleton className="h-72 w-full" />
           ) : insights.length === 0 ? (
@@ -480,17 +597,17 @@ function ClientDetail() {
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart
-                  data={insights.map((h) => ({ ...h, date: h.date.slice(5) }))}
+                  data={chartData}
                   margin={{ top: 5, right: 12, left: 0, bottom: 5 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="date" stroke="var(--muted-foreground)" fontSize={11} />
+                  <XAxis dataKey={compareEnabled ? "dayIndex" : "date"} stroke="var(--muted-foreground)" fontSize={11} />
                   <YAxis stroke="var(--muted-foreground)" fontSize={11} tickFormatter={(chartMetric === "leads" || chartMetric === "forms") ? undefined : (v) => `R$${v}`} />
                   <ChartTooltip
                     contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
                     formatter={(v: number) => chartMetric === "leads" ? [v, "Leads"] : chartMetric === "forms" ? [v, "Formulários"] : [brl(v), chartMetric === "cpl" ? "CPL" : "Gasto"]}
                   />
-                  {chartMetric === "cpl" && (
+                  {chartMetric === "cpl" && !compareEnabled && (
                     <ReferenceArea y1={client.cpl_min} y2={client.cpl_max} fill="var(--primary)" fillOpacity={0.08} />
                   )}
                   <Line
@@ -502,6 +619,18 @@ function ClientDetail() {
                     activeDot={{ r: 5 }}
                     connectNulls
                   />
+                  {compareEnabled && (
+                    <Line
+                      type="monotone"
+                      dataKey={`${chartMetric}B`}
+                      stroke="var(--muted-foreground)"
+                      strokeWidth={2}
+                      strokeDasharray="5 4"
+                      dot={{ r: 2 }}
+                      activeDot={{ r: 5 }}
+                      connectNulls
+                    />
+                  )}
                 </LineChart>
               </ResponsiveContainer>
             </div>

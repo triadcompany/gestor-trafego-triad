@@ -8,8 +8,9 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ArrowUp, ArrowDown, SlidersHorizontal, Check, X, Copy, Pencil } from "lucide-react";
+import { ArrowUp, ArrowDown, SlidersHorizontal, Check, X, Copy, Pencil, Scale } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchAllAdSets,
@@ -50,6 +51,13 @@ interface Row {
   ctr: number | null;
   cpm: number | null;
 }
+
+const METRIC_DIRECTION: Partial<Record<ColumnKey, "higher" | "lower">> = {
+  cpl: "lower",
+  cpm: "lower",
+  leads: "higher",
+  ctr: "higher",
+};
 
 function campaignToRow(c: MetaCampaign): Row {
   return {
@@ -131,7 +139,19 @@ export function CampaignsExplorer({
 }: CampaignsExplorerProps) {
   const [level, setLevel] = useState<ExplorerLevel>("campaign");
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<Set<string>>(new Set());
+  const [sortColumn, setSortColumn] = useState<"name" | ColumnKey | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [compareOpen, setCompareOpen] = useState(false);
   const queryClient = useQueryClient();
+
+  const toggleSort = (col: "name" | ColumnKey) => {
+    if (sortColumn === col) {
+      setSortDirection((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortColumn(col);
+      setSortDirection(col === "name" || col === "status" ? "asc" : "desc");
+    }
+  };
 
   const { data: adSets = [], isLoading: adSetsLoading } = useQuery({
     queryKey: ["explorer-adsets", adAccountId, datePreset, customRange],
@@ -164,6 +184,19 @@ export function CampaignsExplorer({
     const filtered = hasFilter ? ads.filter((a) => a.campaign_id && selectedCampaignIds.has(a.campaign_id)) : ads;
     return filtered.map(adToRow);
   }, [level, campaigns, adSets, ads, hasFilter, selectedCampaignIds]);
+
+  const sortedRows = useMemo(() => {
+    if (!sortColumn) return rows;
+    const dir = sortDirection === "asc" ? 1 : -1;
+    return [...rows].sort((a, b) => {
+      const av = a[sortColumn as keyof Row] as number | string | null | undefined;
+      const bv = b[sortColumn as keyof Row] as number | string | null | undefined;
+      if (av === null || av === undefined) return bv === null || bv === undefined ? 0 : 1;
+      if (bv === null || bv === undefined) return -1;
+      if (typeof av === "string" && typeof bv === "string") return av.localeCompare(bv) * dir;
+      return ((av as number) - (bv as number)) * dir;
+    });
+  }, [rows, sortColumn, sortDirection]);
 
   const isLoading = level === "campaign" ? campaignsLoading : level === "adset" ? adSetsLoading : adsLoading;
 
@@ -271,6 +304,33 @@ export function CampaignsExplorer({
   const showBudgetColumn = level !== "ad" && columns.includes("daily_budget");
   const orderedColumns = columns;
 
+  const compareRows = useMemo(
+    () => rows.filter((r) => selectedCampaignIds.has(r.id)),
+    [rows, selectedCampaignIds],
+  );
+
+  const compareBestWorst = useMemo(() => {
+    const result: Partial<Record<ColumnKey, { best: string | null; worst: string | null }>> = {};
+    for (const col of orderedColumns) {
+      const direction = METRIC_DIRECTION[col];
+      if (!direction) continue;
+      const values = compareRows
+        .map((r) => ({ id: r.id, value: r[col as keyof Row] as number | null }))
+        .filter((v): v is { id: string; value: number } => typeof v.value === "number");
+      if (values.length < 2) continue;
+      const best = direction === "higher"
+        ? values.reduce((a, b) => (b.value > a.value ? b : a))
+        : values.reduce((a, b) => (b.value < a.value ? b : a));
+      const worst = direction === "higher"
+        ? values.reduce((a, b) => (b.value < a.value ? b : a))
+        : values.reduce((a, b) => (b.value > a.value ? b : a));
+      if (best.id !== worst.id) {
+        result[col] = { best: best.id, worst: worst.id };
+      }
+    }
+    return result;
+  }, [compareRows, orderedColumns]);
+
   return (
     <div>
       <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
@@ -286,7 +346,15 @@ export function CampaignsExplorer({
           </TabsList>
         </Tabs>
 
-        <ColumnsPicker level={level} visible={columns} onToggle={toggleColumn} onMove={moveColumn} />
+        <div className="flex items-center gap-2">
+          {level === "campaign" && selectedCampaignIds.size >= 2 && (
+            <Button variant="outline" size="sm" onClick={() => setCompareOpen(true)} className="gap-1.5">
+              <Scale className="h-3.5 w-3.5" />
+              Comparar selecionadas ({selectedCampaignIds.size})
+            </Button>
+          )}
+          <ColumnsPicker level={level} visible={columns} onToggle={toggleColumn} onMove={moveColumn} />
+        </div>
       </div>
 
       <Card>
@@ -304,10 +372,21 @@ export function CampaignsExplorer({
                     />
                   )}
                 </TableHead>
-                <TableHead>{level === "campaign" ? "Campanha" : level === "adset" ? "Conjunto" : "Anúncio"}</TableHead>
+                <TableHead
+                  className="cursor-pointer select-none hover:text-foreground"
+                  onClick={() => toggleSort("name")}
+                >
+                  {level === "campaign" ? "Campanha" : level === "adset" ? "Conjunto" : "Anúncio"}
+                  {sortColumn === "name" && (sortDirection === "asc" ? " ↑" : " ↓")}
+                </TableHead>
                 {orderedColumns.map((col) => (
-                  <TableHead key={col} className={col === "status" ? "" : "text-right"}>
+                  <TableHead
+                    key={col}
+                    className={`cursor-pointer select-none hover:text-foreground ${col === "status" ? "" : "text-right"}`}
+                    onClick={() => toggleSort(col)}
+                  >
                     {COLUMN_LABELS[col]}
+                    {sortColumn === col && (sortDirection === "asc" ? " ↑" : " ↓")}
                   </TableHead>
                 ))}
                 <TableHead className="w-10" />
@@ -320,7 +399,7 @@ export function CampaignsExplorer({
                     <TableCell colSpan={orderedColumns.length + 3}><Skeleton className="h-5 w-full" /></TableCell>
                   </TableRow>
                 ))
-              ) : rows.length === 0 ? (
+              ) : sortedRows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={orderedColumns.length + 3} className="text-center text-muted-foreground py-8 text-sm">
                     {level === "campaign"
@@ -331,7 +410,7 @@ export function CampaignsExplorer({
                   </TableCell>
                 </TableRow>
               ) : (
-                rows.map((row) => (
+                sortedRows.map((row) => (
                   <ExplorerRow
                     key={row.id}
                     row={row}
@@ -360,8 +439,88 @@ export function CampaignsExplorer({
           </Table>
         </div>
       </Card>
+
+      <Dialog open={compareOpen} onOpenChange={setCompareOpen}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Comparar campanhas selecionadas</DialogTitle>
+          </DialogHeader>
+          <div className="overflow-x-auto">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Campanha</TableHead>
+                  {orderedColumns
+                    .filter((col) => col !== "status")
+                    .map((col) => (
+                      <TableHead key={col} className="text-right">
+                        {COLUMN_LABELS[col]}
+                      </TableHead>
+                    ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {compareRows.map((row) => (
+                  <TableRow key={row.id}>
+                    <TableCell className="font-medium max-w-[200px] truncate">{row.name}</TableCell>
+                    {orderedColumns
+                      .filter((col) => col !== "status")
+                      .map((col) => {
+                        const bw = compareBestWorst[col];
+                        const isBest = bw?.best === row.id;
+                        const isWorst = bw?.worst === row.id;
+                        return (
+                          <TableCell
+                            key={col}
+                            className={`text-right ${
+                              isBest
+                                ? "text-status-on-target font-semibold"
+                                : isWorst
+                                ? "text-status-critical"
+                                : ""
+                            }`}
+                          >
+                            {formatMetricValue(col, row)}
+                            {isBest && (
+                              <span className="ml-1.5 rounded-full bg-status-on-target/15 px-1.5 py-0.5 text-[10px] font-semibold text-status-on-target">
+                                melhor
+                              </span>
+                            )}
+                          </TableCell>
+                        );
+                      })}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
+}
+
+function formatMetricValue(col: ColumnKey, row: Row): string {
+  switch (col) {
+    case "daily_budget":
+      return row.daily_budget !== null ? brl(row.daily_budget) : "—";
+    case "spend":
+      return row.spend > 0 ? brl(row.spend) : "—";
+    case "leads":
+      return row.leads > 0 || row.forms > 0 ? `${row.leads}${row.forms > 0 ? ` +${row.forms}f` : ""}` : "—";
+    case "cpl":
+      return row.cpl !== null ? brl(row.cpl) : "—";
+    case "impressions":
+      return row.impressions > 0 ? row.impressions.toLocaleString("pt-BR") : "—";
+    case "link_clicks":
+      return row.link_clicks > 0 ? row.link_clicks.toLocaleString("pt-BR") : "—";
+    case "ctr":
+      return row.ctr !== null ? `${row.ctr.toFixed(2)}%` : "—";
+    case "cpm":
+      return row.cpm !== null ? brl(row.cpm) : "—";
+    default:
+      return "—";
+  }
 }
 
 function Card({ children }: { children: React.ReactNode }) {
