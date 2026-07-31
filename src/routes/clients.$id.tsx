@@ -203,6 +203,10 @@ function ClientDetail() {
   const periodForms = insights.reduce((s, h) => s + (h.forms ?? 0), 0);
   const periodCpl =
     periodLeads > 0 ? Math.round((periodSpend / periodLeads) * 100) / 100 : null;
+  const periodImpressions = insights.reduce((s, h) => s + (h.impressions ?? 0), 0);
+  const periodClicks = insights.reduce((s, h) => s + (h.link_clicks ?? 0), 0);
+  const periodCtr = periodImpressions > 0 ? (periodClicks / periodImpressions) * 100 : null;
+  const periodCpm = periodImpressions > 0 ? (periodSpend / periodImpressions) * 1000 : null;
 
   const { data: insightsB = [] } = useQuery({
     queryKey: ["insights-b", id, datePresetB, customSinceB, customUntilB],
@@ -217,13 +221,13 @@ function ClientDetail() {
 
   const periodSpendB = insightsB.reduce((s, h) => s + h.spend, 0);
   const periodLeadsB = insightsB.reduce((s, h) => s + h.leads, 0);
+  const periodFormsB = insightsB.reduce((s, h) => s + (h.forms ?? 0), 0);
   const periodCplB =
     periodLeadsB > 0 ? Math.round((periodSpendB / periodLeadsB) * 100) / 100 : null;
-
-  function pctChange(current: number | null, previous: number | null): number | null {
-    if (current === null || previous === null || previous === 0) return null;
-    return Math.round(((current - previous) / previous) * 1000) / 10;
-  }
+  const periodImpressionsB = insightsB.reduce((s, h) => s + (h.impressions ?? 0), 0);
+  const periodClicksB = insightsB.reduce((s, h) => s + (h.link_clicks ?? 0), 0);
+  const periodCtrB = periodImpressionsB > 0 ? (periodClicksB / periodImpressionsB) * 100 : null;
+  const periodCpmB = periodImpressionsB > 0 ? (periodSpendB / periodImpressionsB) * 1000 : null;
 
   const {
     data: campaigns,
@@ -560,30 +564,53 @@ function ClientDetail() {
           </div>
 
           {compareEnabled && (
-            <div className="grid grid-cols-3 gap-3 mb-4">
+            <div className="flex flex-col gap-2 mb-4">
               {(
                 [
-                  { label: "CPL", current: periodCpl, previous: periodCplB, format: brl, goodDirection: "down" as const },
-                  { label: "Gasto", current: periodSpend, previous: periodSpendB, format: brl, goodDirection: null },
-                  { label: "Leads", current: periodLeads, previous: periodLeadsB, format: (v: number) => String(v), goodDirection: "up" as const },
+                  {
+                    label: periodLabel,
+                    spend: periodSpend,
+                    leads: periodLeads,
+                    forms: periodForms,
+                    cpl: periodCpl,
+                    impressions: periodImpressions,
+                    clicks: periodClicks,
+                    ctr: periodCtr,
+                    cpm: periodCpm,
+                  },
+                  {
+                    label: periodLabelB,
+                    spend: periodSpendB,
+                    leads: periodLeadsB,
+                    forms: periodFormsB,
+                    cpl: periodCplB,
+                    impressions: periodImpressionsB,
+                    clicks: periodClicksB,
+                    ctr: periodCtrB,
+                    cpm: periodCpmB,
+                  },
                 ]
-              ).map(({ label, current, previous, format, goodDirection }) => {
-                const change = pctChange(current, previous);
-                const isGood = change === null || goodDirection === null
-                  ? null
-                  : goodDirection === "down" ? change < 0 : change > 0;
-                return (
-                  <div key={label} className="rounded-xl border border-border bg-card p-3">
-                    <div className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">{label}</div>
-                    <div className="text-lg font-mono font-bold">{current !== null ? format(current) : "—"}</div>
-                    {change !== null && previous !== null && (
-                      <div className={`text-xs font-mono mt-0.5 ${isGood === null ? "text-muted-foreground" : isGood ? "text-status-on-target" : "text-status-critical"}`}>
-                        {change > 0 ? "↑" : change < 0 ? "↓" : "→"} {Math.abs(change)}% vs {format(previous)}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              ).map((p) => (
+                <div key={p.label} className="rounded-xl border border-border bg-card p-3 flex items-center gap-1 overflow-x-auto">
+                  <span className="text-xs font-medium text-muted-foreground mr-3 shrink-0 min-w-[100px]">{p.label}</span>
+                  <TotalStat label="Gasto" value={p.spend > 0 ? brl(p.spend) : "—"} />
+                  <Divider />
+                  <TotalStat
+                    label="Leads"
+                    value={p.leads > 0 || p.forms > 0 ? `${p.leads}${p.forms > 0 ? ` +${p.forms}f` : ""}` : "—"}
+                  />
+                  <Divider />
+                  <TotalStat label="CPL médio" value={p.cpl !== null ? brl(p.cpl) : "—"} />
+                  <Divider />
+                  <TotalStat label="Impressões" value={p.impressions > 0 ? p.impressions.toLocaleString("pt-BR") : "—"} />
+                  <Divider />
+                  <TotalStat label="Cliques" value={p.clicks > 0 ? p.clicks.toLocaleString("pt-BR") : "—"} />
+                  <Divider />
+                  <TotalStat label="CTR médio" value={p.ctr !== null ? `${p.ctr.toFixed(2)}%` : "—"} />
+                  <Divider />
+                  <TotalStat label="CPM médio" value={p.cpm !== null ? brl(p.cpm) : "—"} />
+                </div>
+              ))}
             </div>
           )}
 

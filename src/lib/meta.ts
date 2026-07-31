@@ -360,6 +360,8 @@ export interface DailyInsight {
   leads: number;
   forms: number;
   cpl: number | null;
+  impressions: number;
+  link_clicks: number;
 }
 
 export async function fetchDailyInsights(
@@ -369,7 +371,7 @@ export async function fetchDailyInsights(
   customRange?: CustomDateRange
 ): Promise<DailyInsight[]> {
   const params: Record<string, string> = {
-    fields: "date_start,spend,actions",
+    fields: "date_start,spend,actions,impressions,inline_link_clicks",
     level: "account",
     time_increment: "1",
     access_token: token,
@@ -387,6 +389,8 @@ export async function fetchDailyInsights(
       date_start: string;
       spend?: string;
       actions?: Array<{ action_type: string; value: string }>;
+      impressions?: string;
+      inline_link_clicks?: string;
     }>;
     error?: { message: string };
   };
@@ -402,6 +406,8 @@ export async function fetchDailyInsights(
       leads,
       forms,
       cpl: leads > 0 ? Math.round((spend / leads) * 100) / 100 : null,
+      impressions: parseInt(row.impressions ?? "0", 10),
+      link_clicks: parseInt(row.inline_link_clicks ?? "0", 10),
     };
   });
 }
