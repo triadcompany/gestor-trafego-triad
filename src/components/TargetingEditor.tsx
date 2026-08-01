@@ -7,11 +7,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
-import { X, Search, Loader2 } from "lucide-react";
+import { X, Search, Loader2, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchAdSetTargeting,
   updateAdSetTargeting,
+  fetchAdSetWhatsappNumber,
   searchMetaInterests,
   searchMetaLocations,
   type MetaTargeting,
@@ -58,6 +59,11 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
   const { data: targeting, isLoading } = useQuery({
     queryKey: ["targeting", adSetId],
     queryFn: () => fetchAdSetTargeting(adSetId, token),
+  });
+
+  const { data: whatsappNumber, isLoading: whatsappLoading } = useQuery({
+    queryKey: ["adset-whatsapp", adSetId],
+    queryFn: () => fetchAdSetWhatsappNumber(adSetId, token),
   });
 
   useEffect(() => {
@@ -132,6 +138,24 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
 
   return (
     <div className="space-y-5 py-2">
+
+      {/* WhatsApp */}
+      <FieldSection title="WhatsApp">
+        {whatsappLoading ? (
+          <Skeleton className="h-6 w-40" />
+        ) : (
+          <div className="flex items-center gap-2 text-sm">
+            <MessageCircle className="h-4 w-4 text-muted-foreground shrink-0" />
+            {whatsappNumber ? (
+              <span className="font-medium tabular-nums">{formatWhatsappNumber(whatsappNumber)}</span>
+            ) : (
+              <span className="text-muted-foreground">Não configurado</span>
+            )}
+          </div>
+        )}
+      </FieldSection>
+
+      <Separator />
 
       {/* Localização */}
       <FieldSection title="Localização">
@@ -469,6 +493,18 @@ function InterestSearch({
 }
 
 // ── Small helpers ─────────────────────────────────────────────
+
+function formatWhatsappNumber(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  // 55 + DDD (2) + 9 dígitos = 13; sem o 9º dígito = 12
+  if (digits.length === 13 && digits.startsWith("55")) {
+    return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 9)}-${digits.slice(9)}`;
+  }
+  if (digits.length === 12 && digits.startsWith("55")) {
+    return `+55 (${digits.slice(2, 4)}) ${digits.slice(4, 8)}-${digits.slice(8)}`;
+  }
+  return `+${digits}`;
+}
 
 function FieldSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (

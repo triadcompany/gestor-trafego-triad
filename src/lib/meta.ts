@@ -671,6 +671,14 @@ export async function fetchAdSetTargeting(adSetId: string, token: string): Promi
   return json.targeting ?? {};
 }
 
+export async function fetchAdSetWhatsappNumber(adSetId: string, token: string): Promise<string | null> {
+  const params = new URLSearchParams({ fields: "promoted_object", access_token: token });
+  const res = await fetch(`${BASE_URL}/${adSetId}?${params}`);
+  const json = await res.json() as { promoted_object?: { whatsapp_phone_number?: string }; error?: { message: string } };
+  if (json.error) throw new Error(json.error.message);
+  return json.promoted_object?.whatsapp_phone_number ?? null;
+}
+
 export async function updateAdSetTargeting(adSetId: string, targeting: MetaTargeting, token: string): Promise<void> {
   await updateMetaObject(adSetId, { targeting: JSON.stringify(targeting) }, token);
 }
