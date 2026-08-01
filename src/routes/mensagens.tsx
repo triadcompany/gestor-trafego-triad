@@ -82,14 +82,14 @@ function MensagensPage() {
   return (
     <AppShell>
       <div className="px-4 md:px-8 py-6 max-w-4xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
           <div>
             <h1 className="text-2xl font-bold tracking-tight">Mensagens</h1>
             <p className="text-sm text-muted-foreground mt-1">
               Programe mensagens de WhatsApp para pessoas ou grupos específicos.
             </p>
           </div>
-          <Button onClick={() => setComposerOpen(true)} className="gap-2">
+          <Button onClick={() => setComposerOpen(true)} className="gap-2 w-full sm:w-auto">
             <Plus className="h-4 w-4" />
             Nova mensagem
           </Button>
@@ -129,9 +129,9 @@ function MensagensPage() {
                     {m.has_media && <Paperclip className="h-3 w-3 text-muted-foreground" />}
                   </div>
                   <p className="text-sm text-foreground/90 line-clamp-2">{m.body}</p>
-                  <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground">
-                    <Users className="h-3 w-3" />
-                    {m.recipients.map((r) => r.name).join(", ")}
+                  <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground min-w-0">
+                    <Users className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{m.recipients.map((r) => r.name).join(", ")}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
@@ -157,13 +157,15 @@ function MensagensPage() {
                   <div className="text-xs font-medium text-muted-foreground mb-2">Destinatários</div>
                   <div className="space-y-1.5">
                     {m.recipients.map((r) => (
-                      <div key={r.id} className="flex items-center justify-between text-sm">
-                        <span>{r.name}</span>
-                        <div className="flex items-center gap-2">
+                      <div key={r.id} className="flex items-center justify-between gap-2 text-sm">
+                        <span className="truncate min-w-0">{r.name}</span>
+                        <div className="flex items-center gap-2 shrink-0">
                           {r.error_message && (
-                            <span className="text-xs text-status-critical" title={r.error_message}>{r.error_message}</span>
+                            <span className="text-xs text-status-critical truncate max-w-[100px] sm:max-w-[200px]" title={r.error_message}>
+                              {r.error_message}
+                            </span>
                           )}
-                          <span className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full ${STATUS_CLASSES[r.status === "pending" ? "pending" : r.status]}`}>
+                          <span className={`text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full whitespace-nowrap ${STATUS_CLASSES[r.status === "pending" ? "pending" : r.status]}`}>
                             {r.status === "pending" ? "Pendente" : r.status === "sent" ? "Enviada" : "Falhou"}
                           </span>
                         </div>
@@ -235,7 +237,7 @@ function ComposerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Nova mensagem agendada</DialogTitle>
         </DialogHeader>
@@ -247,7 +249,7 @@ function ComposerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
               value={body}
               onChange={(e) => setBody(e.target.value)}
               placeholder="Digite a mensagem..."
-              className="min-h-[100px] resize-none"
+              className="min-h-[90px] sm:min-h-[100px] resize-none"
             />
           </div>
 
