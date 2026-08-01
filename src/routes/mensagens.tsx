@@ -252,7 +252,7 @@ function ComposerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
           </div>
 
           <div className="space-y-1.5">
-            <Label>
+            <Label className="block">
               Mídia
               <span className="text-muted-foreground font-normal text-xs ml-1.5">opcional</span>
             </Label>
