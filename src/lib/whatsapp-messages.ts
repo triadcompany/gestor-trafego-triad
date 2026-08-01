@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { appConfig, scheduledMessageRecipients, scheduledMessages } from "@/db/schema";
@@ -129,6 +129,98 @@ export async function createScheduledMessage(data: {
   recipients: { remoteJid: string; name: string }[];
 }): Promise<void> {
   await _createScheduledMessage({ data });
+}
+
+export interface ScheduledMessageDetail {
+  id: string;
+  body: string;
+  media_base64: string | null;
+  media_mimetype: string | null;
+  media_filename: string | null;
+  scheduled_at: string;
+  status: ScheduledMessageRow["status"];
+  recipients: { remote_jid: string; name: string }[];
+}
+
+const _fetchScheduledMessageById = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }): Promise<ScheduledMessageDetail | null> => {
+    const [message] = await db
+      .select()
+      .from(scheduledMessages)
+      .where(eq(scheduledMessages.id, data.id));
+    if (!message) return null;
+
+    const recipients = await db
+      .select()
+      .from(scheduledMessageRecipients)
+      .where(eq(scheduledMessageRecipients.messageId, data.id));
+
+    return {
+      id: message.id,
+      body: message.body,
+      media_base64: message.mediaBase64,
+      media_mimetype: message.mediaMimetype,
+      media_filename: message.mediaFilename,
+      scheduled_at: message.scheduledAt,
+      status: message.status as ScheduledMessageRow["status"],
+      recipients: recipients.map((r) => ({ remote_jid: r.remoteJid, name: r.name })),
+    };
+  });
+
+export async function fetchScheduledMessageById(id: string): Promise<ScheduledMessageDetail | null> {
+  return _fetchScheduledMessageById({ data: { id } });
+}
+
+const _updateScheduledMessage = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      id: z.string(),
+      body: z.string().min(1),
+      mediaBase64: z.string().nullable().optional(),
+      mediaMimetype: z.string().nullable().optional(),
+      mediaFilename: z.string().nullable().optional(),
+      scheduledAt: z.string(),
+      recipients: z.array(z.object({ remoteJid: z.string(), name: z.string() })).min(1),
+    })
+  )
+  .handler(async ({ data }) => {
+    await db.transaction(async (tx) => {
+      const [message] = await tx
+        .update(scheduledMessages)
+        .set({
+          body: data.body,
+          mediaBase64: data.mediaBase64 ?? null,
+          mediaMimetype: data.mediaMimetype ?? null,
+          mediaFilename: data.mediaFilename ?? null,
+          scheduledAt: data.scheduledAt,
+        })
+        .where(and(eq(scheduledMessages.id, data.id), eq(scheduledMessages.status, "pending")))
+        .returning();
+      if (!message) throw new Error("Só é possível editar mensagens ainda pendentes.");
+
+      await tx.delete(scheduledMessageRecipients).where(eq(scheduledMessageRecipients.messageId, data.id));
+      await tx.insert(scheduledMessageRecipients).values(
+        data.recipients.map((r) => ({
+          messageId: data.id,
+          remoteJid: r.remoteJid,
+          name: r.name,
+          status: "pending" as const,
+        }))
+      );
+    });
+  });
+
+export async function updateScheduledMessage(data: {
+  id: string;
+  body: string;
+  mediaBase64?: string | null;
+  mediaMimetype?: string | null;
+  mediaFilename?: string | null;
+  scheduledAt: string;
+  recipients: { remoteJid: string; name: string }[];
+}): Promise<void> {
+  await _updateScheduledMessage({ data });
 }
 
 const _cancelScheduledMessage = createServerFn({ method: "POST" })

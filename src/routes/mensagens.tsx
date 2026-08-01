@@ -15,14 +15,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send } from "lucide-react";
+import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchScheduledMessages,
+  fetchScheduledMessageById,
   createScheduledMessage,
+  updateScheduledMessage,
   cancelScheduledMessage,
   searchEvolutionRecipients,
   type ScheduledMessageRow,
+  type ScheduledMessageDetail,
   type EvolutionRecipient,
 } from "@/lib/whatsapp-messages";
 
@@ -64,6 +67,8 @@ function MensagensPage() {
   const queryClient = useQueryClient();
   const [composerOpen, setComposerOpen] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [editingMessage, setEditingMessage] = useState<ScheduledMessageDetail | null>(null);
+  const [loadingEditId, setLoadingEditId] = useState<string | null>(null);
 
   const { data: messages = [], isLoading, isError } = useQuery({
     queryKey: ["scheduled-messages"],
@@ -79,6 +84,23 @@ function MensagensPage() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao cancelar"),
   });
 
+  const handleEdit = async (id: string) => {
+    setLoadingEditId(id);
+    try {
+      const detail = await fetchScheduledMessageById(id);
+      if (!detail) {
+        toast.error("Mensagem não encontrada.");
+        return;
+      }
+      setEditingMessage(detail);
+      setComposerOpen(true);
+    } catch {
+      toast.error("Erro ao carregar mensagem para edição.");
+    } finally {
+      setLoadingEditId(null);
+    }
+  };
+
   return (
     <AppShell>
       <div className="px-4 md:px-8 py-6 max-w-4xl mx-auto">
@@ -89,7 +111,7 @@ function MensagensPage() {
               Programe mensagens de WhatsApp para pessoas ou grupos específicos.
             </p>
           </div>
-          <Button onClick={() => setComposerOpen(true)} className="gap-2 w-full sm:w-auto">
+          <Button onClick={() => { setEditingMessage(null); setComposerOpen(true); }} className="gap-2 w-full sm:w-auto">
             <Plus className="h-4 w-4" />
             Nova mensagem
           </Button>
@@ -134,19 +156,34 @@ function MensagensPage() {
                     <span className="truncate">{m.recipients.map((r) => r.name).join(", ")}</span>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex items-center gap-1 shrink-0">
                   {m.status === "pending" && (
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        cancelMutation.mutate(m.id);
-                      }}
-                      disabled={cancelMutation.isPending}
-                    >
-                      Cancelar
-                    </Button>
+                    <>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEdit(m.id);
+                        }}
+                        disabled={loadingEditId === m.id}
+                        aria-label="Editar"
+                      >
+                        {loadingEditId === m.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          cancelMutation.mutate(m.id);
+                        }}
+                        disabled={cancelMutation.isPending}
+                      >
+                        Cancelar
+                      </Button>
+                    </>
                   )}
                   <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${expandedId === m.id ? "rotate-180" : ""}`} />
                 </div>
@@ -179,29 +216,73 @@ function MensagensPage() {
         </div>
       </div>
 
-      <ComposerDialog open={composerOpen} onOpenChange={setComposerOpen} />
+      <ComposerDialog
+        open={composerOpen}
+        onOpenChange={setComposerOpen}
+        editing={editingMessage}
+      />
     </AppShell>
   );
 }
 
 // ── Composer ───────────────────────────────────────────────────
 
-function ComposerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (v: boolean) => void }) {
+function isoToLocalInput(iso: string): string {
+  const d = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function ComposerDialog({
+  open,
+  onOpenChange,
+  editing,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  editing: ScheduledMessageDetail | null;
+}) {
   const queryClient = useQueryClient();
   const [body, setBody] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [recipients, setRecipients] = useState<EvolutionRecipient[]>([]);
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+  const [keepExistingMedia, setKeepExistingMedia] = useState(false);
+  const [loadedEditingId, setLoadedEditingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  if (open && editing && loadedEditingId !== editing.id) {
+    setBody(editing.body);
+    setScheduledAt(isoToLocalInput(editing.scheduled_at));
+    setRecipients(
+      editing.recipients.map((r) => ({
+        remoteJid: r.remote_jid,
+        name: r.name,
+        isGroup: r.remote_jid.endsWith("@g.us"),
+      }))
+    );
+    setMediaFile(null);
+    setKeepExistingMedia(!!editing.media_base64);
+    setLoadedEditingId(editing.id);
+  } else if (open && !editing && loadedEditingId !== "new") {
+    setBody("");
+    setScheduledAt("");
+    setRecipients([]);
+    setMediaFile(null);
+    setKeepExistingMedia(false);
+    setLoadedEditingId("new");
+  }
 
   const reset = () => {
     setBody("");
     setScheduledAt("");
     setRecipients([]);
     setMediaFile(null);
+    setKeepExistingMedia(false);
+    setLoadedEditingId(null);
   };
 
-  const createMutation = useMutation({
+  const saveMutation = useMutation({
     mutationFn: async () => {
       let mediaBase64: string | null = null;
       let mediaMimetype: string | null = null;
@@ -213,33 +294,44 @@ function ComposerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         mediaBase64 = await fileToBase64(mediaFile);
         mediaMimetype = mediaFile.type;
         mediaFilename = mediaFile.name;
+      } else if (editing && keepExistingMedia) {
+        mediaBase64 = editing.media_base64;
+        mediaMimetype = editing.media_mimetype;
+        mediaFilename = editing.media_filename;
       }
-      await createScheduledMessage({
+      const payload = {
         body,
         mediaBase64,
         mediaMimetype,
         mediaFilename,
         scheduledAt: new Date(scheduledAt).toISOString(),
         recipients: recipients.map((r) => ({ remoteJid: r.remoteJid, name: r.name })),
-      });
+      };
+      if (editing) {
+        await updateScheduledMessage({ id: editing.id, ...payload });
+      } else {
+        await createScheduledMessage(payload);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["scheduled-messages"] });
-      toast.success("Mensagem agendada.");
+      toast.success(editing ? "Mensagem atualizada." : "Mensagem agendada.");
       reset();
       onOpenChange(false);
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao agendar mensagem", { duration: 8000 }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar mensagem", { duration: 8000 }),
   });
 
   const isPast = scheduledAt !== "" && new Date(scheduledAt) <= new Date();
   const canSubmit = body.trim().length > 0 && recipients.length > 0 && scheduledAt !== "" && !isPast;
+  const hasMedia = !!mediaFile || (!!editing && keepExistingMedia);
+  const mediaLabel = mediaFile?.name ?? editing?.media_filename ?? "arquivo";
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Nova mensagem agendada</DialogTitle>
+          <DialogTitle>{editing ? "Editar mensagem agendada" : "Nova mensagem agendada"}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -258,10 +350,10 @@ function ComposerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
               Mídia
               <span className="text-muted-foreground font-normal text-xs ml-1.5">opcional</span>
             </Label>
-            {mediaFile ? (
+            {hasMedia ? (
               <div className="flex items-center justify-between px-3 py-2 border border-border rounded-md text-sm">
-                <span className="truncate">{mediaFile.name}</span>
-                <button onClick={() => setMediaFile(null)}>
+                <span className="truncate">{mediaLabel}</span>
+                <button onClick={() => { setMediaFile(null); setKeepExistingMedia(false); }}>
                   <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
                 </button>
               </div>
@@ -304,12 +396,12 @@ function ComposerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
           <Button
-            onClick={() => createMutation.mutate()}
-            disabled={!canSubmit || createMutation.isPending}
+            onClick={() => saveMutation.mutate()}
+            disabled={!canSubmit || saveMutation.isPending}
             className="gap-2"
           >
-            {createMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            Agendar
+            {saveMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {editing ? "Salvar alterações" : "Agendar"}
           </Button>
         </DialogFooter>
       </DialogContent>
