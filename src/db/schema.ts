@@ -284,6 +284,27 @@ export const driveUploads = pgTable("drive_uploads", {
   mediaBase64: text("media_base64"),
 });
 
+export const scheduledMessages = pgTable("scheduled_messages", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  body: text("body").notNull(),
+  mediaBase64: text("media_base64"),
+  mediaMimetype: text("media_mimetype"),
+  mediaFilename: text("media_filename"),
+  scheduledAt: timestamp("scheduled_at").notNull(),
+  status: text("status").notNull().default("pending"), // pending | sent | partial | failed | canceled
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const scheduledMessageRecipients = pgTable("scheduled_message_recipients", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  messageId: uuid("message_id").notNull().references(() => scheduledMessages.id, { onDelete: "cascade" }),
+  remoteJid: text("remote_jid").notNull(),
+  name: text("name").notNull(),
+  status: text("status").notNull().default("pending"), // pending | sent | failed
+  sentAt: timestamp("sent_at"),
+  errorMessage: text("error_message"),
+});
+
 // --- relations (usadas pelos joins via db.query.*) ---
 
 export const usersRelations = relations(users, ({ one }) => ({
@@ -373,4 +394,12 @@ export const agentMessagesRelations = relations(agentMessages, ({ one }) => ({
 
 export const googleCalendarTokensRelations = relations(googleCalendarTokens, ({ one }) => ({
   user: one(users, { fields: [googleCalendarTokens.userId], references: [users.id] }),
+}));
+
+export const scheduledMessagesRelations = relations(scheduledMessages, ({ many }) => ({
+  recipients: many(scheduledMessageRecipients),
+}));
+
+export const scheduledMessageRecipientsRelations = relations(scheduledMessageRecipients, ({ one }) => ({
+  message: one(scheduledMessages, { fields: [scheduledMessageRecipients.messageId], references: [scheduledMessages.id] }),
 }));

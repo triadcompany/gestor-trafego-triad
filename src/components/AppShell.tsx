@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X, AlertTriangle, Sun, Moon } from "lucide-react";
+import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X, AlertTriangle, Sun, Moon, MessageCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/server/session";
 import { useQuery } from "@tanstack/react-query";
@@ -34,6 +34,7 @@ const navGroups = [
   {
     label: "Ferramentas",
     items: [
+      { to: "/mensagens", label: "Mensagens", icon: MessageCircle, exact: false },
       { to: "/agente", label: "Agente IA", icon: Bot, exact: false },
       { to: "/campaigns/new", label: "Nova Campanha", icon: PlusSquare, exact: false },
       { to: "/diagnostico-meta", label: "Diagnóstico", icon: Stethoscope, exact: false },

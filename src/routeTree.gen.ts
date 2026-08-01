@@ -15,6 +15,7 @@ import { Route as TarefasRouteImport } from './routes/tarefas'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SaldosRouteImport } from './routes/saldos'
 import { Route as PixRouteImport } from './routes/pix'
+import { Route as MensagensRouteImport } from './routes/mensagens'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DiagnosticoMetaRouteImport } from './routes/diagnostico-meta'
 import { Route as AgenteRouteImport } from './routes/agente'
@@ -55,6 +56,11 @@ const SaldosRoute = SaldosRouteImport.update({
 const PixRoute = PixRouteImport.update({
   id: '/pix',
   path: '/pix',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MensagensRoute = MensagensRouteImport.update({
+  id: '/mensagens',
+  path: '/mensagens',
   getParentRoute: () => rootRouteImport,
 } as any)
 const LoginRoute = LoginRouteImport.update({
@@ -119,6 +125,7 @@ export interface FileRoutesByFullPath {
   '/agente': typeof AgenteRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
+  '/mensagens': typeof MensagensRoute
   '/pix': typeof PixRoute
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
@@ -138,6 +145,7 @@ export interface FileRoutesByTo {
   '/agente': typeof AgenteRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
+  '/mensagens': typeof MensagensRoute
   '/pix': typeof PixRoute
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
@@ -158,6 +166,7 @@ export interface FileRoutesById {
   '/agente': typeof AgenteRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
+  '/mensagens': typeof MensagensRoute
   '/pix': typeof PixRoute
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
@@ -179,6 +188,7 @@ export interface FileRouteTypes {
     | '/agente'
     | '/diagnostico-meta'
     | '/login'
+    | '/mensagens'
     | '/pix'
     | '/saldos'
     | '/settings'
@@ -198,6 +208,7 @@ export interface FileRouteTypes {
     | '/agente'
     | '/diagnostico-meta'
     | '/login'
+    | '/mensagens'
     | '/pix'
     | '/saldos'
     | '/settings'
@@ -217,6 +228,7 @@ export interface FileRouteTypes {
     | '/agente'
     | '/diagnostico-meta'
     | '/login'
+    | '/mensagens'
     | '/pix'
     | '/saldos'
     | '/settings'
@@ -237,6 +249,7 @@ export interface RootRouteChildren {
   AgenteRoute: typeof AgenteRoute
   DiagnosticoMetaRoute: typeof DiagnosticoMetaRoute
   LoginRoute: typeof LoginRoute
+  MensagensRoute: typeof MensagensRoute
   PixRoute: typeof PixRoute
   SaldosRoute: typeof SaldosRoute
   SettingsRoute: typeof SettingsRoute
@@ -293,6 +306,13 @@ declare module '@tanstack/react-router' {
       path: '/pix'
       fullPath: '/pix'
       preLoaderRoute: typeof PixRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mensagens': {
+      id: '/mensagens'
+      path: '/mensagens'
+      fullPath: '/mensagens'
+      preLoaderRoute: typeof MensagensRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/login': {
@@ -381,6 +401,7 @@ const rootRouteChildren: RootRouteChildren = {
   AgenteRoute: AgenteRoute,
   DiagnosticoMetaRoute: DiagnosticoMetaRoute,
   LoginRoute: LoginRoute,
+  MensagensRoute: MensagensRoute,
   PixRoute: PixRoute,
   SaldosRoute: SaldosRoute,
   SettingsRoute: SettingsRoute,
