@@ -266,7 +266,12 @@ function ComposerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (
                 </button>
               </div>
             ) : (
-              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => fileInputRef.current?.click()}
+                className="w-full justify-start gap-2"
+              >
                 <Paperclip className="h-3.5 w-3.5" />
                 Anexar imagem, vídeo ou documento
               </Button>
