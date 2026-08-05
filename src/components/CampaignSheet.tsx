@@ -432,6 +432,7 @@ function AdSetRow({
                     key={ad.id}
                     ad={ad}
                     adSetId={adSet.id}
+                    clientId={clientId}
                     token={token ?? ""}
                     whatsappNumber={whatsappNumber}
                     startExpanded={ad.id === initialAdId}
@@ -459,12 +460,14 @@ function AdSetRow({
 function AdRow({
   ad,
   adSetId,
+  clientId,
   token,
   whatsappNumber,
   startExpanded,
 }: {
   ad: MetaAd;
   adSetId: string;
+  clientId: string;
   token: string;
   whatsappNumber?: string;
   startExpanded?: boolean;
@@ -514,7 +517,7 @@ function AdRow({
       {/* Creative editor */}
       {expanded && (
         <div className="border-t border-border/60 px-3 py-3 bg-muted/10">
-          <AdCreativeEditor adId={ad.id} adSetId={adSetId} token={token} whatsappNumber={whatsappNumber} />
+          <AdCreativeEditor adId={ad.id} adSetId={adSetId} clientId={clientId} token={token} whatsappNumber={whatsappNumber} />
         </div>
       )}
     </div>
