@@ -712,7 +712,7 @@ export async function fetchAdWithCreative(adId: string, token: string): Promise<
 
   // Step 2: get object_story_spec — try via ad endpoint (different access than creative endpoint)
   for (const fields of [
-    "creative{object_story_spec{page_id,video_data{video_id,message,title,description,call_to_action,page_welcome_message}}}",
+    "creative{object_story_spec{page_id,video_data{video_id,message,title,call_to_action,page_welcome_message}}}",
     "creative{object_story_spec{page_id,link_data{image_hash,link,message,name,description,call_to_action,page_welcome_message}}}",
   ]) {
     try {
