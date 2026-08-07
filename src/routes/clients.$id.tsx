@@ -139,6 +139,27 @@ function getDateRange(preset: DatePreset | "custom", customSince: string, custom
   }
 }
 
+// Tags de estrutura de campanha que devem ser ignoradas ao extrair o nome do
+// carro/produto de dentro dos colchetes (ex: "[PAJERO 2019] [ENG-WHATS] [ADVANTAGE+]" → "[PAJERO 2019]")
+const CAMPAIGN_TAG_KEYWORDS = new Set([
+  "ENGWHATS", "ENGMSG", "ENGWHATSS", "ENG", "WHATS", "WHATSS", "MSG",
+  "ADVANTAGE", "SEMAPI", "LEADSFORMULARIO", "LEADS", "FORMULARIO",
+  "VENDASWHATSS", "VENDASWHATS", "VENDAS", "IOS", "CONVERSATIONS", "CAMPANHA",
+]);
+
+function normalizeCampaignTag(s: string): string {
+  return s
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .toUpperCase()
+    .replace(/[^A-Z0-9]/g, "");
+}
+
+function extractCampaignLabel(name: string): string {
+  const brackets = [...name.matchAll(/\[([^\]]+)\]/g)].map((m) => m[1].trim());
+  const label = brackets.find((b) => !CAMPAIGN_TAG_KEYWORDS.has(normalizeCampaignTag(b)));
+  return label ? `[${label}]` : name;
+}
+
 function ClientDetail() {
   const { id } = useParams({ from: "/clients/$id" });
   const { openCampaignId } = useSearch({ from: "/clients/$id" });
@@ -290,7 +311,9 @@ function ClientDetail() {
   const sendListMutation = useMutation({
     mutationFn: async () => {
       if (!client) throw new Error("Cliente não carregado.");
-      const activeNames = (campaigns ?? []).filter((c) => c.status === "ACTIVE").map((c) => c.name);
+      const activeNames = (campaigns ?? [])
+        .filter((c) => c.status === "ACTIVE")
+        .map((c) => extractCampaignLabel(c.name));
       await sendActiveCampaignsList(client.name, activeNames);
     },
     onSuccess: () => toast.success("Lista enviada para o grupo Operacional Triad Company."),
