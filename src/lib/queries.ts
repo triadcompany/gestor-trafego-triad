@@ -515,7 +515,7 @@ const _fetchAttentionItems = createServerFn({ method: "GET" }).handler(async ():
 
   const balances = await _fetchClientBalances();
   for (const b of balances) {
-    if (b.meta_balance === null || b.spendToday <= 0) continue;
+    if (b.payment_method !== "pix" || b.meta_balance === null || b.spendToday <= 0) continue;
     const estimatedDays = b.meta_balance / (b.spendToday * 100);
     if (estimatedDays < 1) {
       items.push({
