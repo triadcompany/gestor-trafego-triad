@@ -83,10 +83,8 @@ export function CampaignSheet({
       <SheetContent className="w-full sm:max-w-xl flex flex-col gap-0 p-0 overflow-hidden">
         <SheetHeader className="px-5 pt-5 pb-4 border-b border-border shrink-0">
           <div className="flex items-start justify-between gap-3 pr-6">
-            <div className="min-w-0">
-              <SheetTitle className="text-base leading-snug line-clamp-2 text-left">
-                {campaign.name}
-              </SheetTitle>
+            <div className="min-w-0 flex-1">
+              <SheetTitleEditor campaign={campaign} onNameChange={invalidateCampaigns} />
               <p className="text-xs text-muted-foreground mt-0.5">{campaign.id}</p>
             </div>
             <a href={metaUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-0.5">
@@ -118,6 +116,68 @@ export function CampaignSheet({
         </div>
       </SheetContent>
     </Sheet>
+  );
+}
+
+// ── Sheet title editor ───────────────────────────────────────────
+
+function SheetTitleEditor({
+  campaign,
+  onNameChange,
+}: {
+  campaign: MetaCampaign;
+  onNameChange: () => void;
+}) {
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(campaign.name);
+
+  const nameMutation = useMutation({
+    mutationFn: async () => {
+      const token = await getMetaToken();
+      if (!token) throw new Error("Token não encontrado");
+      await updateMetaObject(campaign.id, { name: nameInput.trim() }, token);
+    },
+    onSuccess: () => { toast.success("Nome atualizado."); setEditingName(false); onNameChange(); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+  });
+
+  if (editingName) {
+    return (
+      <div className="flex items-center gap-2">
+        <Input
+          value={nameInput}
+          onChange={(e) => setNameInput(e.target.value)}
+          className="h-8 text-sm flex-1"
+          autoFocus
+          onKeyDown={(e) => {
+            if (e.key === "Enter") nameMutation.mutate();
+            if (e.key === "Escape") { setEditingName(false); setNameInput(campaign.name); }
+          }}
+        />
+        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => nameMutation.mutate()} disabled={nameMutation.isPending}>
+          <Check className="h-3.5 w-3.5" />
+        </Button>
+        <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => { setEditingName(false); setNameInput(campaign.name); }}>
+          <X className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-start gap-1.5 group">
+      <SheetTitle className="text-base leading-snug line-clamp-2 text-left flex-1">
+        {campaign.name}
+      </SheetTitle>
+      <Button
+        size="icon"
+        variant="ghost"
+        className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+        onClick={() => { setNameInput(campaign.name); setEditingName(true); }}
+      >
+        <Pencil className="h-3 w-3" />
+      </Button>
+    </div>
   );
 }
 
