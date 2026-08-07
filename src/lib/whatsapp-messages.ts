@@ -306,7 +306,7 @@ const _sendActiveCampaignsList = createServerFn({ method: "POST" })
       throw new Error("Grupo de destino não configurado (whatsapp_group_operacional_id em app_config).");
     }
 
-    const text = `📋 Campanhas ativas — ${data.clientName}\n\n${data.campaignNames.map((n) => `• ${n}`).join("\n")}`;
+    const text = `📋 ${data.campaignNames.length} Campanhas ativas — ${data.clientName}\n\n${data.campaignNames.map((n) => `• ${n}`).join("\n")}`;
 
     const res = await fetch(`${url}/message/sendText/${instance}`, {
       method: "POST",
