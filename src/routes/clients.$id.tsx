@@ -22,9 +22,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import { sendActiveCampaignsList } from "@/lib/whatsapp-messages";
+import { ClientFormDialog } from "@/components/ClientFormDialog";
 import {
   Tooltip as UITooltip,
   TooltipContent,
@@ -40,7 +42,7 @@ import {
   ResponsiveContainer,
   ReferenceArea,
 } from "recharts";
-import { fetchClientDetail, updateClientGoal, updateClientPix, fetchNotes, createNote, updateNote, deleteNote, fetchTasksByClient, createTask, updateTask, deleteTask, fetchAllClients, type TaskRow } from "@/lib/queries";
+import { fetchClientDetail, upsertClient, setClientTags, updateClientPix, fetchNotes, createNote, updateNote, deleteNote, fetchTasksByClient, createTask, updateTask, deleteTask, fetchAllClients, type TaskRow } from "@/lib/queries";
 import { statusTextClass } from "@/lib/status-colors";
 import { TagBadge } from "@/components/TagBadge";
 import { NoteCard } from "@/components/NoteCard";
@@ -164,9 +166,7 @@ function ClientDetail() {
   const { id } = useParams({ from: "/clients/$id" });
   const { openCampaignId } = useSearch({ from: "/clients/$id" });
   const queryClient = useQueryClient();
-  const [editingGoal, setEditingGoal] = useState(false);
-  const [cplMin, setCplMin] = useState<number | null>(null);
-  const [cplMax, setCplMax] = useState<number | null>(null);
+  const [editClientOpen, setEditClientOpen] = useState(false);
   const [chartMetric, setChartMetric] = useState<"cpl" | "spend" | "leads" | "forms">("cpl");
   const [selectedCampaign, setSelectedCampaign] = useState<MetaCampaign | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -294,18 +294,17 @@ function ClientDetail() {
     setSheetOpen(true);
   }, [autoOpenCampaign]);
 
-  const goalMin = cplMin ?? client?.cpl_min ?? 0;
-  const goalMax = cplMax ?? client?.cpl_max ?? 0;
-
-  const goalMutation = useMutation({
-    mutationFn: () => updateClientGoal(id, goalMin, goalMax),
+  const saveClientMutation = useMutation({
+    mutationFn: async ({ clientData, tagIds }: { clientData: Parameters<typeof upsertClient>[0]; tagIds: string[] }) => {
+      const { id: savedId } = await upsertClient(clientData);
+      await setClientTags(savedId, tagIds);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["client", id] });
       queryClient.invalidateQueries({ queryKey: ["clients-dashboard"] });
-      setEditingGoal(false);
-      setCplMin(null);
-      setCplMax(null);
+      setEditClientOpen(false);
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar cliente", { duration: 8000 }),
   });
 
   const sendListMutation = useMutation({
@@ -516,47 +515,28 @@ function ClientDetail() {
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
               <div className="text-xs text-muted-foreground mb-1">Meta de CPL</div>
-              {editingGoal ? (
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="number"
-                    value={goalMin}
-                    onChange={(e) => setCplMin(Number(e.target.value))}
-                    className="w-24"
-                    min={0}
-                    step={0.5}
-                  />
-                  <span className="text-muted-foreground">–</span>
-                  <Input
-                    type="number"
-                    value={goalMax}
-                    onChange={(e) => setCplMax(Number(e.target.value))}
-                    className="w-24"
-                    min={0}
-                    step={0.5}
-                  />
-                  <Button size="icon" variant="ghost" aria-label="Salvar meta" onClick={() => goalMutation.mutate()} disabled={goalMutation.isPending}>
-                    <Check className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="ghost" aria-label="Cancelar" onClick={() => { setEditingGoal(false); setCplMin(null); setCplMax(null); }}>
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-              ) : (
-                <div className="flex items-center gap-3">
-                  <span className="text-xl font-semibold tabular-nums">
-                    {brl(client.cpl_min)} – {brl(client.cpl_max)}
-                  </span>
+              <div className="flex items-center gap-3">
+                <span className="text-xl font-semibold tabular-nums">
+                  {brl(client.cpl_min)} – {brl(client.cpl_max)}
+                </span>
+                <Dialog open={editClientOpen} onOpenChange={setEditClientOpen}>
                   <UITooltip>
                     <TooltipTrigger asChild>
-                      <Button size="icon" variant="ghost" aria-label="Editar meta de CPL" onClick={() => setEditingGoal(true)}>
-                        <Pencil className="h-4 w-4" />
-                      </Button>
+                      <DialogTrigger asChild>
+                        <Button size="icon" variant="ghost" aria-label="Editar cliente">
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      </DialogTrigger>
                     </TooltipTrigger>
-                    <TooltipContent>Editar meta de CPL</TooltipContent>
+                    <TooltipContent>Editar cliente</TooltipContent>
                   </UITooltip>
-                </div>
-              )}
+                  <ClientFormDialog
+                    client={client}
+                    onSave={(clientData, tagIds) => saveClientMutation.mutate({ clientData, tagIds })}
+                    saving={saveClientMutation.isPending}
+                  />
+                </Dialog>
+              </div>
             </div>
             <div className="flex gap-6 flex-wrap">
               <Stat
