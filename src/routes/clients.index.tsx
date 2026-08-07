@@ -32,13 +32,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Power, Search } from "lucide-react";
+import { Plus, Pencil, Power, Search, Trash2 } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { fetchAllClients, upsertClient, toggleClientActive, setClientTags, type ClientRow } from "@/lib/queries";
+import { fetchAllClients, upsertClient, toggleClientActive, deleteClient, setClientTags, type ClientRow } from "@/lib/queries";
 import { TagBadge } from "@/components/TagBadge";
 import { brl } from "@/lib/mock-data";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
@@ -77,6 +77,14 @@ function ClientsList() {
   const toggleMutation = useMutation({
     mutationFn: ({ id, active }: { id: string; active: boolean }) =>
       toggleClientActive(id, active),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["clients-all"] });
+      queryClient.invalidateQueries({ queryKey: ["clients-dashboard"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteClient,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clients-all"] });
       queryClient.invalidateQueries({ queryKey: ["clients-dashboard"] });
@@ -223,6 +231,24 @@ function ClientsList() {
                               </Button>
                             </TooltipTrigger>
                             <TooltipContent>{c.active ? "Desativar" : "Ativar"} cliente</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="text-destructive hover:text-destructive"
+                                onClick={() => {
+                                  if (window.confirm(`Excluir "${c.name}"? Isso apaga o cliente e todo o histórico relacionado (métricas, tarefas, anotações, vendas). Não pode ser desfeito.`)) {
+                                    deleteMutation.mutate(c.id);
+                                  }
+                                }}
+                                disabled={deleteMutation.isPending}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Excluir cliente</TooltipContent>
                           </Tooltip>
                         </div>
                       </TableCell>

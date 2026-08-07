@@ -390,6 +390,16 @@ export async function toggleClientActive(id: string, active: boolean) {
   await _toggleClientActive({ data: { id, active } });
 }
 
+const _deleteClient = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    await db.delete(clients).where(eq(clients.id, data.id));
+  });
+
+export async function deleteClient(id: string): Promise<void> {
+  await _deleteClient({ data: { id } });
+}
+
 const _updateClientGoal = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string(), cpl_min: z.number(), cpl_max: z.number() }))
   .handler(async ({ data }) => {
