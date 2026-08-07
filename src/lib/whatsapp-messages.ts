@@ -292,3 +292,33 @@ const _searchEvolutionRecipients = createServerFn({ method: "GET" })
 export async function searchEvolutionRecipients(query: string): Promise<EvolutionRecipient[]> {
   return _searchEvolutionRecipients({ data: { query } });
 }
+
+const _sendActiveCampaignsList = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ clientName: z.string(), campaignNames: z.array(z.string()) }))
+  .handler(async ({ data }) => {
+    const { url, apiKey, instance } = await getEvolutionConfig();
+    const rows = await db
+      .select({ value: appConfig.value })
+      .from(appConfig)
+      .where(eq(appConfig.key, "whatsapp_group_operacional_id"));
+    const groupId = rows[0]?.value;
+    if (!groupId) {
+      throw new Error("Grupo de destino não configurado (whatsapp_group_operacional_id em app_config).");
+    }
+
+    const text = `📋 Campanhas ativas — ${data.clientName}\n\n${data.campaignNames.map((n) => `• ${n}`).join("\n")}`;
+
+    const res = await fetch(`${url}/message/sendText/${instance}`, {
+      method: "POST",
+      headers: { apikey: apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ number: groupId, text }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Erro ao enviar mensagem: ${res.status} - ${body}`);
+    }
+  });
+
+export async function sendActiveCampaignsList(clientName: string, campaignNames: string[]): Promise<void> {
+  await _sendActiveCampaignsList({ data: { clientName, campaignNames } });
+}

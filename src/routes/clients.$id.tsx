@@ -22,7 +22,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle } from "lucide-react";
+import { toast } from "sonner";
+import { sendActiveCampaignsList } from "@/lib/whatsapp-messages";
 import {
   Tooltip as UITooltip,
   TooltipContent,
@@ -283,6 +285,16 @@ function ClientDetail() {
       setCplMin(null);
       setCplMax(null);
     },
+  });
+
+  const sendListMutation = useMutation({
+    mutationFn: async () => {
+      if (!client) throw new Error("Cliente não carregado.");
+      const activeNames = (campaigns ?? []).filter((c) => c.status === "ACTIVE").map((c) => c.name);
+      await sendActiveCampaignsList(client.name, activeNames);
+    },
+    onSuccess: () => toast.success("Lista enviada para o grupo Operacional Triad Company."),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar lista", { duration: 8000 }),
   });
 
   if (isLoading) {
@@ -711,6 +723,22 @@ function ClientDetail() {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Atualizar campanhas</TooltipContent>
+            </UITooltip>
+            <UITooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => sendListMutation.mutate()}
+                  disabled={
+                    sendListMutation.isPending ||
+                    (campaigns ?? []).filter((c) => c.status === "ACTIVE").length === 0
+                  }
+                >
+                  <MessageCircle className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Enviar lista de campanhas ativas no WhatsApp</TooltipContent>
             </UITooltip>
             <Button asChild size="sm" className="gap-2">
               <Link to="/campaigns/new" search={{ client: client.id }}>
