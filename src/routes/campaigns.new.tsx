@@ -57,10 +57,11 @@ import {
 } from "@/lib/meta";
 import { getN8nWebhookUrl, triggerN8nCampaign, pollN8nJob } from "@/lib/n8n";
 
+// Sem "Reels" — não é suportado pelo posicionamento manual em campanhas de
+// WhatsApp (destination_type CONVERSATIONS), que é o único tipo criado aqui.
 const FB_POSITIONS = [
   { value: "feed", label: "Feed" },
   { value: "story", label: "Stories" },
-  { value: "reels", label: "Reels" },
   { value: "right_hand_column", label: "Coluna direita" },
 ];
 

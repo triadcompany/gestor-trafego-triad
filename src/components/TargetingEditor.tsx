@@ -25,7 +25,7 @@ import {
 const FB_POSITIONS: { value: string; label: string }[] = [
   { value: "feed", label: "Feed" },
   { value: "story", label: "Stories" },
-  { value: "reels", label: "Reels" },
+  { value: "facebook_reels", label: "Reels" },
   { value: "right_hand_column", label: "Coluna direita" },
   { value: "instream_video", label: "Vídeo in-stream" },
 ];

@@ -2185,8 +2185,8 @@ export async function createCampaignFromScratch(
     if (opts.placements.facebook) {
       publisher_platforms.push("facebook");
       const rawFbPos = opts.fbPositions?.length ? opts.fbPositions : ["feed", "story"];
-      // reels not supported for WHATSAPP destination
-      facebook_positions.push(...rawFbPos.filter((p) => p !== "reels"));
+      // reels/facebook_reels not supported for WHATSAPP destination
+      facebook_positions.push(...rawFbPos.filter((p) => p !== "reels" && p !== "facebook_reels"));
     }
     if (opts.placements.instagram) {
       publisher_platforms.push("instagram");
