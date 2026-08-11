@@ -862,7 +862,7 @@ export async function swapAdCreativeMedia(
           video_id: videoId,
           message: primaryText,
           title,
-          ...(description ? { description } : {}),
+          // video_data não aceita "description" na API da Meta (só link_data aceita)
           ...(thumbUrl ? { image_url: thumbUrl } : {}),
           call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: resolvedWa } },
           ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
@@ -932,7 +932,7 @@ export async function updateAdCreative(
             ...spec!.video_data,
             ...(updates.body !== undefined ? { message: updates.body } : {}),
             ...(updates.title !== undefined ? { title: updates.title } : {}),
-            ...(updates.description !== undefined ? { description: updates.description } : {}),
+            // video_data não aceita "description" na API da Meta (só link_data aceita)
             ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
           },
         }
@@ -992,7 +992,7 @@ export async function updateAdCreative(
           video_id: videoId,
           message: updates.body ?? creative.body ?? "",
           title: updates.title ?? creative.title ?? "",
-          ...(updates.description ? { description: updates.description } : {}),
+          // video_data não aceita "description" na API da Meta (só link_data aceita)
           ...(creative.thumbnail_url ? { image_url: creative.thumbnail_url } : {}),
           call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: resolvedWa } },
           ...((pageWelcomeMessage ?? creative.object_story_spec?.video_data?.page_welcome_message)
@@ -2444,7 +2444,7 @@ export async function createAdCreative(
             video_id: opts.videoId,
             message: opts.primaryText,
             title: opts.headline,
-            ...(opts.description ? { description: opts.description } : {}),
+            // video_data não aceita "description" na API da Meta (só link_data aceita)
             ...(opts.thumbnailUrl ? { image_url: opts.thumbnailUrl } : {}),
             call_to_action: callToAction,
             ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
