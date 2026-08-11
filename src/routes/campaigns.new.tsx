@@ -438,7 +438,7 @@ function NewCampaign() {
             finalThumbnailUrl = undefined;
           } else {
             progress("Enviando vídeo...");
-            finalVideoId = await uploadAdVideo(selectedClient.meta_ad_account_id, mediaFile, token);
+            finalVideoId = await uploadAdVideo(selectedClient.meta_ad_account_id, mediaFile, token, progress);
             finalImageHash = undefined;
             finalThumbnailUrl = (await waitForVideoReady(finalVideoId, token, progress)) ?? existingThumbnailUrl;
           }

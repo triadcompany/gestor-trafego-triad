@@ -850,7 +850,7 @@ export async function swapAdCreativeMedia(
 
   if (isVideo) {
     onProgress?.("Enviando vídeo...");
-    const videoId = await uploadAdVideo(accountId, mediaFile, token);
+    const videoId = await uploadAdVideo(accountId, mediaFile, token, onProgress);
     const thumbUrl = (await waitForVideoReady(videoId, token, onProgress)) ?? creative.thumbnail_url;
     if (!resolvedWa) throw new Error("Número WhatsApp não encontrado. Cadastre o número em Configurações do cliente.");
     onProgress?.("Criando criativo...");
@@ -2273,19 +2273,84 @@ export async function uploadAdImage(adAccountId: string, file: File, token: stri
   return firstImage.hash;
 }
 
-export async function uploadAdVideo(adAccountId: string, file: File, token: string): Promise<string> {
-  const formData = new FormData();
-  formData.append("file", file, file.name);
-  formData.append("access_token", token);
-
-  const res = await fetch(`${BASE_URL}/${adAccountId}/advideos`, { method: "POST", body: formData });
-  const json = (await res.json()) as { id?: string; error?: MetaApiError };
-  if (json.error) {
-    await recordMetaApiError(`${adAccountId}/advideos`, res.status, json.error);
-    throw new Error(formatMetaError(json.error));
+// Vídeos grandes falham com erro de rede/CORS se mandados numa única requisição
+// (comum acima de ~50-100MB). A Meta recomenda o Resumable Upload API: start →
+// vários transfers em pedaços (o tamanho de cada pedaço é ditado pela própria
+// Meta via start_offset/end_offset) → finish. Funciona pra qualquer tamanho.
+export async function uploadAdVideo(
+  adAccountId: string,
+  file: File,
+  token: string,
+  onProgress?: (msg: string) => void
+): Promise<string> {
+  const startParams = new URLSearchParams({
+    upload_phase: "start",
+    file_size: String(file.size),
+    access_token: token,
+  });
+  const startRes = await fetch(`${BASE_URL}/${adAccountId}/advideos`, { method: "POST", body: startParams });
+  const startJson = (await startRes.json()) as {
+    video_id?: string;
+    upload_session_id?: string;
+    start_offset?: string;
+    end_offset?: string;
+    error?: MetaApiError;
+  };
+  if (startJson.error) {
+    await recordMetaApiError(`${adAccountId}/advideos`, startRes.status, startJson.error);
+    throw new Error(formatMetaError(startJson.error));
   }
-  if (!json.id) throw new Error("Upload de vídeo falhou: ID não retornado pela Meta.");
-  return json.id;
+  const videoId = startJson.video_id;
+  const uploadSessionId = startJson.upload_session_id;
+  if (!videoId || !uploadSessionId) throw new Error("Upload de vídeo falhou: sessão não iniciada pela Meta.");
+
+  let startOffset = Number(startJson.start_offset ?? 0);
+  let endOffset = Number(startJson.end_offset ?? 0);
+
+  while (startOffset < endOffset) {
+    const chunk = file.slice(startOffset, endOffset);
+    const pct = Math.round((startOffset / file.size) * 100);
+    onProgress?.(`Enviando vídeo... ${pct}%`);
+
+    const transferForm = new FormData();
+    transferForm.append("upload_phase", "transfer");
+    transferForm.append("start_offset", String(startOffset));
+    transferForm.append("upload_session_id", uploadSessionId);
+    transferForm.append("access_token", token);
+    transferForm.append("video_file_chunk", chunk, file.name);
+
+    const transferRes = await fetch(`${BASE_URL}/${adAccountId}/advideos`, { method: "POST", body: transferForm });
+    const transferJson = (await transferRes.json()) as {
+      start_offset?: string;
+      end_offset?: string;
+      error?: MetaApiError;
+    };
+    if (transferJson.error) {
+      await recordMetaApiError(`${adAccountId}/advideos`, transferRes.status, transferJson.error);
+      throw new Error(formatMetaError(transferJson.error));
+    }
+    const nextStart = Number(transferJson.start_offset ?? startOffset);
+    const nextEnd = Number(transferJson.end_offset ?? endOffset);
+    // Evita loop infinito caso a Meta devolva os mesmos offsets por engano
+    if (nextStart <= startOffset && nextEnd <= endOffset && nextStart === startOffset && nextEnd === endOffset) break;
+    startOffset = nextStart;
+    endOffset = nextEnd;
+  }
+
+  onProgress?.("Finalizando upload do vídeo...");
+  const finishParams = new URLSearchParams({
+    upload_phase: "finish",
+    upload_session_id: uploadSessionId,
+    access_token: token,
+  });
+  const finishRes = await fetch(`${BASE_URL}/${adAccountId}/advideos`, { method: "POST", body: finishParams });
+  const finishJson = (await finishRes.json()) as { success?: boolean; error?: MetaApiError };
+  if (finishJson.error) {
+    await recordMetaApiError(`${adAccountId}/advideos`, finishRes.status, finishJson.error);
+    throw new Error(formatMetaError(finishJson.error));
+  }
+
+  return videoId;
 }
 
 // ── Ad creative & ad creation ─────────────────────────────────
