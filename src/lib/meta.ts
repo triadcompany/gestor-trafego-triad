@@ -623,6 +623,7 @@ export interface MetaAdCreative {
       message?: string;
       title?: string;
       description?: string;
+      image_url?: string;
       call_to_action?: {
         type: string;
         value?: { app_destination?: string; whatsapp_number?: string };
@@ -712,7 +713,7 @@ export async function fetchAdWithCreative(adId: string, token: string): Promise<
 
   // Step 2: get object_story_spec — try via ad endpoint (different access than creative endpoint)
   for (const fields of [
-    "creative{object_story_spec{page_id,video_data{video_id,message,title,call_to_action,page_welcome_message}}}",
+    "creative{object_story_spec{page_id,video_data{video_id,message,title,image_url,call_to_action,page_welcome_message}}}",
     "creative{object_story_spec{page_id,link_data{image_hash,link,message,name,description,call_to_action,page_welcome_message}}}",
   ]) {
     try {
@@ -933,6 +934,9 @@ export async function updateAdCreative(
             ...(updates.body !== undefined ? { message: updates.body } : {}),
             ...(updates.title !== undefined ? { title: updates.title } : {}),
             // video_data não aceita "description" na API da Meta (só link_data aceita)
+            // Meta exige uma miniatura (image_url/image_hash) — usa a já existente se a
+            // busca não trouxe uma em video_data.image_url.
+            ...(!spec!.video_data?.image_url && creative.thumbnail_url ? { image_url: creative.thumbnail_url } : {}),
             ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
           },
         }
