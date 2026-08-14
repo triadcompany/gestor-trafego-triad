@@ -29,6 +29,7 @@ export const Route = createFileRoute("/")({
 const periodOptions: { value: DashboardPeriod; label: string }[] = [
   { value: "today",      label: "Hoje" },
   { value: "yesterday",  label: "Ontem" },
+  { value: "last_3d",    label: "3 dias" },
   { value: "last_7d",    label: "7 dias" },
   { value: "last_30d",   label: "30 dias" },
   { value: "this_month", label: "Mês" },
@@ -40,6 +41,7 @@ const periodOptions: { value: DashboardPeriod; label: string }[] = [
 const cplLabel: Record<DashboardPeriod, string> = {
   today:      "CPL hoje",
   yesterday:  "CPL ontem",
+  last_3d:    "CPL 3d",
   last_7d:    "CPL 7d",
   last_30d:   "CPL 30d",
   this_month: "CPL mês",

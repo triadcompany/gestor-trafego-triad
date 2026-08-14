@@ -109,6 +109,7 @@ function computeStatus(
 export type DashboardPeriod =
   | "today"
   | "yesterday"
+  | "last_3d"
   | "last_7d"
   | "last_30d"
   | "this_month"
@@ -127,6 +128,7 @@ function periodDateRange(
   switch (period) {
     case "today":      return { start: today, end: today };
     case "yesterday":  return { start: daysAgo(1), end: daysAgo(1) };
+    case "last_3d":    return { start: daysAgo(2), end: today };
     case "last_7d":    return { start: daysAgo(6), end: today };
     case "last_30d":   return { start: daysAgo(29), end: today };
     case "this_month": return { start: iso(new Date(now.getFullYear(), now.getMonth(), 1)), end: today };
