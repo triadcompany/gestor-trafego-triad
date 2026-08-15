@@ -50,6 +50,9 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
   const [genderMode, setGenderMode] = useState<"all" | "male" | "female">("all");
   const [interests, setInterests] = useState<MetaInterest[]>([]);
   const [locations, setLocations] = useState<MetaLocationResult[]>([]);
+  const [customLocations, setCustomLocations] = useState<
+    Array<{ latitude: number; longitude: number; radius: number; distance_unit?: string; name?: string }>
+  >([]);
   const [placementMode, setPlacementMode] = useState<"advantage_plus" | "manual">("advantage_plus");
   const [platforms, setPlatforms] = useState({ facebook: true, instagram: true });
   const [fbPositions, setFbPositions] = useState<string[]>(["feed", "story"]);
@@ -73,8 +76,21 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
     const g = targeting.genders ?? [];
     setGenderMode(g.length === 1 && g[0] === 1 ? "male" : g.length === 1 && g[0] === 2 ? "female" : "all");
     setInterests(targeting.flexible_spec?.[0]?.interests ?? []);
-    const cities = (targeting.geo_locations?.cities ?? []) as MetaLocationResult[];
-    setLocations(cities);
+    const cities = (targeting.geo_locations?.cities ?? []).map((c) => ({
+      key: c.key,
+      name: c.name ?? c.key,
+      type: "city",
+      country_code: c.country ?? "BR",
+      region: c.region,
+    }));
+    const regions = (targeting.geo_locations?.regions ?? []).map((r) => ({
+      key: r.key,
+      name: r.name ?? r.key,
+      type: "region",
+      country_code: r.country ?? "BR",
+    }));
+    setLocations([...cities, ...regions]);
+    setCustomLocations(targeting.geo_locations?.custom_locations ?? []);
     if (targeting.publisher_platforms?.length) {
       setPlacementMode("manual");
       setPlatforms({
@@ -92,9 +108,15 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
   const saveMutation = useMutation({
     mutationFn: async () => {
       // Build clean targeting — never spread original targeting (may include read-only fields Meta rejects)
+      const cities = locations.filter((l) => l.type !== "region").map((l) => ({ key: l.key }));
+      const regions = locations.filter((l) => l.type === "region").map((l) => ({ key: l.key }));
       const newTargeting: MetaTargeting = {
-        geo_locations: locations.length > 0
-          ? { cities: locations.map((l) => ({ key: l.key })) }
+        geo_locations: (locations.length > 0 || customLocations.length > 0)
+          ? {
+              ...(cities.length > 0 ? { cities } : {}),
+              ...(regions.length > 0 ? { regions } : {}),
+              ...(customLocations.length > 0 ? { custom_locations: customLocations } : {}),
+            }
           : { countries: ["BR"] },
         targeting_automation: { advantage_audience: 0 },
         ...(placementMode === "manual" ? {
@@ -164,6 +186,21 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
           token={token}
           onChange={(locs) => { setLocations(locs); mark(); }}
         />
+        {customLocations.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {customLocations.map((loc, i) => (
+              <Badge key={`${loc.latitude}-${loc.longitude}-${i}`} variant="secondary" className="gap-1 text-xs pr-1">
+                ({loc.latitude.toFixed(4)}, {loc.longitude.toFixed(4)}) +{loc.radius}{loc.distance_unit === "mile" ? "mi" : "km"}
+                <button
+                  onClick={() => { setCustomLocations((prev) => prev.filter((_, idx) => idx !== i)); mark(); }}
+                  className="hover:text-foreground"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </Badge>
+            ))}
+          </div>
+        )}
       </FieldSection>
 
       <Separator />

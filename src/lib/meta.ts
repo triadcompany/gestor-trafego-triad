@@ -586,7 +586,9 @@ export interface MetaTargeting {
   genders?: number[]; // 1 = male, 2 = female, [] = all
   geo_locations?: {
     countries?: string[];
-    cities?: Array<{ key: string; name?: string; country?: string; region?: string }>;
+    cities?: Array<{ key: string; name?: string; country?: string; region?: string; radius?: number; distance_unit?: string }>;
+    regions?: Array<{ key: string; name?: string; country?: string }>;
+    custom_locations?: Array<{ latitude: number; longitude: number; radius: number; distance_unit?: string; name?: string }>;
   };
   flexible_spec?: Array<{ interests?: Array<{ id: string; name: string }> }>;
   publisher_platforms?: string[];
