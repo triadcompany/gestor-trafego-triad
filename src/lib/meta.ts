@@ -195,11 +195,10 @@ function extractMetrics(actions?: Array<{ action_type: string; value: string }>)
     return a ? parseInt(a.value, 10) : 0;
   };
   return {
-    leads: find([
-      "onsite_conversion.total_messaging_connection",
-      "onsite_conversion.messaging_conversation_started_7d",
-      "messaging_first_reply",
-    ]),
+    // Conversas novas iniciadas — mesma métrica que o Gerenciador de Anúncios mostra
+    // como "Resultados" para campanhas de WhatsApp. "total_messaging_connection" e
+    // "messaging_first_reply" incluem reconexões/respostas e inflam a contagem.
+    leads: find(["onsite_conversion.messaging_conversation_started_7d"]),
     forms: find(["lead", "onsite_conversion.lead_grouped"]),
   };
 }
