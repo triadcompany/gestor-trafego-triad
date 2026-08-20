@@ -306,8 +306,8 @@ function WhatsappGroupPicker({
     timer.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const data = await searchEvolutionRecipients(q);
-        setResults(data.filter((r) => r.isGroup));
+        const data = await searchEvolutionRecipients(q, true);
+        setResults(data);
       } catch {
         setResults([]);
       } finally {

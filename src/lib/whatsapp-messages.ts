@@ -243,7 +243,7 @@ export interface EvolutionRecipient {
 }
 
 const _searchEvolutionRecipients = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ query: z.string() }))
+  .inputValidator(z.object({ query: z.string(), groupsOnly: z.boolean().optional() }))
   .handler(async ({ data }): Promise<EvolutionRecipient[]> => {
     const { url, apiKey, instance } = await getEvolutionConfig();
     const headers = { apikey: apiKey, "Content-Type": "application/json" };
@@ -251,21 +251,23 @@ const _searchEvolutionRecipients = createServerFn({ method: "GET" })
 
     const results: EvolutionRecipient[] = [];
 
-    try {
-      const res = await fetch(`${url}/chat/findContacts/${instance}`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({}),
-      });
-      const contacts = (await res.json()) as Array<{ remoteJid?: string; pushName?: string | null; isGroup?: boolean }>;
-      for (const c of contacts ?? []) {
-        if (!c.remoteJid || c.isGroup) continue;
-        const name = c.pushName || c.remoteJid.split("@")[0];
-        if (q && !name.toLowerCase().includes(q) && !c.remoteJid.includes(q)) continue;
-        results.push({ remoteJid: c.remoteJid, name, isGroup: false });
+    if (!data.groupsOnly) {
+      try {
+        const res = await fetch(`${url}/chat/findContacts/${instance}`, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({}),
+        });
+        const contacts = (await res.json()) as Array<{ remoteJid?: string; pushName?: string | null; isGroup?: boolean }>;
+        for (const c of contacts ?? []) {
+          if (!c.remoteJid || c.isGroup) continue;
+          const name = c.pushName || c.remoteJid.split("@")[0];
+          if (q && !name.toLowerCase().includes(q) && !c.remoteJid.includes(q)) continue;
+          results.push({ remoteJid: c.remoteJid, name, isGroup: false });
+        }
+      } catch {
+        // segue só com o que conseguir (grupos), não derruba a busca inteira
       }
-    } catch {
-      // segue só com o que conseguir (grupos), não derruba a busca inteira
     }
 
     try {
@@ -289,8 +291,8 @@ const _searchEvolutionRecipients = createServerFn({ method: "GET" })
     return results.slice(0, 30);
   });
 
-export async function searchEvolutionRecipients(query: string): Promise<EvolutionRecipient[]> {
-  return _searchEvolutionRecipients({ data: { query } });
+export async function searchEvolutionRecipients(query: string, groupsOnly?: boolean): Promise<EvolutionRecipient[]> {
+  return _searchEvolutionRecipients({ data: { query, groupsOnly } });
 }
 
 const _sendActiveCampaignsList = createServerFn({ method: "POST" })
