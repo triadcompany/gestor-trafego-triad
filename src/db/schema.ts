@@ -58,6 +58,8 @@ export const clients = pgTable("clients", {
   pixCycle: text("pix_cycle"),
   pixReferenceDay: integer("pix_reference_day"),
   pixActive: boolean("pix_active").notNull().default(false),
+  whatsappGroupId: text("whatsapp_group_id"),
+  whatsappGroupName: text("whatsapp_group_name"),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 

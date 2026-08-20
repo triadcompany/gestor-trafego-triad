@@ -16,9 +16,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, X, Check } from "lucide-react";
+import { Plus, X, Check, Search, Loader2, Users } from "lucide-react";
 import { fetchTags, createTag, upsertClient, type ClientRow, type TagRow } from "@/lib/queries";
 import { TagBadge, TAG_COLORS } from "@/components/TagBadge";
+import { searchEvolutionRecipients, type EvolutionRecipient } from "@/lib/whatsapp-messages";
 
 const segmentDefaults = {
   popular: { cpl_min: 6, cpl_max: 12 },
@@ -47,6 +48,9 @@ export function ClientFormDialog({
   const [pixCycle, setPixCycle] = useState<"semanal" | "quinzenal" | "mensal">(client?.pix_cycle ?? "mensal");
   const [pixRefDay, setPixRefDay] = useState<string>(client?.pix_reference_day != null ? String(client.pix_reference_day) : "1");
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>((client?.tags ?? []).map((t) => t.id));
+  const [whatsappGroup, setWhatsappGroup] = useState<EvolutionRecipient | null>(
+    client?.whatsapp_group_id ? { remoteJid: client.whatsapp_group_id, name: client.whatsapp_group_name ?? client.whatsapp_group_id, isGroup: true } : null
+  );
 
   const queryClient = useQueryClient();
   const { data: allTags = [] } = useQuery({ queryKey: ["tags"], queryFn: fetchTags });
@@ -81,6 +85,8 @@ export function ClientFormDialog({
         monthly_budget: monthlyBudget !== "" ? Number(monthlyBudget) : null,
         pix_cycle: pixActive ? pixCycle : null,
         pix_reference_day: pixActive ? Number(pixRefDay) : null,
+        whatsapp_group_id: whatsappGroup?.remoteJid ?? null,
+        whatsapp_group_name: whatsappGroup?.name ?? null,
       },
       selectedTagIds,
     );
@@ -186,6 +192,11 @@ export function ClientFormDialog({
           />
         </div>
 
+        <div className="space-y-1">
+          <Label>Grupo do WhatsApp (resumo diário)</Label>
+          <WhatsappGroupPicker value={whatsappGroup} onChange={setWhatsappGroup} />
+        </div>
+
         {/* Tags */}
         <div className="space-y-2">
           <Label>Tags</Label>
@@ -273,6 +284,76 @@ export function ClientFormDialog({
         </DialogFooter>
       </form>
     </DialogContent>
+  );
+}
+
+function WhatsappGroupPicker({
+  value,
+  onChange,
+}: {
+  value: EvolutionRecipient | null;
+  onChange: (group: EvolutionRecipient | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<EvolutionRecipient[]>([]);
+  const [searching, setSearching] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleSearch = (q: string) => {
+    setQuery(q);
+    if (timer.current) clearTimeout(timer.current);
+    if (!q.trim()) { setResults([]); return; }
+    timer.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const data = await searchEvolutionRecipients(q);
+        setResults(data.filter((r) => r.isGroup));
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 400);
+  };
+
+  if (value) {
+    return (
+      <div className="flex items-center gap-1.5 bg-muted/60 rounded-md px-3 py-2 text-sm">
+        <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className="flex-1 truncate">{value.name}</span>
+        <button type="button" onClick={() => onChange(null)}>
+          <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-md bg-background">
+        {searching ? <Loader2 className="h-3.5 w-3.5 text-muted-foreground animate-spin" /> : <Search className="h-3.5 w-3.5 text-muted-foreground" />}
+        <input
+          value={query}
+          onChange={(e) => handleSearch(e.target.value)}
+          placeholder="Buscar grupo do WhatsApp..."
+          className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+        />
+      </div>
+      {results.length > 0 && (
+        <div className="border border-border rounded-md overflow-hidden bg-popover shadow-sm max-h-56 overflow-y-auto">
+          {results.map((r) => (
+            <button
+              key={r.remoteJid}
+              type="button"
+              className="w-full text-left px-3 py-2 text-sm hover:bg-muted/60 transition-colors"
+              onClick={() => { onChange(r); setQuery(""); setResults([]); }}
+            >
+              {r.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -45,6 +45,8 @@ export interface ClientRow {
   pix_cycle: "semanal" | "quinzenal" | "mensal" | null;
   pix_reference_day: number | null;
   pix_active: boolean;
+  whatsapp_group_id: string | null;
+  whatsapp_group_name: string | null;
   tags?: TagRow[];
 }
 
@@ -91,6 +93,8 @@ function toClientRow(c: typeof clients.$inferSelect): ClientRow {
     pix_cycle: c.pixCycle as ClientRow["pix_cycle"],
     pix_reference_day: c.pixReferenceDay,
     pix_active: c.pixActive,
+    whatsapp_group_id: c.whatsappGroupId,
+    whatsapp_group_name: c.whatsappGroupName,
   };
 }
 
@@ -296,6 +300,8 @@ const upsertClientSchema = z.object({
   monthly_budget: z.number().nullable().optional(),
   pix_cycle: z.enum(["semanal", "quinzenal", "mensal"]).nullable().optional(),
   pix_reference_day: z.number().nullable().optional(),
+  whatsapp_group_id: z.string().nullable().optional(),
+  whatsapp_group_name: z.string().nullable().optional(),
 });
 
 const _upsertClient = createServerFn({ method: "POST" })
@@ -316,6 +322,8 @@ const _upsertClient = createServerFn({ method: "POST" })
       ...(data.monthly_budget !== undefined ? { monthlyBudget: data.monthly_budget ?? 0 } : {}),
       ...(data.pix_cycle !== undefined ? { pixCycle: data.pix_cycle } : {}),
       ...(data.pix_reference_day !== undefined ? { pixReferenceDay: data.pix_reference_day } : {}),
+      ...(data.whatsapp_group_id !== undefined ? { whatsappGroupId: data.whatsapp_group_id } : {}),
+      ...(data.whatsapp_group_name !== undefined ? { whatsappGroupName: data.whatsapp_group_name } : {}),
     };
     const [row] = await db
       .insert(clients)
@@ -339,6 +347,8 @@ export async function upsertClient(data: {
   monthly_budget?: number | null;
   pix_cycle?: "semanal" | "quinzenal" | "mensal" | null;
   pix_reference_day?: number | null;
+  whatsapp_group_id?: string | null;
+  whatsapp_group_name?: string | null;
 }): Promise<{ id: string }> {
   return _upsertClient({ data });
 }
