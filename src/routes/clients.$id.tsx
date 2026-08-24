@@ -314,7 +314,7 @@ function ClientDetail() {
       const activeNames = (campaigns ?? [])
         .filter((c) => c.status === "ACTIVE")
         .map((c) => extractCampaignLabel(c.name));
-      await sendActiveCampaignsList(client.name, activeNames);
+      await sendActiveCampaignsList(client.id, client.name, activeNames);
     },
     onSuccess: () => toast.success("Lista enviada para o grupo Operacional Triad Company."),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar lista", { duration: 8000 }),

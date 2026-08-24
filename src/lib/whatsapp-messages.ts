@@ -2,7 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { appConfig, scheduledMessageRecipients, scheduledMessages } from "@/db/schema";
+import { appConfig, clients, scheduledMessageRecipients, scheduledMessages } from "@/db/schema";
 
 async function getEvolutionConfig(): Promise<{ url: string; apiKey: string; instance: string }> {
   const rows = await db
@@ -296,14 +296,25 @@ export async function searchEvolutionRecipients(query: string, groupsOnly?: bool
 }
 
 const _sendActiveCampaignsList = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ clientName: z.string(), campaignNames: z.array(z.string()) }))
+  .inputValidator(z.object({ clientId: z.string(), clientName: z.string(), campaignNames: z.array(z.string()) }))
   .handler(async ({ data }) => {
     const { url, apiKey, instance } = await getEvolutionConfig();
     const rows = await db
-      .select({ value: appConfig.value })
+      .select({ key: appConfig.key, value: appConfig.value })
       .from(appConfig)
-      .where(eq(appConfig.key, "whatsapp_group_operacional_id"));
-    const groupId = rows[0]?.value;
+      .where(inArray(appConfig.key, ["whatsapp_group_operacional_id", "campaigns_list_destination"]));
+    const configValues = Object.fromEntries(rows.map((r) => [r.key, r.value]));
+    const destination = configValues["campaigns_list_destination"] || "operacional";
+    const operacionalGroupId = configValues["whatsapp_group_operacional_id"];
+
+    let groupId = operacionalGroupId;
+    if (destination === "client_group") {
+      const [client] = await db
+        .select({ whatsappGroupId: clients.whatsappGroupId })
+        .from(clients)
+        .where(eq(clients.id, data.clientId));
+      if (client?.whatsappGroupId) groupId = client.whatsappGroupId;
+    }
     if (!groupId) {
       throw new Error("Grupo de destino não configurado (whatsapp_group_operacional_id em app_config).");
     }
@@ -321,6 +332,6 @@ const _sendActiveCampaignsList = createServerFn({ method: "POST" })
     }
   });
 
-export async function sendActiveCampaignsList(clientName: string, campaignNames: string[]): Promise<void> {
-  await _sendActiveCampaignsList({ data: { clientName, campaignNames } });
+export async function sendActiveCampaignsList(clientId: string, clientName: string, campaignNames: string[]): Promise<void> {
+  await _sendActiveCampaignsList({ data: { clientId, clientName, campaignNames } });
 }

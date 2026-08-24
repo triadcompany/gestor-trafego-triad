@@ -100,6 +100,42 @@ export async function saveOpenAIKey(key: string): Promise<void> {
   await _saveOpenAIKey({ data: { key } });
 }
 
+export type SendDestination = "operacional" | "client_group";
+
+export async function getSendDestinations(): Promise<{
+  campaignsListDestination: SendDestination;
+  weeklyReportDestination: SendDestination;
+}> {
+  const rows = await _getConfigValues({
+    data: { keys: ["campaigns_list_destination", "weekly_report_destination"] },
+  });
+  return {
+    campaignsListDestination: (rows["campaigns_list_destination"] as SendDestination) || "operacional",
+    weeklyReportDestination: (rows["weekly_report_destination"] as SendDestination) || "operacional",
+  };
+}
+
+const _saveSendDestinations = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      campaignsListDestination: z.enum(["operacional", "client_group"]),
+      weeklyReportDestination: z.enum(["operacional", "client_group"]),
+    })
+  )
+  .handler(async ({ data }) => {
+    await setConfigValues([
+      { key: "campaigns_list_destination", value: data.campaignsListDestination },
+      { key: "weekly_report_destination", value: data.weeklyReportDestination },
+    ]);
+  });
+
+export async function saveSendDestinations(data: {
+  campaignsListDestination: SendDestination;
+  weeklyReportDestination: SendDestination;
+}): Promise<void> {
+  await _saveSendDestinations({ data });
+}
+
 export async function getLastSyncedAt(): Promise<Date | null> {
   const rows = await _getConfigValues({ data: { keys: ["last_synced_at"] } });
   return rows["last_synced_at"] ? new Date(rows["last_synced_at"]) : null;
@@ -322,7 +358,7 @@ const _sendWeeklyMetricsReport = createServerFn({ method: "POST" })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async ({ data }) => {
     const [client] = await db
-      .select({ metaAdAccountId: clientsTable.metaAdAccountId })
+      .select({ metaAdAccountId: clientsTable.metaAdAccountId, whatsappGroupId: clientsTable.whatsappGroupId })
       .from(clientsTable)
       .where(eq(clientsTable.id, data.clientId));
     if (!client) throw new Error("Cliente não encontrado.");
@@ -352,11 +388,16 @@ Vou usar esse feedback para melhorar o tráfego!`;
       "evolution_api_key",
       "evolution_instance",
       "whatsapp_group_operacional_id",
+      "weekly_report_destination",
     ]);
     const url = configRows["evolution_api_url"];
     const apiKey = configRows["evolution_api_key"];
     const instance = configRows["evolution_instance"];
-    const groupId = configRows["whatsapp_group_operacional_id"];
+    const destination = (configRows["weekly_report_destination"] as SendDestination) || "operacional";
+    const groupId =
+      destination === "client_group" && client.whatsappGroupId
+        ? client.whatsappGroupId
+        : configRows["whatsapp_group_operacional_id"];
     if (!url || !apiKey || !instance) {
       throw new Error("Evolution API não configurada (evolution_api_url/evolution_api_key/evolution_instance em app_config).");
     }

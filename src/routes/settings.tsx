@@ -20,10 +20,26 @@ import {
   Stethoscope,
   Bot,
   Webhook,
+  Send,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { toast } from "sonner";
-import { getTokenInfo, saveMetaToken, getOpenAIKey, saveOpenAIKey } from "@/lib/meta";
+import {
+  getTokenInfo,
+  saveMetaToken,
+  getOpenAIKey,
+  saveOpenAIKey,
+  getSendDestinations,
+  saveSendDestinations,
+  type SendDestination,
+} from "@/lib/meta";
 import { getN8nWebhookUrl, saveN8nWebhookUrl } from "@/lib/n8n";
 
 export const Route = createFileRoute("/settings")({
@@ -107,6 +123,23 @@ function SettingsPage() {
     },
     onError: (e) => {
       toast.error(e instanceof Error ? e.message : "Erro ao salvar URL");
+    },
+  });
+
+  const { data: sendDestinations, isLoading: isLoadingSendDestinations } = useQuery({
+    queryKey: ["send-destinations"],
+    queryFn: getSendDestinations,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const saveSendDestinationsMutation = useMutation({
+    mutationFn: saveSendDestinations,
+    onSuccess: () => {
+      toast.success("Destino atualizado!");
+      queryClient.invalidateQueries({ queryKey: ["send-destinations"] });
+    },
+    onError: (e) => {
+      toast.error(e instanceof Error ? e.message : "Erro ao salvar destino");
     },
   });
 
@@ -461,6 +494,72 @@ function SettingsPage() {
                   "Salvar URL"
                 )}
               </Button>
+            </div>
+          </Card>
+        </section>
+
+        {/* Destino dos envios manuais */}
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="h-1 w-1 rounded-full bg-muted-foreground" />
+            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
+              Destino dos envios manuais
+            </h2>
+          </div>
+
+          <Card className="p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <Send className="h-5 w-5 text-muted-foreground shrink-0" />
+              <p className="text-sm text-muted-foreground">
+                Escolha pra onde vão as mensagens dos botões "Enviar lista de campanhas ativas" e "Enviar relatório
+                semanal" na página do cliente. Se o destino for "Grupo do cliente" e o cliente ainda não tiver um
+                grupo vinculado, a mensagem cai automaticamente no grupo Operacional.
+              </p>
+            </div>
+
+            <div className="grid sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Lista de campanhas ativas</Label>
+                <Select
+                  value={sendDestinations?.campaignsListDestination ?? "operacional"}
+                  disabled={isLoadingSendDestinations || saveSendDestinationsMutation.isPending}
+                  onValueChange={(v) =>
+                    saveSendDestinationsMutation.mutate({
+                      campaignsListDestination: v as SendDestination,
+                      weeklyReportDestination: sendDestinations?.weeklyReportDestination ?? "operacional",
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="operacional">Operacional Triad Company</SelectItem>
+                    <SelectItem value="client_group">Grupo do cliente</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Relatório semanal (7 dias)</Label>
+                <Select
+                  value={sendDestinations?.weeklyReportDestination ?? "operacional"}
+                  disabled={isLoadingSendDestinations || saveSendDestinationsMutation.isPending}
+                  onValueChange={(v) =>
+                    saveSendDestinationsMutation.mutate({
+                      campaignsListDestination: sendDestinations?.campaignsListDestination ?? "operacional",
+                      weeklyReportDestination: v as SendDestination,
+                    })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="operacional">Operacional Triad Company</SelectItem>
+                    <SelectItem value="client_group">Grupo do cliente</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </Card>
         </section>
