@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { sendActiveCampaignsList } from "@/lib/whatsapp-messages";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
@@ -55,6 +55,7 @@ import {
   fetchCampaignById,
   fetchDailyInsights,
   getMetaToken,
+  sendWeeklyMetricsReport,
   type MetaCampaign,
   type DatePreset,
   type CustomDateRange,
@@ -317,6 +318,15 @@ function ClientDetail() {
     },
     onSuccess: () => toast.success("Lista enviada para o grupo Operacional Triad Company."),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar lista", { duration: 8000 }),
+  });
+
+  const sendReportMutation = useMutation({
+    mutationFn: async () => {
+      if (!client) throw new Error("Cliente não carregado.");
+      await sendWeeklyMetricsReport(client.id);
+    },
+    onSuccess: () => toast.success("Relatório semanal enviado para o grupo Operacional Triad Company."),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar relatório", { duration: 8000 }),
   });
 
   if (isLoading) {
@@ -742,6 +752,19 @@ function ClientDetail() {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Enviar lista de campanhas ativas no WhatsApp</TooltipContent>
+            </UITooltip>
+            <UITooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={() => sendReportMutation.mutate()}
+                  disabled={sendReportMutation.isPending}
+                >
+                  <BarChart3 className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Enviar relatório semanal de métricas no WhatsApp</TooltipContent>
             </UITooltip>
             <Button asChild size="sm" className="gap-2">
               <Link to="/campaigns/new" search={{ client: client.id }}>

@@ -290,9 +290,9 @@ export async function fetchAccountInsightsForRange(
   token: string,
   since: string,
   until: string,
-): Promise<{ spend: number; leads: number; forms: number }> {
+): Promise<{ spend: number; leads: number; forms: number; impressions: number }> {
   const params = new URLSearchParams({
-    fields: "spend,actions",
+    fields: "spend,actions,impressions",
     time_range: JSON.stringify({ since, until }),
     level: "account",
     access_token: token,
@@ -303,6 +303,7 @@ export async function fetchAccountInsightsForRange(
     data?: Array<{
       spend?: string;
       actions?: Array<{ action_type: string; value: string }>;
+      impressions?: string;
     }>;
     error?: { message: string };
   };
@@ -312,8 +313,70 @@ export async function fetchAccountInsightsForRange(
   const row = json.data?.[0];
   const spend = parseFloat(row?.spend ?? "0");
   const { leads, forms } = extractMetrics(row?.actions);
+  const impressions = parseInt(row?.impressions ?? "0", 10);
 
-  return { spend, leads, forms };
+  return { spend, leads, forms, impressions };
+}
+
+const _sendWeeklyMetricsReport = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async ({ data }) => {
+    const [client] = await db
+      .select({ metaAdAccountId: clientsTable.metaAdAccountId })
+      .from(clientsTable)
+      .where(eq(clientsTable.id, data.clientId));
+    if (!client) throw new Error("Cliente não encontrado.");
+
+    const token = await requireMetaToken();
+
+    const until = new Date().toISOString().slice(0, 10);
+    const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
+
+    const { spend, leads, impressions } = await fetchAccountInsightsForRange(client.metaAdAccountId, token, since, until);
+    const custoPorMensagem = leads > 0 ? spend / leads : 0;
+
+    const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+    const text = `🎯Olá pessoal, segue Relatório semanal das Métricas dos últimos 7 dias dos anúncios:
+
+▪️Impressões: ${impressions.toLocaleString("pt-BR")}
+▪️Número de mensagens: ${leads}
+▪️Custo por mensagem: ${brl(custoPorMensagem)}
+▪️Investimento: ${brl(spend)}
+
+Dos carros que estamos anunciando, quais estão tendo mais dificuldade nas negociações e quais objeções?
+Vou usar esse feedback para melhorar o tráfego!`;
+
+    const configRows = await getConfigValues([
+      "evolution_api_url",
+      "evolution_api_key",
+      "evolution_instance",
+      "whatsapp_group_operacional_id",
+    ]);
+    const url = configRows["evolution_api_url"];
+    const apiKey = configRows["evolution_api_key"];
+    const instance = configRows["evolution_instance"];
+    const groupId = configRows["whatsapp_group_operacional_id"];
+    if (!url || !apiKey || !instance) {
+      throw new Error("Evolution API não configurada (evolution_api_url/evolution_api_key/evolution_instance em app_config).");
+    }
+    if (!groupId) {
+      throw new Error("Grupo de destino não configurado (whatsapp_group_operacional_id em app_config).");
+    }
+
+    const res = await fetch(`${url}/message/sendText/${instance}`, {
+      method: "POST",
+      headers: { apikey: apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ number: groupId, text }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Erro ao enviar mensagem: ${res.status} - ${body}`);
+    }
+  });
+
+export async function sendWeeklyMetricsReport(clientId: string): Promise<void> {
+  await _sendWeeklyMetricsReport({ data: { clientId } });
 }
 
 export const syncAllClients = createServerOnlyFn(async function syncAllClients(token: string): Promise<MetaSyncResult> {
