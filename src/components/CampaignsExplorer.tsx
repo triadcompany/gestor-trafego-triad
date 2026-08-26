@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ArrowUp, ArrowDown, SlidersHorizontal, Check, X, Copy, Pencil, Scale } from "lucide-react";
+import { ArrowUp, ArrowDown, SlidersHorizontal, Check, X, Copy, Pencil, Scale, Search } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchAllAdSets,
@@ -138,6 +138,7 @@ export function CampaignsExplorer({
   onOpenCampaign,
 }: CampaignsExplorerProps) {
   const [level, setLevel] = useState<ExplorerLevel>("campaign");
+  const [search, setSearch] = useState("");
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<Set<string>>(new Set());
   const [sortColumn, setSortColumn] = useState<"name" | ColumnKey | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -176,14 +177,20 @@ export function CampaignsExplorer({
   const hasFilter = selectedCampaignIds.size > 0;
 
   const rows: Row[] = useMemo(() => {
-    if (level === "campaign") return campaigns.map(campaignToRow);
-    if (level === "adset") {
+    let result: Row[];
+    if (level === "campaign") {
+      result = campaigns.map(campaignToRow);
+    } else if (level === "adset") {
       const filtered = hasFilter ? adSets.filter((a) => a.campaign_id && selectedCampaignIds.has(a.campaign_id)) : adSets;
-      return filtered.map(adSetToRow);
+      result = filtered.map(adSetToRow);
+    } else {
+      const filtered = hasFilter ? ads.filter((a) => a.campaign_id && selectedCampaignIds.has(a.campaign_id)) : ads;
+      result = filtered.map(adToRow);
     }
-    const filtered = hasFilter ? ads.filter((a) => a.campaign_id && selectedCampaignIds.has(a.campaign_id)) : ads;
-    return filtered.map(adToRow);
-  }, [level, campaigns, adSets, ads, hasFilter, selectedCampaignIds]);
+    const q = search.trim().toLowerCase();
+    if (q) result = result.filter((r) => r.name.toLowerCase().includes(q));
+    return result;
+  }, [level, campaigns, adSets, ads, hasFilter, selectedCampaignIds, search]);
 
   const sortedRows = useMemo(() => {
     if (!sortColumn) return rows;
@@ -357,6 +364,16 @@ export function CampaignsExplorer({
         </div>
       </div>
 
+      <div className="relative mb-3 max-w-xs">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={`Buscar ${level === "campaign" ? "campanha" : level === "adset" ? "conjunto" : "anúncio"}...`}
+          className="pl-8 h-8 text-sm"
+        />
+      </div>
+
       <Card>
         <div className="overflow-x-auto overflow-y-auto max-h-[480px]">
           <Table>
@@ -402,7 +419,9 @@ export function CampaignsExplorer({
               ) : sortedRows.length === 0 ? (
                 <TableRow>
                   <TableCell colSpan={orderedColumns.length + 3} className="text-center text-muted-foreground py-8 text-sm">
-                    {level === "campaign"
+                    {search.trim()
+                      ? "Nenhum resultado para a busca."
+                      : level === "campaign"
                       ? "Nenhuma campanha encontrada para o período selecionado."
                       : hasFilter
                       ? "Nenhum item encontrado para as campanhas selecionadas."
