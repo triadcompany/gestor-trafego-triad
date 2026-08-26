@@ -613,6 +613,9 @@ export async function fetchCampaigns(
     fetch(`${BASE_URL}/${adAccountId}/insights?${insightsParams}`),
   ]);
 
+  if (!campaignsRes.ok) throw new Error(`Erro ao buscar campanhas: ${campaignsRes.status}`);
+  if (!insightsRes.ok) throw new Error(`Erro ao buscar métricas de campanhas: ${insightsRes.status}`);
+
   const [campaignsJson, insightsJson] = await Promise.all([
     campaignsRes.json() as Promise<{
       data?: Array<{
@@ -1248,6 +1251,9 @@ export async function fetchAllAdSets(
     fetch(`${BASE_URL}/${adAccountId}/insights?${insightsParams}`),
   ]);
 
+  if (!adSetsRes.ok) throw new Error(`Erro ao buscar conjuntos de anúncios: ${adSetsRes.status}`);
+  if (!insightsRes.ok) throw new Error(`Erro ao buscar métricas de conjuntos: ${insightsRes.status}`);
+
   const [adSetsJson, insightsJson] = await Promise.all([
     adSetsRes.json() as Promise<{
       data?: Array<{ id: string; name: string; status: string; daily_budget?: string; optimization_goal?: string; campaign_id: string }>;
@@ -1329,6 +1335,9 @@ export async function fetchAllAds(
     fetch(`${BASE_URL}/${adAccountId}/ads?${adsParams}`),
     fetch(`${BASE_URL}/${adAccountId}/insights?${insightsParams}`),
   ]);
+
+  if (!adsRes.ok) throw new Error(`Erro ao buscar anúncios: ${adsRes.status}`);
+  if (!insightsRes.ok) throw new Error(`Erro ao buscar métricas de anúncios: ${insightsRes.status}`);
 
   const [adsJson, insightsJson] = await Promise.all([
     adsRes.json() as Promise<{
