@@ -24,6 +24,45 @@ interface DisplayMessage {
   status?: "waiting" | "confirmed" | "cancelled";
 }
 
+interface RoteiroSection {
+  heading: string;
+  lines: string[];
+}
+
+/**
+ * Extrai só o essencial do texto do roteiro pro PDF: nome do veículo (título),
+ * e por seção (ROTEIRO 1, ROTEIRO 2...) só as falas entre aspas — sem o
+ * parágrafo de introdução, sem os subtítulos (GANCHO, QUALIFICAÇÃO etc.) e
+ * sem marcação de markdown (**).
+ */
+function parseRoteiroContent(content: string): { title: string; sections: RoteiroSection[] } {
+  const veiculoMatch = content.match(/VE[ÍI]CULO:\s*(.+)/i);
+  const title = veiculoMatch ? veiculoMatch[1].trim() : "Roteiro de Vídeo";
+
+  // Divide o texto a cada título (### ...) — o texto antes do primeiro título
+  // (introdução + linha "VEÍCULO:") é descartado de propósito.
+  let blocks = content.split(/^#{1,6}\s*/m).slice(1);
+
+  // Fallback: se o modelo não usou "###", tenta dividir direto em "ROTEIRO N".
+  if (blocks.length === 0) {
+    blocks = content.split(/(?=ROTEIRO\s*\d)/i).filter((b) => /^ROTEIRO\s*\d/i.test(b.trim()));
+  }
+
+  const sections: RoteiroSection[] = [];
+  for (const block of blocks) {
+    const breakIdx = block.indexOf("\n");
+    const rawHeading = breakIdx === -1 ? block : block.slice(0, breakIdx);
+    const heading = rawHeading.replace(/\*\*/g, "").replace(/^#+\s*/, "").trim();
+    if (!/^ROTEIRO/i.test(heading)) continue;
+
+    const body = breakIdx === -1 ? "" : block.slice(breakIdx + 1);
+    const lines = Array.from(body.matchAll(/"([^"]+)"/g)).map((m) => m[1].trim());
+    sections.push({ heading, lines });
+  }
+
+  return { title, sections };
+}
+
 const MODE_TABS: Array<{ mode: AgentMode; label: string }> = [
   { mode: "trafego", label: "Tráfego" },
   { mode: "copy_automotivo", label: "Copy" },
@@ -130,28 +169,94 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
   }, [messages, isThinking]);
 
   const downloadPdf = (content: string) => {
+    const { title, sections } = parseRoteiroContent(content);
+
     const doc = new jsPDF({ unit: "pt", format: "a4" });
-    const marginX = 40;
-    const marginY = 50;
+    const marginX = 48;
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     const usableWidth = pageWidth - marginX * 2;
-    const lineHeight = 16;
+    const topMargin = 56;
+    const bottomMargin = 60;
 
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(11);
+    const ACCENT: [number, number, number] = [217, 119, 6]; // laranja da marca
+    const INK: [number, number, number] = [30, 30, 30];
+    const MUTED: [number, number, number] = [130, 130, 130];
 
-    const lines = doc.splitTextToSize(content, usableWidth);
-    let y = marginY;
-    for (const line of lines) {
-      if (y > pageHeight - marginY) {
+    let y = topMargin;
+    let pageNum = 1;
+
+    const addFooter = () => {
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8.5);
+      doc.setTextColor(...MUTED);
+      doc.text("Roteiro gerado pelo Agente IA · Triad Company", marginX, pageHeight - 28);
+      doc.text(String(pageNum), pageWidth - marginX, pageHeight - 28, { align: "right" });
+    };
+
+    const ensureSpace = (needed: number) => {
+      if (y + needed > pageHeight - bottomMargin) {
+        addFooter();
         doc.addPage();
-        y = marginY;
+        pageNum += 1;
+        y = topMargin;
       }
-      doc.text(line, marginX, y);
-      y += lineHeight;
-    }
+    };
 
+    // Título (nome do veículo)
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(19);
+    doc.setTextColor(...INK);
+    const titleLines = doc.splitTextToSize(title, usableWidth);
+    doc.text(titleLines, marginX, y);
+    y += titleLines.length * 24;
+
+    // Linha de destaque abaixo do título
+    doc.setDrawColor(...ACCENT);
+    doc.setLineWidth(2);
+    doc.line(marginX, y, marginX + 60, y);
+    y += 30;
+
+    sections.forEach((section, idx) => {
+      ensureSpace(50);
+
+      // Selo colorido "ROTEIRO N"
+      doc.setFillColor(...ACCENT);
+      doc.roundedRect(marginX, y - 14, 16, 16, 3, 3, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(10);
+      doc.text(String(idx + 1), marginX + 8, y - 2.5, { align: "center" });
+
+      doc.setTextColor(...ACCENT);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(13);
+      const headingLines = doc.splitTextToSize(section.heading, usableWidth - 24);
+      doc.text(headingLines, marginX + 24, y);
+      y += headingLines.length * 16 + 14;
+
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11.5);
+      doc.setTextColor(...INK);
+
+      section.lines.forEach((paragraph) => {
+        const wrapped = doc.splitTextToSize(paragraph, usableWidth);
+        ensureSpace(wrapped.length * 17 + 12);
+        doc.text(wrapped, marginX, y);
+        y += wrapped.length * 17 + 12;
+      });
+
+      if (idx < sections.length - 1) {
+        y += 6;
+        ensureSpace(20);
+        doc.setDrawColor(225, 225, 225);
+        doc.setLineWidth(0.75);
+        doc.line(marginX, y, pageWidth - marginX, y);
+        y += 26;
+      }
+    });
+
+    addFooter();
     doc.save(`roteiro-${Date.now()}.pdf`);
   };
 
