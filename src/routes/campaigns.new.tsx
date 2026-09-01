@@ -104,6 +104,12 @@ function NewCampaign() {
   const [campaignName, setCampaignName] = useState(
     search.duplicateFromName ? `${search.duplicateFromName} — Cópia` : ""
   );
+  const [adSetName, setAdSetName] = useState(
+    search.duplicateFromName ? `${search.duplicateFromName} — Cópia` : ""
+  );
+  const [adName, setAdName] = useState(
+    search.duplicateFromName ? `${search.duplicateFromName} — Cópia` : ""
+  );
   const [campaignType, setCampaignType] = useState<"engagement" | "sales">("engagement");
   const [budget, setBudget] = useState(50);
   const [pageId, setPageId] = useState("");
@@ -344,7 +350,11 @@ function NewCampaign() {
   const handleBaseCampaignChange = (id: string) => {
     setBaseCampaignId(id);
     const campaign = clientCampaigns.find((c) => c.id === id);
-    if (campaign) setCampaignName(`${campaign.name} — Cópia`);
+    if (campaign) {
+      setCampaignName(`${campaign.name} — Cópia`);
+      setAdSetName(`${campaign.name} — Cópia`);
+      setAdName(`${campaign.name} — Cópia`);
+    }
   };
 
   const handleFileSelect = useCallback((file: File) => {
@@ -387,7 +397,9 @@ function NewCampaign() {
           campaignName,
           token,
           (msg) => toast.loading(msg, { id: pid }),
-          selectedClient.meta_whatsapp_number ?? undefined
+          selectedClient.meta_whatsapp_number ?? undefined,
+          adSetName || undefined,
+          adName || undefined
         );
         toast.dismiss(pid);
         return id;
@@ -447,6 +459,7 @@ function NewCampaign() {
         const normalizedPhone = (whatsappNumber || "").replace(/\D/g, "");
         const campaignOptions = {
           name: campaignName,
+          adSetName: adSetName || campaignName,
           adAccountId: selectedClient.meta_ad_account_id,
           pageId,
           whatsappNumber: whatsappNumber || undefined,
@@ -479,7 +492,7 @@ function NewCampaign() {
         if (n8nUrl) {
           progress("Enviando para o n8n...");
           const callbackId = crypto.randomUUID();
-          await triggerN8nCampaign({ callbackId, token, campaignOptions, creativeOptions });
+          await triggerN8nCampaign({ callbackId, token, campaignOptions, creativeOptions, adName: adName || campaignName });
           toast.dismiss(pid);
           toast.loading("Criando anúncio via n8n...", { id: "n8n-progress", duration: Infinity });
           return { n8nJobId: callbackId };
@@ -498,7 +511,7 @@ function NewCampaign() {
         progress("Criando anúncio...");
         await createAd(
           selectedClient.meta_ad_account_id,
-          { name: campaignName, adSetId, creativeId },
+          { name: adName || campaignName, adSetId, creativeId },
           token
         );
 
@@ -733,6 +746,30 @@ function NewCampaign() {
                   placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: [ENG-MSG] [CIVIC 2024]"}
                 />
               </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Nome do conjunto de anúncios</Label>
+                  <Input
+                    value={adSetName}
+                    onChange={(e) => setAdSetName(e.target.value)}
+                    placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: CA1 - ABERTO"}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Nome do anúncio</Label>
+                  <Input
+                    value={adName}
+                    onChange={(e) => setAdName(e.target.value)}
+                    placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: Anúncio 1"}
+                  />
+                </div>
+              </div>
+              {mode === "duplicate" && (
+                <p className="text-xs text-muted-foreground -mt-2">
+                  Se a campanha base tiver mais de um conjunto, esses nomes são ignorados e os nomes originais são mantidos.
+                </p>
+              )}
 
               {mode === "scratch" && (
                 <>

@@ -8,6 +8,7 @@ import type { AdCreativeOptions, CreateFromScratchOptions } from "./meta";
 export interface N8nCampaignPayload {
   campaignOptions: Omit<CreateFromScratchOptions, "token">;
   creativeOptions: Omit<AdCreativeOptions, never>;
+  adName?: string; // nome do anúncio (separado do nome do criativo, em creativeOptions.name)
   token: string;
   callbackId: string;
 }
@@ -49,6 +50,7 @@ const _triggerN8nCampaign = createServerFn({ method: "POST" })
     z.object({
       campaignOptions: z.any(),
       creativeOptions: z.any(),
+      adName: z.string().optional(),
       token: z.string(),
       callbackId: z.string(),
     })

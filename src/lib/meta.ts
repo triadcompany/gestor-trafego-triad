@@ -1784,7 +1784,9 @@ export async function duplicateCampaign(
   newName: string,
   token: string,
   onProgress?: (msg: string) => void,
-  whatsappNumber?: string // número WhatsApp Business do cliente, injeta no promoted_object se estiver faltando
+  whatsappNumber?: string, // número WhatsApp Business do cliente, injeta no promoted_object se estiver faltando
+  adSetName?: string, // só aplicado quando a campanha original tem exatamente 1 conjunto
+  adName?: string // só aplicado quando esse único conjunto tem exatamente 1 anúncio
 ): Promise<string> {
   onProgress?.("Buscando estrutura da campanha...");
 
@@ -1834,6 +1836,13 @@ export async function duplicateCampaign(
 
   onProgress?.(`${adSets.length} conjunto(s) encontrado(s). Criando nova campanha com orçamento de campanha...`);
 
+  // Nomes personalizados só fazem sentido quando há exatamente 1 conjunto de origem
+  // (senão não dá pra saber qual dos vários receberia o nome escolhido).
+  const applyCustomNames = adSets.length === 1;
+  if ((adSetName || adName) && !applyCustomNames) {
+    onProgress?.(`Esta campanha tem ${adSets.length} conjuntos — os nomes originais serão mantidos.`);
+  }
+
   // 4. Cria a nova campanha com daily_budget (CBO) — conjuntos não precisam de orçamento próprio
   // Campanha CBO sem bid_strategy explícita — ad sets herdam budget sem exigir is_adset_budget_sharing_enabled
   const newCampaign = (await postMeta(`${adAccountId}/campaigns`, {
@@ -1872,8 +1881,10 @@ export async function duplicateCampaign(
     const optimizationGoal = "CONVERSATIONS";
     const billingEvent = "IMPRESSIONS";
 
+    const effectiveAdSetName = applyCustomNames && adSetName ? adSetName : adSet.name;
+
     const adSetParams: Record<string, string> = {
-      name: adSet.name,
+      name: effectiveAdSetName,
       campaign_id: newCampaignId,
       billing_event: billingEvent,
       optimization_goal: optimizationGoal,
@@ -1945,8 +1956,10 @@ export async function duplicateCampaign(
       const creativeId = adDetailJson.creative?.id;
       if (!creativeId) throw new Error(`Criativo não encontrado para o anúncio "${ad.name}"`);
 
+      const effectiveAdName = applyCustomNames && ads.length === 1 && adName ? adName : ad.name;
+
       await postMeta(`${adAccountId}/ads`, {
-        name: ad.name,
+        name: effectiveAdName,
         adset_id: newAdSetId,
         creative: JSON.stringify({ creative_id: creativeId }),
         status: "PAUSED",
@@ -2229,6 +2242,7 @@ export async function fetchBaseCampaignPrefill(
 
 export interface CreateFromScratchOptions {
   name: string;
+  adSetName?: string; // se omitido, usa o mesmo nome da campanha
   adAccountId: string;
   pageId: string;
   whatsappNumber?: string;
@@ -2345,7 +2359,7 @@ export async function createCampaignFromScratch(
   const destinationType = "WHATSAPP";
 
   const adSetPayload: Record<string, string> = {
-    name: opts.name,
+    name: opts.adSetName || opts.name,
     campaign_id: campaignId,
     billing_event: "IMPRESSIONS",
     optimization_goal: "CONVERSATIONS",
