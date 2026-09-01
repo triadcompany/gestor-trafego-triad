@@ -3,6 +3,12 @@
 **Data:** 2026-08-20
 **Status:** Aprovado pelo usuário
 
+**Atualização (2026-08-31):** a classificação via OpenAI (gpt-4o) descrita abaixo foi
+substituída por um Code node de regras de palavra-chave, pra eliminar o custo de API —
+ver `## Atualização: classificação sem LLM` no final deste documento. O restante do
+spec (fontes de mensagem, vínculo de grupo, formato da mensagem, horários) continua
+valendo como está.
+
 ---
 
 ## Contexto
@@ -127,3 +133,39 @@ Resumo da tarde usa o mesmo formato, trocando o emoji/título pra "🌆 *Resumo 
 4. Disparar manualmente (ajustando o trigger temporariamente, mesmo processo usado no teste do Alerta de Saldo) e conferir que a mensagem chega certinha no grupo Operacional, com categorização correta pra mensagens de teste conhecidas.
 5. Confirmar que clientes sem grupo vinculado aparecem na lista de aviso.
 6. Deixar rodando e conferir os dois horários (12:00 e 17:30) no dia seguinte.
+
+---
+
+## Atualização: classificação sem LLM (2026-08-31)
+
+Motivo: eliminar o custo recorrente da API da OpenAI.
+
+**O que mudou**: os nodes "Montar Prompt", "Tem Mensagens?", "Classificar" (HTTP → OpenAI)
+e as duas variantes de "Montar Mensagem" foram substituídos por um único Code node
+("Classificar e Montar Mensagem"), que roda direto depois de "Buscar Mensagens" —
+sem chamada de API externa nenhuma.
+
+**Como classifica**: por palavra-chave (case-insensitive, substring), na mensagem do
+cliente:
+
+| Categoria | Emoji | Palavras-chave |
+|---|---|---|
+| Venda | 🟢 | vendi, vendeu, fechou, fechei |
+| Pausar veículo | ⏸️ | pausa, pausar, pausado, retirar, tirar do ar |
+| CRM | 🎯 | crm, kommo, follow-up, followup, lead parado, leads parados |
+| Marketing | 📄 | criativo, vídeo, video, foto, arte, marketing |
+| Tráfego | 📈 | verba, orçamento, orcamento, budget, tráfego, trafego, performance, aumentar campanha, aumentar a verba |
+| Pedido/tarefa | 📌 | fallback: mensagem sem categoria acima que contém "?" ou começa com "pode ", "preciso", "por favor" |
+
+O resumo de cada categoria é o próprio trecho da mensagem que bateu com a regra
+(truncado em 140 caracteres), não uma frase reescrita como fazia a IA.
+
+**Trade-off aceito explicitamente pelo usuário**: perde entendimento de linguagem
+natural — frases indiretas sem as palavras-chave exatas não são classificadas (ficam
+em "sem mensagens relevantes" mesmo tendo conteúdo relevante). Testado com mensagens
+reais do grupo do José Orlando Veículos: pegou "Fechou" → Venda e menções a "kommo" →
+CRM corretamente, mas não pegou uma frase longa sobre mudança de conta de anúncio que
+não continha nenhuma palavra-chave de tráfego cadastrada.
+
+**Validado em produção** com dados reais de ~24 clientes já vinculados (execução via
+webhook de teste temporário, removido depois), sem erros.
