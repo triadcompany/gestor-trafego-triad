@@ -6,6 +6,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { fetchCurrentProfile, fetchAttentionItems } from "@/lib/queries";
 import { useTheme } from "@/components/ThemeProvider";
+import { AgentChatWidget } from "@/components/AgentChatWidget";
 
 const navGroups = [
   {
@@ -48,6 +49,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const path = location.pathname;
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [agentOpen, setAgentOpen] = useState(false);
 
   const { data: profile } = useQuery({
     queryKey: ["current-profile"],
@@ -258,14 +260,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* Botão flutuante do agente */}
       {!isActive("/agente", false) && (
-        <Link
-          to="/agente"
+        <button
+          onClick={() => setAgentOpen((v) => !v)}
           className="fixed bottom-6 right-4 md:right-6 z-40 flex items-center gap-2 bg-primary text-primary-foreground px-3 py-2 md:px-4 rounded-full shadow-lg hover:bg-primary/90 transition-colors text-sm font-medium"
         >
-          <Bot className="h-4 w-4" />
+          {agentOpen ? <X className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
           <span className="hidden md:inline">Agente IA</span>
-        </Link>
+        </button>
       )}
+
+      {agentOpen && !isActive("/agente", false) && <AgentChatWidget onClose={() => setAgentOpen(false)} />}
     </div>
   );
 }
