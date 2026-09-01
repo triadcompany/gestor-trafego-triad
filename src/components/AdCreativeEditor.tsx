@@ -12,12 +12,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ExternalLink, Image, Loader2, AlertCircle, Upload, X } from "lucide-react";
+import { ExternalLink, Image, Loader2, AlertCircle, Upload, X, Play } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchAdWithCreative,
   updateAdCreative,
   swapAdCreativeMedia,
+  fetchVideoSource,
   type MetaAdCreative,
 } from "@/lib/meta";
 import {
@@ -166,6 +167,16 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
     creative?.video_id ||
     creative?.object_story_spec?.video_data?.video_id
   );
+  const videoId = creative?.video_id ?? creative?.object_story_spec?.video_data?.video_id ?? null;
+
+  const [showVideoPlayer, setShowVideoPlayer] = useState(false);
+  const { data: videoSource, isLoading: videoLoading, error: videoError } = useQuery({
+    queryKey: ["ad-video-source", videoId],
+    queryFn: () => fetchVideoSource(videoId!, token),
+    enabled: showVideoPlayer && !!videoId,
+    retry: false,
+  });
+
   const accept = isVideo
     ? "video/mp4,video/mov,video/avi,video/quicktime"
     : "image/jpeg,image/png,image/gif,image/webp";
@@ -298,11 +309,23 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
               />
             )
           ) : creative.thumbnail_url ? (
-            <img
-              src={creative.thumbnail_url}
-              alt="Criativo"
-              className="h-20 w-20 rounded-lg object-cover border border-border"
-            />
+            <button
+              type="button"
+              onClick={() => isVideo && setShowVideoPlayer(true)}
+              className="block relative"
+              title={isVideo ? "Ver vídeo" : undefined}
+            >
+              <img
+                src={creative.thumbnail_url}
+                alt="Criativo"
+                className="h-20 w-20 rounded-lg object-cover border border-border"
+              />
+              {isVideo && (
+                <span className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/30 hover:bg-black/40 transition-colors">
+                  <Play className="h-6 w-6 text-white fill-white" />
+                </span>
+              )}
+            </button>
           ) : (
             <div className="h-20 w-20 rounded-lg border border-border bg-muted flex items-center justify-center">
               <Image className="h-6 w-6 text-muted-foreground" />
@@ -352,6 +375,26 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
           </a>
         </div>
       </div>
+
+      {showVideoPlayer && (
+        <div className="rounded-lg border border-border overflow-hidden bg-black">
+          {videoLoading ? (
+            <div className="h-48 flex items-center justify-center">
+              <Loader2 className="h-5 w-5 text-muted-foreground animate-spin" />
+            </div>
+          ) : videoError || !videoSource ? (
+            <div className="p-3 flex items-center gap-2 text-xs text-muted-foreground bg-card">
+              <AlertCircle className="h-3.5 w-3.5 shrink-0 text-status-attention" />
+              Não foi possível carregar o vídeo.
+              <a href={metaAdUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline ml-auto shrink-0">
+                Abrir no Meta
+              </a>
+            </div>
+          ) : (
+            <video src={videoSource} controls autoPlay className="w-full max-h-80" />
+          )}
+        </div>
+      )}
 
       {newMediaFile && (
         <p className="text-xs text-muted-foreground -mt-2">

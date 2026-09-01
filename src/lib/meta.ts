@@ -893,6 +893,16 @@ export async function fetchAdWithCreative(adId: string, token: string): Promise<
   return creative;
 }
 
+/** Busca a URL do arquivo de vídeo pronto pra tocar num <video>, direto do vídeo já hospedado na Meta. */
+export async function fetchVideoSource(videoId: string, token: string): Promise<string | null> {
+  const res = await fetch(
+    `${BASE_URL}/${videoId}?fields=source&access_token=${encodeURIComponent(token)}`
+  );
+  const json = (await res.json()) as { source?: string; error?: MetaApiError };
+  if (json.error) throw new Error(formatMetaError(json.error));
+  return json.source ?? null;
+}
+
 async function fetchAdAccountId(adId: string, token: string): Promise<string> {
   const params = new URLSearchParams({ fields: "account_id", access_token: token });
   const res = await fetch(`${BASE_URL}/${adId}?${params}`);
