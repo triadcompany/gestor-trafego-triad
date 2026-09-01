@@ -1,0 +1,1 @@
+ALTER TABLE "agent_conversations" ADD COLUMN "mode" text DEFAULT 'trafego' NOT NULL;

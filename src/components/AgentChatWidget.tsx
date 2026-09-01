@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -8,7 +8,10 @@ import { toast } from "sonner";
 import {
   agentSendMessage,
   agentExecuteAction,
+  agentListConversations,
+  agentLoadMessages,
   type PendingAction,
+  type AgentMode,
 } from "@/lib/agent-chat";
 import { cn } from "@/lib/utils";
 
@@ -20,17 +23,50 @@ interface DisplayMessage {
   status?: "waiting" | "confirmed" | "cancelled";
 }
 
+const MODE_TABS: Array<{ mode: AgentMode; label: string }> = [
+  { mode: "trafego", label: "Tráfego" },
+  { mode: "copy_automotivo", label: "Copy" },
+  { mode: "roteiro_automotivo", label: "Roteiro" },
+];
+
 export function AgentChatWidget({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
+  const [mode, setMode] = useState<AgentMode>("trafego");
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
 
+  const { data: conversations = [] } = useQuery({
+    queryKey: ["agent-conversations"],
+    queryFn: () => agentListConversations(),
+    staleTime: 1000 * 10,
+  });
+
+  const loadMessagesMutation = useMutation({
+    mutationFn: (cId: string) => agentLoadMessages({ data: { conversation_id: cId } }),
+    onSuccess: (msgs) => {
+      setMessages(msgs.map((m, i) => ({ id: `hist-${i}`, ...m })));
+    },
+  });
+
+  const selectMode = (newMode: AgentMode) => {
+    setMode(newMode);
+    const latest = conversations.find((c) => c.mode === newMode);
+    if (latest) {
+      setConversationId(latest.id);
+      setMessages([]);
+      loadMessagesMutation.mutate(latest.id);
+    } else {
+      setConversationId(null);
+      setMessages([]);
+    }
+  };
+
   const sendMutation = useMutation({
     mutationFn: async (message: string) => {
-      return agentSendMessage({ data: { message, conversation_id: conversationId } });
+      return agentSendMessage({ data: { message, conversation_id: conversationId, mode } });
     },
     onMutate: (message) => {
       setMessages((prev) => [...prev, { id: `user-${Date.now()}`, role: "user", content: message }]);
@@ -113,7 +149,7 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
         </div>
         <div className="min-w-0">
           <div className="text-sm font-semibold">Agente IA</div>
-          <div className="text-[10px] text-muted-foreground">Gestor de tráfego secundário · GPT-4o</div>
+          <div className="text-[10px] text-muted-foreground">GPT-4o</div>
         </div>
         <div className="ml-auto flex items-center gap-1">
           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={startNewConversation} title="Nova conversa">
@@ -125,15 +161,39 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
+      {/* Abas de modo */}
+      <div className="flex border-b border-border shrink-0">
+        {MODE_TABS.map((tab) => (
+          <button
+            key={tab.mode}
+            onClick={() => selectMode(tab.mode)}
+            className={cn(
+              "flex-1 text-xs font-medium py-2 transition-colors border-b-2 -mb-px",
+              mode === tab.mode
+                ? "border-primary text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
       {/* Mensagens */}
       <ScrollArea className="flex-1">
         <div className="px-3 py-4 space-y-3">
           {messages.length === 0 && !isThinking && (
             <div className="text-center py-10">
               <Bot className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
-              <p className="text-xs text-muted-foreground">Olá! Estou analisando as campanhas.</p>
+              <p className="text-xs text-muted-foreground">
+                {mode === "trafego" && "Olá! Estou analisando as campanhas."}
+                {mode === "copy_automotivo" && "Manda os dados do veículo que eu crio a copy."}
+                {mode === "roteiro_automotivo" && "Manda os dados do veículo que eu crio o roteiro."}
+              </p>
               <p className="text-[11px] text-muted-foreground/60 mt-1 px-4">
-                Pergunte sobre um cliente, sugira otimizações ou peça pra criar uma tarefa.
+                {mode === "trafego"
+                  ? "Pergunte sobre um cliente, sugira otimizações ou peça pra criar uma tarefa."
+                  : "Envie modelo, versão, ano, km, preço, diferenciais, cidade/região e condições comerciais."}
               </p>
             </div>
           )}

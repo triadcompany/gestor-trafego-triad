@@ -230,6 +230,7 @@ export const tasks = pgTable("tasks", {
 export const agentConversations = pgTable("agent_conversations", {
   id: uuid("id").primaryKey().defaultRandom(),
   title: text("title"),
+  mode: text("mode").notNull().default("trafego"),
   createdBy: uuid("created_by").references(() => profiles.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastMsgAt: timestamp("last_msg_at").defaultNow().notNull(),
