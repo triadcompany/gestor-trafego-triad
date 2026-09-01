@@ -1899,7 +1899,9 @@ export async function duplicateCampaign(
       billing_event: billingEvent,
       optimization_goal: optimizationGoal,
       targeting: JSON.stringify(targeting),
-      status: "PAUSED",
+      // Ativo por padrão — a campanha nova é criada PAUSED (trava de segurança única);
+      // ativando só a campanha, conjunto e anúncio já sobem juntos.
+      status: "ACTIVE",
       access_token: token,
     };
 
@@ -1972,7 +1974,7 @@ export async function duplicateCampaign(
         name: effectiveAdName,
         adset_id: newAdSetId,
         creative: JSON.stringify({ creative_id: creativeId }),
-        status: "PAUSED",
+        status: "ACTIVE",
         access_token: token,
       });
     }
@@ -2376,7 +2378,9 @@ export async function createCampaignFromScratch(
     destination_type: destinationType,
     promoted_object: JSON.stringify(promotedObject),
     targeting: JSON.stringify(targeting),
-    status: "PAUSED",
+    // Ativo por padrão — a campanha nova é criada PAUSED (trava de segurança única);
+    // ativando só a campanha, conjunto e anúncio já sobem juntos.
+    status: "ACTIVE",
     access_token: opts.token,
   };
   if (opts.instagramActorId) adSetPayload.instagram_actor_id = opts.instagramActorId;
@@ -2611,7 +2615,9 @@ export async function createAd(
     name: opts.name,
     adset_id: opts.adSetId,
     creative: JSON.stringify({ creative_id: opts.creativeId }),
-    status: "PAUSED",
+    // Ativo por padrão — a campanha nova é criada PAUSED (trava de segurança única);
+    // ativando só a campanha, conjunto e anúncio já sobem juntos.
+    status: "ACTIVE",
     access_token: token,
   })) as { id: string };
   return result.id;
