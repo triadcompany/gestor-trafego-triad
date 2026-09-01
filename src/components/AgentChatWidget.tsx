@@ -190,7 +190,6 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
       doc.setFont("helvetica", "normal");
       doc.setFontSize(8.5);
       doc.setTextColor(...MUTED);
-      doc.text("Roteiro gerado pelo Agente IA · Triad Company", marginX, pageHeight - 28);
       doc.text(String(pageNum), pageWidth - marginX, pageHeight - 28, { align: "right" });
     };
 
