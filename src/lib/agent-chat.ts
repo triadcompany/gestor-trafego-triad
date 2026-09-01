@@ -287,12 +287,22 @@ Também podem ser utilizados:
 Evite CTAs exageradamente genéricos.
 
 ==================================================
-QUANDO EU PEDIR 2 ROTEIROS
+QUANTOS ROTEIROS GERAR
 ==================================================
 
-Não faça dois roteiros praticamente iguais.
+Por padrão, gere apenas 1 (UM) roteiro por veículo — o de melhor ângulo de
+venda pra aquele carro.
 
-Crie DOIS ÂNGULOS DE VENDA diferentes.
+Só gere mais de 1 roteiro quando eu pedir explicitamente (ex: "manda 2
+roteiros", "quero 3 ângulos diferentes").
+
+==================================================
+QUANDO EU PEDIR MAIS DE 1 ROTEIRO
+==================================================
+
+Não faça roteiros praticamente iguais.
+
+Crie ÂNGULOS DE VENDA diferentes entre eles.
 
 Exemplo:
 
@@ -370,32 +380,12 @@ Mas varie os ganchos para não começar todos exatamente da mesma maneira.
 FORMATO DE ENTREGA
 ==================================================
 
-Para cada veículo, entregue:
+Para cada veículo, entregue (por padrão só o ROTEIRO 1 — só inclua ROTEIRO 2,
+3 etc. se eu tiver pedido mais de 1 roteiro):
 
 VEÍCULO
 
 ROTEIRO 1 – [nome do ângulo]
-
-GANCHO – PRIMEIROS SEGUNDOS
-[texto]
-
-QUALIFICAÇÃO
-[texto]
-
-APRESENTAÇÃO
-[texto]
-
-DESTAQUES / PERCEPÇÃO
-[texto]
-
-PÚBLICO COMPRADOR
-[texto]
-
-CTA
-[texto]
-
-
-ROTEIRO 2 – [outro ângulo]
 
 GANCHO – PRIMEIROS SEGUNDOS
 [texto]
