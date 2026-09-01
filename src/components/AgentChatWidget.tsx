@@ -3,8 +3,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, Send, Bot, User, AlertTriangle, Check, X } from "lucide-react";
+import { Plus, Send, Bot, User, AlertTriangle, Check, X, Download } from "lucide-react";
 import { toast } from "sonner";
+import { jsPDF } from "jspdf";
 import {
   agentSendMessage,
   agentExecuteAction,
@@ -128,6 +129,32 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
+  const downloadPdf = (content: string) => {
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    const marginX = 40;
+    const marginY = 50;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const usableWidth = pageWidth - marginX * 2;
+    const lineHeight = 16;
+
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(11);
+
+    const lines = doc.splitTextToSize(content, usableWidth);
+    let y = marginY;
+    for (const line of lines) {
+      if (y > pageHeight - marginY) {
+        doc.addPage();
+        y = marginY;
+      }
+      doc.text(line, marginX, y);
+      y += lineHeight;
+    }
+
+    doc.save(`roteiro-${Date.now()}.pdf`);
+  };
+
   const handleSend = () => {
     const msg = input.trim();
     if (!msg || sendMutation.isPending || isThinking) return;
@@ -220,8 +247,21 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
                   <div className="h-6 w-6 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
                     <Bot className="h-3 w-3 text-primary" />
                   </div>
-                  <div className="bg-muted/50 border border-border rounded-2xl rounded-tl-sm px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap">
-                    {msg.content}
+                  <div className="flex flex-col gap-1.5 min-w-0">
+                    <div className="bg-muted/50 border border-border rounded-2xl rounded-tl-sm px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap">
+                      {msg.content}
+                    </div>
+                    {mode === "roteiro_automotivo" && msg.content && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 text-[11px] px-2 self-start gap-1"
+                        onClick={() => downloadPdf(msg.content!)}
+                      >
+                        <Download className="h-3 w-3" />
+                        Baixar PDF
+                      </Button>
+                    )}
                   </div>
                 </div>
               );
