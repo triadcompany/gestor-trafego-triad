@@ -954,7 +954,10 @@ export async function swapAdCreativeMedia(
   conversationOverrides?: { whatsappGreeting?: string; whatsappMessage?: string }
 ): Promise<void> {
   const accountId = await fetchAdAccountId(adId, token);
-  const isVideo = !!(creative.video_id || creative.object_story_spec?.video_data?.video_id);
+  // O tipo da NOVA mídia sendo enviada decide o formato — nunca o do criativo antigo
+  // (senão trocar de imagem pra vídeo, ou vice-versa, sobe o arquivo certo mas monta o
+  // object_story_spec do tipo errado, e a Meta aceita e publica como se nada tivesse mudado).
+  const isVideo = mediaFile.type.startsWith("video/");
   const pageId = creative.actor_id ?? creative.object_story_spec?.page_id;
   const resolvedWa = (clientWhatsappNumber ?? creative.whatsapp_number ?? "").replace(/\D/g, "");
   // Prioriza o texto atual do formulário (pode ter edições não salvas) sobre o criativo já publicado na Meta
