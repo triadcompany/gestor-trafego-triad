@@ -589,6 +589,8 @@ function NewCampaign() {
             <Button variant="ghost" onClick={() => {
               setCreatedId(null);
               setCampaignName("");
+              setAdSetName("");
+              setAdName("");
               setBaseCampaignId("");
               setMediaFile(null);
               setMediaPreview(null);
@@ -597,6 +599,10 @@ function NewCampaign() {
               setAdDescription("");
               setWhatsappMessage("");
               setWhatsappGreeting("");
+              // Sempre volta pro número cadastrado do cliente — nunca herda o
+              // número digitado na campanha anterior (evita lead indo pro
+              // número errado quando o usuário esquece de trocar de novo).
+              setWhatsappNumber(selectedClient?.meta_whatsapp_number || "");
               setStep(1);
             }}>
               Criar outra
@@ -860,7 +866,13 @@ function NewCampaign() {
                       <Label>
                         WhatsApp
                         {selectedClient?.meta_whatsapp_number && (
-                          <span className="ml-1.5 text-xs text-status-on-target font-normal">pré-preenchido</span>
+                          whatsappNumber.replace(/\D/g, "") === selectedClient.meta_whatsapp_number.replace(/\D/g, "") ? (
+                            <span className="ml-1.5 text-xs text-status-on-target font-normal">= cadastrado</span>
+                          ) : (
+                            <span className="ml-1.5 text-xs text-status-attention font-normal">
+                              ⚠ diferente do cadastrado ({selectedClient.meta_whatsapp_number})
+                            </span>
+                          )
                         )}
                       </Label>
                       <Input
