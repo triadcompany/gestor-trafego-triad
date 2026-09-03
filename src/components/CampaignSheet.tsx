@@ -354,10 +354,14 @@ function AdSetRow({
 
   const isActive = adSet.status === "ACTIVE";
 
+  // Reagir quando startExpanded muda depois da montagem (ex: usuário clica em
+  // outro conjunto na URL) — useState(startExpanded) só valia na primeira renderização.
   useEffect(() => {
-    if (startExpanded) getMetaToken().then(setToken);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (startExpanded) {
+      setExpanded(true);
+      getMetaToken().then(setToken);
+    }
+  }, [startExpanded]);
 
   // Fetch token once when expanding
   const handleExpand = async () => {
@@ -535,6 +539,12 @@ function AdRow({
   const queryClient = useQueryClient();
   const [expanded, setExpanded] = useState(!!startExpanded);
   const isActive = ad.status === "ACTIVE";
+
+  // Reagir quando startExpanded muda depois da montagem — clicar num anúncio
+  // diferente da lista só mudava essa prop, sem reabrir o useState inicial.
+  useEffect(() => {
+    if (startExpanded) setExpanded(true);
+  }, [startExpanded]);
 
   const statusMutation = useMutation({
     mutationFn: async () => {
