@@ -1,7 +1,7 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus, Send, Bot, User, AlertTriangle, Check, X, Download } from "lucide-react";
 import { toast } from "sonner";
@@ -69,6 +69,49 @@ const MODE_TABS: Array<{ mode: AgentMode; label: string }> = [
   { mode: "roteiro_automotivo", label: "Roteiro" },
 ];
 
+// ── Janela flutuante: tamanho/posição arrastáveis e redimensionáveis ────────
+const DEFAULT_WIDTH = 380;
+const DEFAULT_HEIGHT = 520;
+const MIN_WIDTH = 300;
+const MIN_HEIGHT = 340;
+
+interface Pos { x: number; y: number }
+interface Size { width: number; height: number }
+
+function loadStored<T>(key: string): T | null {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveStored(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // localStorage indisponível (aba privada etc.) — segue sem persistir
+  }
+}
+
+function defaultPos(size: Size): Pos {
+  if (typeof window === "undefined") return { x: 24, y: 24 };
+  return {
+    x: window.innerWidth - size.width - 24,
+    y: window.innerHeight - size.height - 96,
+  };
+}
+
+function clampPos(p: Pos, size: Size): Pos {
+  if (typeof window === "undefined") return p;
+  const maxX = Math.max(8, window.innerWidth - size.width - 8);
+  const maxY = Math.max(8, window.innerHeight - size.height - 8);
+  return { x: Math.min(Math.max(p.x, 8), maxX), y: Math.min(Math.max(p.y, 8), maxY) };
+}
+
+type ResizeDir = "n" | "s" | "e" | "w" | "ne" | "nw" | "se" | "sw";
+
 export function AgentChatWidget({ onClose }: { onClose: () => void }) {
   const qc = useQueryClient();
   const [mode, setMode] = useState<AgentMode>("trafego");
@@ -77,6 +120,73 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const [size, setSize] = useState<Size>(() => loadStored<Size>("agent-widget-size") ?? { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT });
+  const [pos, setPos] = useState<Pos>(() => {
+    const stored = loadStored<Pos>("agent-widget-pos");
+    const initialSize = loadStored<Size>("agent-widget-size") ?? { width: DEFAULT_WIDTH, height: DEFAULT_HEIGHT };
+    return stored ? clampPos(stored, initialSize) : defaultPos(initialSize);
+  });
+
+  useEffect(() => saveStored("agent-widget-size", size), [size]);
+  useEffect(() => saveStored("agent-widget-pos", pos), [pos]);
+
+  const dragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
+
+  const onHeaderPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    dragRef.current = { startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onHeaderPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startX;
+    const dy = e.clientY - dragRef.current.startY;
+    setPos(clampPos({ x: dragRef.current.origX + dx, y: dragRef.current.origY + dy }, size));
+  };
+  const onHeaderPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    dragRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
+  const resizeRef = useRef<{ dir: ResizeDir; startX: number; startY: number; origW: number; origH: number; origX: number; origY: number } | null>(null);
+
+  const makeResizeHandlers = useCallback((dir: ResizeDir) => ({
+    onPointerDown: (e: React.PointerEvent<HTMLDivElement>) => {
+      e.stopPropagation();
+      resizeRef.current = { dir, startX: e.clientX, startY: e.clientY, origW: size.width, origH: size.height, origX: pos.x, origY: pos.y };
+      e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLDivElement>) => {
+      const st = resizeRef.current;
+      if (!st) return;
+      const dx = e.clientX - st.startX;
+      const dy = e.clientY - st.startY;
+      let newW = st.origW;
+      let newH = st.origH;
+      let newX = st.origX;
+      let newY = st.origY;
+      const maxW = window.innerWidth - 16;
+      const maxH = window.innerHeight - 16;
+      if (st.dir.includes("e")) newW = Math.min(maxW, Math.max(MIN_WIDTH, st.origW + dx));
+      if (st.dir.includes("s")) newH = Math.min(maxH, Math.max(MIN_HEIGHT, st.origH + dy));
+      if (st.dir.includes("w")) {
+        newW = Math.min(maxW, Math.max(MIN_WIDTH, st.origW - dx));
+        newX = st.origX + (st.origW - newW);
+      }
+      if (st.dir.includes("n")) {
+        newH = Math.min(maxH, Math.max(MIN_HEIGHT, st.origH - dy));
+        newY = st.origY + (st.origH - newH);
+      }
+      setSize({ width: newW, height: newH });
+      setPos({ x: newX, y: newY });
+    },
+    onPointerUp: (e: React.PointerEvent<HTMLDivElement>) => {
+      resizeRef.current = null;
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    },
+  }), [size, pos]);
 
   const { data: conversations = [] } = useQuery({
     queryKey: ["agent-conversations"],
@@ -167,6 +277,11 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
+
+  // Volta o textarea pra altura mínima depois de limpar a mensagem enviada
+  useEffect(() => {
+    if (!input && textareaRef.current) textareaRef.current.style.height = "auto";
+  }, [input]);
 
   const downloadPdf = (content: string) => {
     const { title, sections } = parseRoteiroContent(content);
@@ -271,10 +386,31 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
     setMessages([]);
   };
 
+  const resizeHandleClass = "absolute z-10";
+
   return (
-    <div className="fixed bottom-20 right-4 md:right-6 z-50 w-[92vw] max-w-[380px] h-[70vh] max-h-[560px] bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="px-4 py-3 border-b border-border flex items-center gap-2 shrink-0">
+    <div
+      className="fixed z-50 bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
+      style={{ left: pos.x, top: pos.y, width: size.width, height: size.height, maxWidth: "calc(100vw - 16px)", maxHeight: "calc(100vh - 16px)" }}
+    >
+      {/* Alças de redimensionar — bordas e cantos */}
+      <div {...makeResizeHandlers("n")} className={cn(resizeHandleClass, "top-0 left-2 right-2 h-1.5 cursor-ns-resize")} style={{ touchAction: "none" }} />
+      <div {...makeResizeHandlers("s")} className={cn(resizeHandleClass, "bottom-0 left-2 right-2 h-1.5 cursor-ns-resize")} style={{ touchAction: "none" }} />
+      <div {...makeResizeHandlers("w")} className={cn(resizeHandleClass, "left-0 top-2 bottom-2 w-1.5 cursor-ew-resize")} style={{ touchAction: "none" }} />
+      <div {...makeResizeHandlers("e")} className={cn(resizeHandleClass, "right-0 top-2 bottom-2 w-1.5 cursor-ew-resize")} style={{ touchAction: "none" }} />
+      <div {...makeResizeHandlers("nw")} className={cn(resizeHandleClass, "top-0 left-0 h-3 w-3 cursor-nwse-resize")} style={{ touchAction: "none" }} />
+      <div {...makeResizeHandlers("ne")} className={cn(resizeHandleClass, "top-0 right-0 h-3 w-3 cursor-nesw-resize")} style={{ touchAction: "none" }} />
+      <div {...makeResizeHandlers("sw")} className={cn(resizeHandleClass, "bottom-0 left-0 h-3 w-3 cursor-nesw-resize")} style={{ touchAction: "none" }} />
+      <div {...makeResizeHandlers("se")} className={cn(resizeHandleClass, "bottom-0 right-0 h-3 w-3 cursor-nwse-resize")} style={{ touchAction: "none" }} />
+
+      {/* Header — arraste aqui pra mover a janela */}
+      <div
+        className="px-4 py-3 border-b border-border flex items-center gap-2 shrink-0 cursor-move select-none"
+        style={{ touchAction: "none" }}
+        onPointerDown={onHeaderPointerDown}
+        onPointerMove={onHeaderPointerMove}
+        onPointerUp={onHeaderPointerUp}
+      >
         <div className="h-7 w-7 rounded-md bg-primary/20 flex items-center justify-center">
           <Bot className="h-4 w-4 text-primary" />
         </div>
@@ -447,19 +583,28 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
 
       {/* Input */}
       <div className="px-3 py-2.5 border-t border-border shrink-0">
-        <div className="flex gap-2">
-          <Input
+        <div className="flex gap-2 items-end">
+          <Textarea
+            ref={textareaRef}
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              const el = e.target;
+              el.style.height = "auto";
+              el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+            }}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
+              // Enter sozinho envia. Ctrl+Shift+Enter ou Cmd+Shift+Enter (ou Shift+Enter)
+              // pulam pra próxima linha — comportamento padrão do textarea, não interceptamos.
+              if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
                 e.preventDefault();
                 handleSend();
               }
             }}
             placeholder="Pergunte algo ou peça uma ação..."
             disabled={isThinking || sendMutation.isPending}
-            className="text-sm h-9"
+            rows={1}
+            className="text-sm min-h-9 max-h-[120px] resize-none py-2"
           />
           <Button size="icon" className="h-9 w-9 shrink-0" onClick={handleSend} disabled={!input.trim() || isThinking || sendMutation.isPending}>
             <Send className="h-4 w-4" />
