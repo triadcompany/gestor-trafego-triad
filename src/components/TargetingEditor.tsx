@@ -7,7 +7,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
-import { X, Search, Loader2, MessageCircle } from "lucide-react";
+import { X, Search, Loader2, MessageCircle, MapPin } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchAdSetTargeting,
@@ -20,6 +20,7 @@ import {
   type MetaLocationResult,
   type SelectedLocation,
 } from "@/lib/meta";
+import { LocationsMap } from "@/components/LocationsMap";
 
 // ── Facebook & Instagram position options ────────────────────
 
@@ -412,6 +413,7 @@ function LocationSearch({
   };
 
   const remove = (key: string) => onChange(selected.filter((s) => s.key !== key));
+  const [showMap, setShowMap] = useState(false);
 
   return (
     <div className="space-y-2">
@@ -424,6 +426,17 @@ function LocationSearch({
           className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
         />
       </div>
+      {selected.some((l) => l.type === "city") && (
+        <button
+          type="button"
+          onClick={() => setShowMap((v) => !v)}
+          className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+        >
+          <MapPin className="h-3 w-3" />
+          {showMap ? "Esconder mapa" : "Ver no mapa"}
+        </button>
+      )}
+      {showMap && <LocationsMap locations={selected} />}
       {results.length > 0 && (
         <div className="border border-border rounded-md overflow-hidden bg-popover shadow-sm">
           {results.slice(0, 6).map((r) => (

@@ -30,7 +30,9 @@ import {
   Image,
   Video,
   AlertCircle,
+  MapPin,
 } from "lucide-react";
+import { LocationsMap } from "@/components/LocationsMap";
 import { toast } from "sonner";
 import {
   fetchAllClients,
@@ -1261,6 +1263,7 @@ function LocationSearch({
   selected: SelectedLocation[];
   onChange: (locs: SelectedLocation[]) => void;
 }) {
+  const [showMap, setShowMap] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MetaLocationResult[]>([]);
   const [searching, setSearching] = useState(false);
@@ -1369,6 +1372,17 @@ function LocationSearch({
       ) : (
         <p className="text-xs text-muted-foreground">Sem seleção — cobertura nacional (Brasil).</p>
       )}
+      {selected.some((l) => l.type === "city") && (
+        <button
+          type="button"
+          onClick={() => setShowMap((v) => !v)}
+          className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+        >
+          <MapPin className="h-3 w-3" />
+          {showMap ? "Esconder mapa" : "Ver no mapa"}
+        </button>
+      )}
+      {showMap && <LocationsMap locations={selected} />}
     </div>
   );
 }
