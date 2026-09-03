@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { MapContainer, TileLayer, Marker, Circle, Tooltip as LeafletTooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -6,17 +6,16 @@ import { Loader2 } from "lucide-react";
 import { geocodeLocations, type GeoPoint } from "@/lib/geocode";
 import type { SelectedLocation } from "@/lib/meta";
 
-const pinIcon = L.divIcon({
-  className: "",
-  html: `<div style="background:#d97706;width:14px;height:14px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>`,
-  iconSize: [14, 14],
-  iconAnchor: [7, 14],
-});
-
 function FitBounds({ points }: { points: GeoPoint[] }) {
   const map = useMap();
+  const key = points.map((p) => `${p.lat},${p.lon}`).join("|");
   useEffect(() => {
     if (points.length === 0) return;
+    // O mapa nasce dentro de um painel que aparece condicionalmente ("Ver no
+    // mapa") — no momento em que o Leaflet mede o container pela primeira vez,
+    // a altura pode ainda não ter sido aplicada, e os pinos saem posicionados
+    // fora do lugar (parece que "sumiram"). invalidateSize força remedir.
+    map.invalidateSize();
     if (points.length === 1) {
       map.setView([points[0].lat, points[0].lon], 10);
     } else {
@@ -25,7 +24,8 @@ function FitBounds({ points }: { points: GeoPoint[] }) {
         { padding: [30, 30] }
       );
     }
-  }, [map, points]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [map, key]);
   return null;
 }
 
@@ -33,6 +33,17 @@ function FitBounds({ points }: { points: GeoPoint[] }) {
 export function LocationsMap({ locations }: { locations: SelectedLocation[] }) {
   const [points, setPoints] = useState<Record<string, GeoPoint | null>>({});
   const [loading, setLoading] = useState(false);
+
+  const pinIcon = useMemo(
+    () =>
+      L.divIcon({
+        className: "",
+        html: `<div style="background:#d97706;width:14px;height:14px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.4)"></div>`,
+        iconSize: [14, 14],
+        iconAnchor: [7, 14],
+      }),
+    []
+  );
 
   const cityKeys = locations.filter((l) => l.type === "city").map((l) => l.key).join(",");
 
