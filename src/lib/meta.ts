@@ -2199,14 +2199,15 @@ export async function fetchBaseCampaignPrefill(
 
   const cities = (t?.geo_locations?.cities ?? []).map((c) => ({
     key: c.key,
-    name: c.key,
+    name: c.name ?? c.key,
     type: "city" as const,
+    region: c.region,
     radius: (c as { radius?: number }).radius,
   }));
-  const rawRegions = ((t?.geo_locations as Record<string, unknown> | undefined)?.["regions"] as Array<{ key: string }> | undefined) ?? [];
+  const rawRegions = ((t?.geo_locations as Record<string, unknown> | undefined)?.["regions"] as Array<{ key: string; name?: string }> | undefined) ?? [];
   const regions = rawRegions.map((r) => ({
     key: r.key,
-    name: r.key,
+    name: r.name ?? r.key,
     type: "region" as const,
   }));
   const locations: SelectedLocation[] = [...cities, ...regions];

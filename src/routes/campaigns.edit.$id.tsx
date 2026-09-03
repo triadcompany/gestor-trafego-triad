@@ -27,7 +27,9 @@ import {
   Image,
   Video,
   AlertCircle,
+  MapPin,
 } from "lucide-react";
+import { LocationsMap } from "@/components/LocationsMap";
 import { toast } from "sonner";
 import {
   fetchConversationTemplates,
@@ -879,6 +881,7 @@ function LocationSearch({
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MetaLocationResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [showMap, setShowMap] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -899,7 +902,7 @@ function LocationSearch({
   };
 
   const add = (r: MetaLocationResult) => {
-    onChange([...selected, { key: r.key, name: r.name, type: r.type as "city" | "region" }]);
+    onChange([...selected, { key: r.key, name: r.name, type: r.type as "city" | "region", region: r.region }]);
     setResults([]);
     setQuery("");
   };
@@ -943,6 +946,7 @@ function LocationSearch({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5 mb-1.5">
                   <span className="text-xs font-medium truncate">{loc.name}</span>
+                  {loc.region && <span className="text-xs text-muted-foreground shrink-0">— {loc.region}</span>}
                 </div>
                 {loc.type === "city" && (
                   <div className="flex gap-1 flex-wrap">
@@ -972,6 +976,17 @@ function LocationSearch({
       ) : (
         <p className="text-xs text-muted-foreground">Sem seleção — cobertura nacional (Brasil).</p>
       )}
+      {selected.some((l) => l.type === "city") && (
+        <button
+          type="button"
+          onClick={() => setShowMap((v) => !v)}
+          className="flex items-center gap-1.5 text-xs text-primary hover:underline"
+        >
+          <MapPin className="h-3 w-3" />
+          {showMap ? "Esconder mapa" : "Ver no mapa"}
+        </button>
+      )}
+      {showMap && <LocationsMap locations={selected} />}
     </div>
   );
 }
