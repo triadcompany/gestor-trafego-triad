@@ -18,6 +18,7 @@ import {
   type MetaTargeting,
   type MetaInterest,
   type MetaLocationResult,
+  type SelectedLocation,
 } from "@/lib/meta";
 
 // ── Facebook & Instagram position options ────────────────────
@@ -49,7 +50,7 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
   const [ageMax, setAgeMax] = useState(65);
   const [genderMode, setGenderMode] = useState<"all" | "male" | "female">("all");
   const [interests, setInterests] = useState<MetaInterest[]>([]);
-  const [locations, setLocations] = useState<MetaLocationResult[]>([]);
+  const [locations, setLocations] = useState<SelectedLocation[]>([]);
   const [customLocations, setCustomLocations] = useState<
     Array<{ latitude: number; longitude: number; radius: number; distance_unit?: string; name?: string }>
   >([]);
@@ -80,14 +81,13 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
       key: c.key,
       name: c.name ?? c.key,
       type: "city",
-      country_code: c.country ?? "BR",
       region: c.region,
+      radius: c.radius,
     }));
     const regions = (targeting.geo_locations?.regions ?? []).map((r) => ({
       key: r.key,
       name: r.name ?? r.key,
       type: "region",
-      country_code: r.country ?? "BR",
     }));
     setLocations([...cities, ...regions]);
     setCustomLocations(targeting.geo_locations?.custom_locations ?? []);
@@ -108,7 +108,10 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
   const saveMutation = useMutation({
     mutationFn: async () => {
       // Build clean targeting — never spread original targeting (may include read-only fields Meta rejects)
-      const cities = locations.filter((l) => l.type !== "region").map((l) => ({ key: l.key }));
+      const cities = locations.filter((l) => l.type !== "region").map((l) => ({
+        key: l.key,
+        ...(l.radius ? { radius: l.radius, distance_unit: "kilometer" } : {}),
+      }));
       const regions = locations.filter((l) => l.type === "region").map((l) => ({ key: l.key }));
       const newTargeting: MetaTargeting = {
         geo_locations: (locations.length > 0 || customLocations.length > 0)
@@ -374,9 +377,9 @@ function LocationSearch({
   token,
   onChange,
 }: {
-  selected: MetaLocationResult[];
+  selected: SelectedLocation[];
   token: string;
-  onChange: (locs: MetaLocationResult[]) => void;
+  onChange: (locs: SelectedLocation[]) => void;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<MetaLocationResult[]>([]);
@@ -398,9 +401,14 @@ function LocationSearch({
   };
 
   const add = (loc: MetaLocationResult) => {
-    onChange([...selected, loc]);
+    const newLoc: SelectedLocation = { key: loc.key, name: loc.name, type: loc.type, region: loc.region };
+    onChange([...selected, newLoc]);
     setResults((r) => r.filter((x) => x.key !== loc.key));
     setQuery("");
+  };
+
+  const updateRadius = (key: string, radius: number | undefined) => {
+    onChange(selected.map((s) => s.key === key ? { ...s, radius } : s));
   };
 
   const remove = (key: string) => onChange(selected.filter((s) => s.key !== key));
@@ -430,19 +438,41 @@ function LocationSearch({
           ))}
         </div>
       )}
-      {selected.length > 0 && (
-        <div className="flex flex-wrap gap-1.5">
+      {selected.length > 0 ? (
+        <div className="flex flex-col gap-1.5 mt-1">
           {selected.map((loc) => (
-            <Badge key={loc.key} variant="secondary" className="gap-1 text-xs pr-1">
-              {loc.name}
-              <button onClick={() => remove(loc.key)} className="hover:text-foreground">
-                <X className="h-3 w-3" />
+            <div key={loc.key} className="flex items-start gap-2 bg-muted/40 rounded-md px-2.5 py-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-1.5 mb-1.5">
+                  <span className="text-xs font-medium truncate">{loc.name}</span>
+                  {loc.region && <span className="text-xs text-muted-foreground shrink-0">— {loc.region}</span>}
+                </div>
+                {loc.type === "city" && (
+                  <div className="flex gap-1 flex-wrap">
+                    {([undefined, 30, 50, 80] as const).map((r) => (
+                      <button
+                        key={r ?? "city"}
+                        onClick={() => updateRadius(loc.key, r)}
+                        className={[
+                          "text-xs px-2 py-0.5 rounded-full border transition-colors",
+                          loc.radius === r
+                            ? "border-primary bg-primary/10 text-primary"
+                            : "border-border text-muted-foreground hover:border-primary/40",
+                        ].join(" ")}
+                      >
+                        {r === undefined ? "Só cidade" : `+${r}km`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <button onClick={() => remove(loc.key)} className="mt-0.5 shrink-0">
+                <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
               </button>
-            </Badge>
+            </div>
           ))}
         </div>
-      )}
-      {selected.length === 0 && (
+      ) : (
         <p className="text-xs text-muted-foreground">Nenhuma cidade/região — usando cobertura nacional (Brasil).</p>
       )}
     </div>
