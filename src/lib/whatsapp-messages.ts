@@ -1,8 +1,15 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { appConfig, clients, scheduledMessageRecipients, scheduledMessages } from "@/db/schema";
+import { appConfig, clients, scheduledMessageMedia, scheduledMessageRecipients, scheduledMessages } from "@/db/schema";
+
+const mediaItemSchema = z.object({
+  base64: z.string(),
+  mimetype: z.string(),
+  filename: z.string(),
+});
+export type MediaItem = z.infer<typeof mediaItemSchema>;
 
 async function getEvolutionConfig(): Promise<{ url: string; apiKey: string; instance: string }> {
   const rows = await db
@@ -31,8 +38,7 @@ export interface ScheduledMessageRecipientRow {
 export interface ScheduledMessageRow {
   id: string;
   body: string;
-  has_media: boolean;
-  media_filename: string | null;
+  media_count: number;
   scheduled_at: string;
   status: "pending" | "sent" | "partial" | "failed" | "canceled";
   created_at: string;
@@ -45,7 +51,6 @@ const _fetchScheduledMessages = createServerFn({ method: "GET" }).handler(async 
       id: scheduledMessages.id,
       body: scheduledMessages.body,
       mediaBase64: scheduledMessages.mediaBase64,
-      mediaFilename: scheduledMessages.mediaFilename,
       scheduledAt: scheduledMessages.scheduledAt,
       status: scheduledMessages.status,
       createdAt: scheduledMessages.createdAt,
@@ -55,30 +60,38 @@ const _fetchScheduledMessages = createServerFn({ method: "GET" }).handler(async 
 
   if (messages.length === 0) return [];
 
-  const recipients = await db
-    .select()
-    .from(scheduledMessageRecipients)
-    .where(inArray(scheduledMessageRecipients.messageId, messages.map((m) => m.id)));
+  const [recipients, media] = await Promise.all([
+    db
+      .select()
+      .from(scheduledMessageRecipients)
+      .where(inArray(scheduledMessageRecipients.messageId, messages.map((m) => m.id))),
+    db
+      .select({ messageId: scheduledMessageMedia.messageId })
+      .from(scheduledMessageMedia)
+      .where(inArray(scheduledMessageMedia.messageId, messages.map((m) => m.id))),
+  ]);
 
-  return messages.map((m) => ({
-    id: m.id,
-    body: m.body,
-    has_media: !!m.mediaBase64,
-    media_filename: m.mediaFilename,
-    scheduled_at: m.scheduledAt,
-    status: m.status as ScheduledMessageRow["status"],
-    created_at: m.createdAt,
-    recipients: recipients
-      .filter((r) => r.messageId === m.id)
-      .map((r) => ({
-        id: r.id,
-        remote_jid: r.remoteJid,
-        name: r.name,
-        status: r.status as ScheduledMessageRecipientRow["status"],
-        sent_at: r.sentAt,
-        error_message: r.errorMessage,
-      })),
-  }));
+  return messages.map((m) => {
+    const newMediaCount = media.filter((x) => x.messageId === m.id).length;
+    return {
+      id: m.id,
+      body: m.body,
+      media_count: newMediaCount > 0 ? newMediaCount : m.mediaBase64 ? 1 : 0,
+      scheduled_at: m.scheduledAt,
+      status: m.status as ScheduledMessageRow["status"],
+      created_at: m.createdAt,
+      recipients: recipients
+        .filter((r) => r.messageId === m.id)
+        .map((r) => ({
+          id: r.id,
+          remote_jid: r.remoteJid,
+          name: r.name,
+          status: r.status as ScheduledMessageRecipientRow["status"],
+          sent_at: r.sentAt,
+          error_message: r.errorMessage,
+        })),
+    };
+  });
 });
 
 export async function fetchScheduledMessages(): Promise<ScheduledMessageRow[]> {
@@ -89,9 +102,7 @@ const _createScheduledMessage = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
       body: z.string().min(1),
-      mediaBase64: z.string().nullable().optional(),
-      mediaMimetype: z.string().nullable().optional(),
-      mediaFilename: z.string().nullable().optional(),
+      media: z.array(mediaItemSchema).default([]),
       scheduledAt: z.string(),
       recipients: z.array(z.object({ remoteJid: z.string(), name: z.string() })).min(1),
     })
@@ -102,9 +113,6 @@ const _createScheduledMessage = createServerFn({ method: "POST" })
         .insert(scheduledMessages)
         .values({
           body: data.body,
-          mediaBase64: data.mediaBase64 ?? null,
-          mediaMimetype: data.mediaMimetype ?? null,
-          mediaFilename: data.mediaFilename ?? null,
           scheduledAt: data.scheduledAt,
           status: "pending",
         })
@@ -117,26 +125,33 @@ const _createScheduledMessage = createServerFn({ method: "POST" })
           status: "pending" as const,
         }))
       );
+      if (data.media.length > 0) {
+        await tx.insert(scheduledMessageMedia).values(
+          data.media.map((m, i) => ({
+            messageId: message.id,
+            base64: m.base64,
+            mimetype: m.mimetype,
+            filename: m.filename,
+            sortOrder: i,
+          }))
+        );
+      }
     });
   });
 
 export async function createScheduledMessage(data: {
   body: string;
-  mediaBase64?: string | null;
-  mediaMimetype?: string | null;
-  mediaFilename?: string | null;
+  media?: MediaItem[];
   scheduledAt: string;
   recipients: { remoteJid: string; name: string }[];
 }): Promise<void> {
-  await _createScheduledMessage({ data });
+  await _createScheduledMessage({ data: { ...data, media: data.media ?? [] } });
 }
 
 export interface ScheduledMessageDetail {
   id: string;
   body: string;
-  media_base64: string | null;
-  media_mimetype: string | null;
-  media_filename: string | null;
+  media: MediaItem[];
   scheduled_at: string;
   status: ScheduledMessageRow["status"];
   recipients: { remote_jid: string; name: string }[];
@@ -151,17 +166,32 @@ const _fetchScheduledMessageById = createServerFn({ method: "GET" })
       .where(eq(scheduledMessages.id, data.id));
     if (!message) return null;
 
-    const recipients = await db
-      .select()
-      .from(scheduledMessageRecipients)
-      .where(eq(scheduledMessageRecipients.messageId, data.id));
+    const [recipients, media] = await Promise.all([
+      db
+        .select()
+        .from(scheduledMessageRecipients)
+        .where(eq(scheduledMessageRecipients.messageId, data.id)),
+      db
+        .select({
+          base64: scheduledMessageMedia.base64,
+          mimetype: scheduledMessageMedia.mimetype,
+          filename: scheduledMessageMedia.filename,
+        })
+        .from(scheduledMessageMedia)
+        .where(eq(scheduledMessageMedia.messageId, data.id))
+        .orderBy(asc(scheduledMessageMedia.sortOrder)),
+    ]);
+
+    // Mensagens antigas (antes de scheduled_message_media existir) guardavam 1 mídia direto nas colunas legadas.
+    const legacyMedia: MediaItem[] =
+      media.length === 0 && message.mediaBase64 && message.mediaMimetype && message.mediaFilename
+        ? [{ base64: message.mediaBase64, mimetype: message.mediaMimetype, filename: message.mediaFilename }]
+        : [];
 
     return {
       id: message.id,
       body: message.body,
-      media_base64: message.mediaBase64,
-      media_mimetype: message.mediaMimetype,
-      media_filename: message.mediaFilename,
+      media: media.length > 0 ? media : legacyMedia,
       scheduled_at: message.scheduledAt,
       status: message.status as ScheduledMessageRow["status"],
       recipients: recipients.map((r) => ({ remote_jid: r.remoteJid, name: r.name })),
@@ -177,9 +207,7 @@ const _updateScheduledMessage = createServerFn({ method: "POST" })
     z.object({
       id: z.string(),
       body: z.string().min(1),
-      mediaBase64: z.string().nullable().optional(),
-      mediaMimetype: z.string().nullable().optional(),
-      mediaFilename: z.string().nullable().optional(),
+      media: z.array(mediaItemSchema).default([]),
       scheduledAt: z.string(),
       recipients: z.array(z.object({ remoteJid: z.string(), name: z.string() })).min(1),
     })
@@ -190,10 +218,11 @@ const _updateScheduledMessage = createServerFn({ method: "POST" })
         .update(scheduledMessages)
         .set({
           body: data.body,
-          mediaBase64: data.mediaBase64 ?? null,
-          mediaMimetype: data.mediaMimetype ?? null,
-          mediaFilename: data.mediaFilename ?? null,
           scheduledAt: data.scheduledAt,
+          // Zera as colunas legadas — a partir da edição, a mídia passa a viver só em scheduled_message_media.
+          mediaBase64: null,
+          mediaMimetype: null,
+          mediaFilename: null,
         })
         .where(and(eq(scheduledMessages.id, data.id), eq(scheduledMessages.status, "pending")))
         .returning();
@@ -208,19 +237,30 @@ const _updateScheduledMessage = createServerFn({ method: "POST" })
           status: "pending" as const,
         }))
       );
+
+      await tx.delete(scheduledMessageMedia).where(eq(scheduledMessageMedia.messageId, data.id));
+      if (data.media.length > 0) {
+        await tx.insert(scheduledMessageMedia).values(
+          data.media.map((m, i) => ({
+            messageId: data.id,
+            base64: m.base64,
+            mimetype: m.mimetype,
+            filename: m.filename,
+            sortOrder: i,
+          }))
+        );
+      }
     });
   });
 
 export async function updateScheduledMessage(data: {
   id: string;
   body: string;
-  mediaBase64?: string | null;
-  mediaMimetype?: string | null;
-  mediaFilename?: string | null;
+  media?: MediaItem[];
   scheduledAt: string;
   recipients: { remoteJid: string; name: string }[];
 }): Promise<void> {
-  await _updateScheduledMessage({ data });
+  await _updateScheduledMessage({ data: { ...data, media: data.media ?? [] } });
 }
 
 const _cancelScheduledMessage = createServerFn({ method: "POST" })

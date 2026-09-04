@@ -290,12 +290,23 @@ export const driveUploads = pgTable("drive_uploads", {
 export const scheduledMessages = pgTable("scheduled_messages", {
   id: uuid("id").primaryKey().defaultRandom(),
   body: text("body").notNull(),
+  // Colunas legadas — mensagens criadas antes de suportar múltiplas mídias
+  // (scheduled_message_media). Mantidas só pra não quebrar histórico antigo.
   mediaBase64: text("media_base64"),
   mediaMimetype: text("media_mimetype"),
   mediaFilename: text("media_filename"),
   scheduledAt: timestamp("scheduled_at").notNull(),
   status: text("status").notNull().default("pending"), // pending | sent | partial | failed | canceled
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const scheduledMessageMedia = pgTable("scheduled_message_media", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  messageId: uuid("message_id").notNull().references(() => scheduledMessages.id, { onDelete: "cascade" }),
+  base64: text("base64").notNull(),
+  mimetype: text("mimetype").notNull(),
+  filename: text("filename").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
 });
 
 export const scheduledMessageRecipients = pgTable("scheduled_message_recipients", {

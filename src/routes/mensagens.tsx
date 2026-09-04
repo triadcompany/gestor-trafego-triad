@@ -27,6 +27,7 @@ import {
   type ScheduledMessageRow,
   type ScheduledMessageDetail,
   type EvolutionRecipient,
+  type MediaItem,
 } from "@/lib/whatsapp-messages";
 
 export const Route = createFileRoute("/mensagens")({
@@ -148,7 +149,12 @@ function MensagensPage() {
                       {STATUS_LABELS[m.status]}
                     </span>
                     <span className="text-xs text-muted-foreground">{formatDateTime(m.scheduled_at)}</span>
-                    {m.has_media && <Paperclip className="h-3 w-3 text-muted-foreground" />}
+                    {m.media_count > 0 && (
+                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                        <Paperclip className="h-3 w-3" />
+                        {m.media_count > 1 && m.media_count}
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-foreground/90 line-clamp-2">{m.body}</p>
                   <div className="flex items-center gap-1.5 mt-2 text-xs text-muted-foreground min-w-0">
@@ -246,8 +252,8 @@ function ComposerDialog({
   const [body, setBody] = useState("");
   const [scheduledAt, setScheduledAt] = useState("");
   const [recipients, setRecipients] = useState<EvolutionRecipient[]>([]);
-  const [mediaFile, setMediaFile] = useState<File | null>(null);
-  const [keepExistingMedia, setKeepExistingMedia] = useState(false);
+  const [mediaFiles, setMediaFiles] = useState<File[]>([]);
+  const [existingMedia, setExistingMedia] = useState<MediaItem[]>([]);
   const [loadedEditingId, setLoadedEditingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -261,15 +267,15 @@ function ComposerDialog({
         isGroup: r.remote_jid.endsWith("@g.us"),
       }))
     );
-    setMediaFile(null);
-    setKeepExistingMedia(!!editing.media_base64);
+    setMediaFiles([]);
+    setExistingMedia(editing.media);
     setLoadedEditingId(editing.id);
   } else if (open && !editing && loadedEditingId !== "new") {
     setBody("");
     setScheduledAt("");
     setRecipients([]);
-    setMediaFile(null);
-    setKeepExistingMedia(false);
+    setMediaFiles([]);
+    setExistingMedia([]);
     setLoadedEditingId("new");
   }
 
@@ -277,33 +283,34 @@ function ComposerDialog({
     setBody("");
     setScheduledAt("");
     setRecipients([]);
-    setMediaFile(null);
-    setKeepExistingMedia(false);
+    setMediaFiles([]);
+    setExistingMedia([]);
     setLoadedEditingId(null);
+  };
+
+  const addFiles = (files: FileList | null) => {
+    if (!files) return;
+    const tooBig = Array.from(files).find((f) => f.size > 16 * 1024 * 1024);
+    if (tooBig) {
+      toast.error(`"${tooBig.name}" é maior que 16MB.`);
+      return;
+    }
+    setMediaFiles((prev) => [...prev, ...Array.from(files)]);
   };
 
   const saveMutation = useMutation({
     mutationFn: async () => {
-      let mediaBase64: string | null = null;
-      let mediaMimetype: string | null = null;
-      let mediaFilename: string | null = null;
-      if (mediaFile) {
-        if (mediaFile.size > 16 * 1024 * 1024) {
-          throw new Error("Arquivo muito grande (limite de 16MB).");
-        }
-        mediaBase64 = await fileToBase64(mediaFile);
-        mediaMimetype = mediaFile.type;
-        mediaFilename = mediaFile.name;
-      } else if (editing && keepExistingMedia) {
-        mediaBase64 = editing.media_base64;
-        mediaMimetype = editing.media_mimetype;
-        mediaFilename = editing.media_filename;
-      }
+      const uploaded = await Promise.all(
+        mediaFiles.map(async (f) => ({
+          base64: await fileToBase64(f),
+          mimetype: f.type,
+          filename: f.name,
+        }))
+      );
+      const media = [...existingMedia, ...uploaded];
       const payload = {
         body,
-        mediaBase64,
-        mediaMimetype,
-        mediaFilename,
+        media,
         scheduledAt: new Date(scheduledAt).toISOString(),
         recipients: recipients.map((r) => ({ remoteJid: r.remoteJid, name: r.name })),
       };
@@ -324,8 +331,7 @@ function ComposerDialog({
 
   const isPast = scheduledAt !== "" && new Date(scheduledAt) <= new Date();
   const canSubmit = body.trim().length > 0 && recipients.length > 0 && scheduledAt !== "" && !isPast;
-  const hasMedia = !!mediaFile || (!!editing && keepExistingMedia);
-  const mediaLabel = mediaFile?.name ?? editing?.media_filename ?? "arquivo";
+  const allMediaLabels = [...existingMedia.map((m) => m.filename), ...mediaFiles.map((f) => f.name)];
 
   return (
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
@@ -348,32 +354,44 @@ function ComposerDialog({
           <div className="space-y-1.5">
             <Label className="block">
               Mídia
-              <span className="text-muted-foreground font-normal text-xs ml-1.5">opcional</span>
+              <span className="text-muted-foreground font-normal text-xs ml-1.5">opcional — pode anexar mais de uma</span>
             </Label>
-            {hasMedia ? (
-              <div className="flex items-center justify-between px-3 py-2 border border-border rounded-md text-sm">
-                <span className="truncate">{mediaLabel}</span>
-                <button onClick={() => { setMediaFile(null); setKeepExistingMedia(false); }}>
-                  <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
-                </button>
+            {allMediaLabels.length > 0 && (
+              <div className="space-y-1.5">
+                {existingMedia.map((m, i) => (
+                  <div key={`existing-${i}`} className="flex items-center justify-between px-3 py-2 border border-border rounded-md text-sm">
+                    <span className="truncate">{m.filename}</span>
+                    <button onClick={() => setExistingMedia((prev) => prev.filter((_, idx) => idx !== i))}>
+                      <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                    </button>
+                  </div>
+                ))}
+                {mediaFiles.map((f, i) => (
+                  <div key={`new-${i}`} className="flex items-center justify-between px-3 py-2 border border-border rounded-md text-sm">
+                    <span className="truncate">{f.name}</span>
+                    <button onClick={() => setMediaFiles((prev) => prev.filter((_, idx) => idx !== i))}>
+                      <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+                    </button>
+                  </div>
+                ))}
               </div>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full justify-start gap-2"
-              >
-                <Paperclip className="h-3.5 w-3.5" />
-                Anexar imagem, vídeo ou documento
-              </Button>
             )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => fileInputRef.current?.click()}
+              className="w-full justify-start gap-2"
+            >
+              <Paperclip className="h-3.5 w-3.5" />
+              {allMediaLabels.length > 0 ? "Anexar mais um arquivo" : "Anexar imagem, vídeo ou documento"}
+            </Button>
             <input
               ref={fileInputRef}
               type="file"
               accept="image/*,video/*,application/pdf"
+              multiple
               className="hidden"
-              onChange={(e) => setMediaFile(e.target.files?.[0] ?? null)}
+              onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }}
             />
           </div>
 
