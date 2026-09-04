@@ -290,9 +290,9 @@ function ComposerDialog({
 
   const addFiles = (files: FileList | null) => {
     if (!files) return;
-    const tooBig = Array.from(files).find((f) => f.size > 16 * 1024 * 1024);
+    const tooBig = Array.from(files).find((f) => f.size > 100 * 1024 * 1024);
     if (tooBig) {
-      toast.error(`"${tooBig.name}" é maior que 16MB.`);
+      toast.error(`"${tooBig.name}" é maior que 100MB.`);
       return;
     }
     setMediaFiles((prev) => [...prev, ...Array.from(files)]);
