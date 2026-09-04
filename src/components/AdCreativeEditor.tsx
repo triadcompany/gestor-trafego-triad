@@ -177,9 +177,13 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
     retry: false,
   });
 
-  const accept = isVideo
-    ? "video/mp4,video/mov,video/avi,video/quicktime"
-    : "image/jpeg,image/png,image/gif,image/webp";
+  // Sempre aceita os dois tipos — trocar de imagem pra vídeo (ou vice-versa) é
+  // permitido; o tipo da mídia nova sendo enviada quem decide (não o formato
+  // que o anúncio já tinha antes).
+  const accept = "image/jpeg,image/png,image/gif,image/webp,video/mp4,video/mov,video/avi,video/quicktime";
+  // Formato "efetivo" pra pré-visualização/rótulo: usa o da mídia nova já
+  // selecionada quando houver, senão cai no formato do criativo já publicado.
+  const effectiveIsVideo = newMediaFile ? newMediaFile.type.startsWith("video/") : isVideo;
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -295,7 +299,7 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
       <div className="flex items-start gap-3">
         <div className="relative shrink-0">
           {newMediaPreview ? (
-            isVideo ? (
+            effectiveIsVideo ? (
               <video
                 src={newMediaPreview}
                 className="h-20 w-20 rounded-lg object-cover border-2 border-primary"
@@ -350,7 +354,8 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
 
         <div className="flex-1 min-w-0">
           <p className="text-xs text-muted-foreground mb-1">
-            {isVideo ? "Vídeo" : "Imagem"}
+            {effectiveIsVideo ? "Vídeo" : "Imagem"}
+            {newMediaFile && <span className="text-muted-foreground/60"> (nova)</span>}
           </p>
           {newMediaFile ? (
             <div className="flex items-start gap-1.5">
