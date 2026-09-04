@@ -18,11 +18,20 @@ async function geocodeOne(query: string): Promise<GeoPoint | null> {
     const res = await fetch(url, {
       headers: { "User-Agent": "GestorTrafegoTriad/1.0 (uso interno — mapa de segmentação de anúncios)" },
     });
+    if (!res.ok) {
+      // Erro do serviço (rate limit, instabilidade etc.) — não guarda em cache,
+      // senão essa cidade fica "não encontrada" pra sempre até o servidor reiniciar.
+      console.error(`[geocode] Nominatim retornou ${res.status} para "${query}"`);
+      return null;
+    }
     const data = (await res.json()) as Array<{ lat: string; lon: string }>;
     const point = data[0] ? { lat: parseFloat(data[0].lat), lon: parseFloat(data[0].lon) } : null;
-    cache.set(query, point);
+    // Só guarda em cache resultado de verdade — uma falha/vazio não deve "grudar".
+    if (point) cache.set(query, point);
+    else console.error(`[geocode] Nenhum resultado do Nominatim para "${query}"`);
     return point;
-  } catch {
+  } catch (e) {
+    console.error(`[geocode] Falha ao geocodificar "${query}":`, e);
     return null;
   }
 }
