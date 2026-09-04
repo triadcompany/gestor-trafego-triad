@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +20,17 @@ import {
   type MetaLocationResult,
   type SelectedLocation,
 } from "@/lib/meta";
-import { LocationsMap } from "@/components/LocationsMap";
+// Import dinâmico (nunca estático) — o Leaflet acessa `window` na hora de
+// carregar o módulo e derruba a renderização no servidor (SSR) se for
+// importado direto no topo do arquivo.
+const LocationsMap = lazy(() =>
+  import("@/components/LocationsMap").then((m) => ({ default: m.LocationsMap }))
+);
+const MAP_FALLBACK = (
+  <div className="h-[260px] rounded-lg border border-border bg-muted/20 flex items-center justify-center text-xs text-muted-foreground">
+    Carregando mapa...
+  </div>
+);
 
 // ── Facebook & Instagram position options ────────────────────
 
@@ -436,7 +446,11 @@ function LocationSearch({
           {showMap ? "Esconder mapa" : "Ver no mapa"}
         </button>
       )}
-      {showMap && <LocationsMap locations={selected} />}
+      {showMap && (
+        <Suspense fallback={MAP_FALLBACK}>
+          <LocationsMap locations={selected} />
+        </Suspense>
+      )}
       {results.length > 0 && (
         <div className="border border-border rounded-md overflow-hidden bg-popover shadow-sm">
           {results.slice(0, 6).map((r) => (

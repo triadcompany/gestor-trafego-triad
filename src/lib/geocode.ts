@@ -16,7 +16,7 @@ async function geocodeOne(query: string): Promise<GeoPoint | null> {
   try {
     const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=br&q=${encodeURIComponent(query)}`;
     const res = await fetch(url, {
-      headers: { "User-Agent": "GestorTrafegoTriad/1.0 (uso interno — mapa de segmentação de anúncios)" },
+      headers: { "User-Agent": "GestorTrafegoTriad/1.0 (uso interno - mapa de segmentacao de anuncios)" },
     });
     if (!res.ok) {
       // Erro do serviço (rate limit, instabilidade etc.) — não guarda em cache,

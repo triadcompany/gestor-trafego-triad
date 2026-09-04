@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, lazy, Suspense } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -32,7 +32,17 @@ import {
   AlertCircle,
   MapPin,
 } from "lucide-react";
-import { LocationsMap } from "@/components/LocationsMap";
+// Import dinâmico (nunca estático) — o Leaflet acessa `window` na hora de
+// carregar o módulo e derruba a renderização no servidor (SSR) se for
+// importado direto no topo do arquivo.
+const LocationsMap = lazy(() =>
+  import("@/components/LocationsMap").then((m) => ({ default: m.LocationsMap }))
+);
+const MAP_FALLBACK = (
+  <div className="h-[260px] rounded-lg border border-border bg-muted/20 flex items-center justify-center text-xs text-muted-foreground">
+    Carregando mapa...
+  </div>
+);
 import { toast } from "sonner";
 import {
   fetchAllClients,
@@ -1382,7 +1392,11 @@ function LocationSearch({
           {showMap ? "Esconder mapa" : "Ver no mapa"}
         </button>
       )}
-      {showMap && <LocationsMap locations={selected} />}
+      {showMap && (
+        <Suspense fallback={MAP_FALLBACK}>
+          <LocationsMap locations={selected} />
+        </Suspense>
+      )}
     </div>
   );
 }
