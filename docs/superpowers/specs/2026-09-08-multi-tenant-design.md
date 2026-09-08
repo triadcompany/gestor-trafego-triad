@@ -71,6 +71,19 @@ created_at       timestamptz not null default now()
 ```
 Uma organização pode ter **N** instâncias. Mensagens agendadas (`scheduled_messages`) e grupos monitorados passam a referenciar qual `whatsapp_instance_id` usar. Se a organização só tem 1 instância ativa, a UI pré-seleciona ela automaticamente — zero fricção extra pra quem usa hoje (a Triad terá exatamente 1, migrada da config atual).
 
+**Tabela nova `meta_tokens`** (substitui a chave `meta_access_token`/`meta_token_expires_at` hoje soltas em `app_config`) — mesmo padrão de `whatsapp_instances`, porque o mesmo cenário dos 3 gestores se aplica ao Meta: cada um pode ter seu próprio token/acesso da Business Manager.
+```
+id               uuid PK
+organization_id  uuid FK -> organizations.id, not null
+label            text not null              -- ex: "Token do João"
+access_token     text not null
+expires_at       timestamptz
+assigned_user_id uuid FK -> profiles.id, nullable
+active           boolean not null default true
+created_at       timestamptz not null default now()
+```
+Uma organização pode ter **N** tokens. Diferente do WhatsApp (onde a instância é escolhida pontualmente a cada mensagem), toda ação da Meta gira em torno de um **cliente** específico, que já tem uma conta de anúncio fixa — não faz sentido escolher o token a cada clique. Por isso `clients` ganha `meta_token_id` (FK → `meta_tokens.id`, nullable), escolhido no cadastro/edição do cliente (igual outros campos do formulário hoje) e pré-selecionado automaticamente se a organização só tiver 1 token ativo — mesma UX de zero-fricção do WhatsApp.
+
 ### 2. Auth, sessão e papéis
 
 O JWT de sessão não muda de formato (continua só `{ sub: userId }`). O que muda é `loadSessionUser` (`src/server/session.ts`), que hoje já faz `join` de `users` com `profiles` — passa a trazer também `organizationId`, `role` e `isPlatformAdmin`.
@@ -91,7 +104,7 @@ Tabelas que hoje já filtram por `client_id` continuam exatamente assim; a garan
 
 ### 4. Integrações por organização
 
-- **Meta Ads**: token continua 1 por organização (token de sistema da Business Manager — não faz sentido dividir por pessoa). A tela `/settings` existente passa a ler/gravar em `app_config` filtrado por `organization_id`, em vez de global.
+- **Meta Ads**: vira `meta_tokens` (seção 1) — N tokens por organização, cada um opcionalmente atribuído a um usuário/gestor. Cada cliente aponta pra um `meta_token_id` específico (escolhido no cadastro do cliente, auto-selecionado se só existir 1). A tela `/settings` existente vira a lista de tokens da organização (criar, editar, desativar, atribuir a um usuário) — mesmo formato de tela que `whatsapp_instances`.
 - **WhatsApp / Evolution API**: vira `whatsapp_instances` (seção 1). Tela de Configurações ganha uma lista de instâncias da organização (criar, editar, desativar, atribuir a um usuário).
 - **n8n**: continua uma instância só, compartilhada, operada por você. Os workflows que hoje leem `evolution_api_url`/`evolution_api_key` globais direto do `app_config` (envio de mensagem agendada, resumidor de grupo) passam a **receber essas credenciais no payload do webhook** — o server function que dispara a chamada busca a `whatsapp_instance` correta (da organização/mensagem em questão) e manda junto.
 
@@ -101,14 +114,15 @@ Tabelas que hoje já filtram por `client_id` continuam exatamente assim; a garan
 
 **Dentro da organização**: o admin adiciona colegas pela tela "Usuários" em Configurações — nome, email, senha inicial (o admin comunica essa senha por fora do sistema, ex: WhatsApp). Não existe hoje nenhuma tela de troca de senha — essa etapa adiciona uma opção simples "Trocar minha senha" no menu do usuário (pede senha atual + nova), pra quem recebeu uma senha inicial do admin poder trocá-la sem depender dele de novo.
 
-**Migração dos dados existentes**: uma migration cria a organização `"Triad Company"` e faz `UPDATE` de `organization_id` em todas as linhas hoje órfãs de: `clients`, `tags`, `tasks`, `scheduled_messages`, `agent_conversations`, `drive_uploads`, `n8n_jobs`, `app_config`. As linhas atuais de `evolution_api_url`/`evolution_api_key`/`evolution_instance` em `app_config` são convertidas numa primeira linha de `whatsapp_instances` da Triad (`label: "Principal"`). Todos os usuários existentes (`profiles`) recebem `organization_id` = Triad Company, com `role = 'admin'` (mantendo o acesso que já têm hoje). Zero perda de dado; o sistema continua funcionando pra vocês exatamente como hoje, só que agora dentro de uma organização nomeada.
+**Migração dos dados existentes**: uma migration cria a organização `"Triad Company"` e faz `UPDATE` de `organization_id` em todas as linhas hoje órfãs de: `clients`, `tags`, `tasks`, `scheduled_messages`, `agent_conversations`, `drive_uploads`, `n8n_jobs`, `app_config`. As linhas atuais de `evolution_api_url`/`evolution_api_key`/`evolution_instance` em `app_config` são convertidas numa primeira linha de `whatsapp_instances` da Triad (`label: "Principal"`); as linhas atuais de `meta_access_token`/`meta_token_expires_at` viram a primeira linha de `meta_tokens` da Triad (`label: "Principal"`), e todo `client` existente recebe esse `meta_token_id`. Todos os usuários existentes (`profiles`) recebem `organization_id` = Triad Company, com `role = 'admin'` (mantendo o acesso que já têm hoje). Zero perda de dado; o sistema continua funcionando pra vocês exatamente como hoje, só que agora dentro de uma organização nomeada.
 
 ## Plano de teste
 
 1. Rodar a migration e confirmar que todos os dados atuais da Triad continuam acessíveis e intactos, sob a organização "Triad Company".
 2. Como platform admin, criar uma segunda organização de teste ("Agência Teste") com um admin novo.
 3. Logar como o admin da Agência Teste: confirmar que a lista de clientes/campanhas/mensagens está **vazia** (não vê nada da Triad).
-4. Cadastrar um cliente de teste na Agência Teste, configurar um token Meta de teste e uma `whatsapp_instance` de teste; confirmar que a Triad não vê nada disso e vice-versa.
+4. Cadastrar um cliente de teste na Agência Teste, configurar um `meta_token` de teste e uma `whatsapp_instance` de teste; confirmar que a Triad não vê nada disso e vice-versa.
 5. Como admin da Agência Teste, criar um usuário "membro"; confirmar que ele consegue editar clientes/campanhas mas **não** acessa a tela de Integrações nem "Usuários".
-6. Disparar uma mensagem agendada em cada organização e confirmar que cada uma usa a `whatsapp_instance` correta (via payload do n8n), sem misturar credenciais.
-7. Como platform admin, entrar na Agência Teste via `/admin/organizations` e confirmar acesso de admin àquela organização especificamente.
+6. Cadastrar 2 tokens Meta na mesma organização (um atribuído a cada um de 2 gestores) e 2 clientes, cada um apontando pra um token diferente; confirmar que sincronizar/criar campanha em cada cliente usa o token correto.
+7. Disparar uma mensagem agendada em cada organização e confirmar que cada uma usa a `whatsapp_instance` correta (via payload do n8n), sem misturar credenciais.
+8. Como platform admin, entrar na Agência Teste via `/admin/organizations` e confirmar acesso de admin àquela organização especificamente.
