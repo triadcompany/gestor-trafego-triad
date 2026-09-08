@@ -96,6 +96,8 @@ interface BulkCar {
   primaryText: string;
   headline: string;
   description: string;
+  whatsappGreeting: string;
+  whatsappMessage: string;
 }
 
 function makeEmptyBulkCar(): BulkCar {
@@ -108,6 +110,8 @@ function makeEmptyBulkCar(): BulkCar {
     primaryText: "",
     headline: "",
     description: "",
+    whatsappGreeting: "",
+    whatsappMessage: "",
   };
 }
 
@@ -128,8 +132,6 @@ interface BulkSharedConfig {
   genderMode: "all" | "male" | "female";
   locations: SelectedLocation[];
   interests: MetaInterest[];
-  whatsappGreeting: string;
-  whatsappMessage: string;
 }
 
 async function waitForN8nJob(jobId: string, onProgress?: (msg: string) => void): Promise<string> {
@@ -208,8 +210,8 @@ async function createOneBulkCampaign(
     name: campaignName,
     pageId: shared.pageId,
     whatsappNumber: normalizedPhone,
-    whatsappMessage: shared.whatsappMessage || undefined,
-    whatsappGreeting: shared.whatsappGreeting || undefined,
+    whatsappMessage: car.whatsappMessage || undefined,
+    whatsappGreeting: car.whatsappGreeting || undefined,
     primaryText: car.primaryText,
     headline: car.headline,
     description: car.description || undefined,
@@ -386,8 +388,6 @@ function NewCampaign() {
       genderMode,
       locations,
       interests,
-      whatsappGreeting,
-      whatsappMessage,
     };
 
     for (const car of cars) {
@@ -1518,37 +1518,14 @@ function NewCampaign() {
         {/* ── STEP 3 (massa): Configuração da conversa + lista de carros ── */}
         {step === 3 && mode === "bulk" && (
           <div className="space-y-5">
-            <Card className="p-5 space-y-4">
-              <SectionTitle>Configuração da conversa</SectionTitle>
-              <p className="text-xs text-muted-foreground -mt-2">Compartilhada por todos os carros do lote.</p>
-
-              <div className="space-y-2">
-                <Label>Mensagem de saudação <span className="text-muted-foreground font-normal text-xs ml-1">opcional</span></Label>
-                <Textarea
-                  value={whatsappGreeting}
-                  onChange={(e) => setWhatsappGreeting(e.target.value)}
-                  placeholder="Mensagem enviada automaticamente ao abrir a conversa..."
-                  className="min-h-[70px] resize-none"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Mensagem pré-pronta <span className="text-muted-foreground font-normal text-xs ml-1">opcional</span></Label>
-                <Textarea
-                  value={whatsappMessage}
-                  onChange={(e) => setWhatsappMessage(e.target.value)}
-                  placeholder="Texto que já vem preenchido no campo de mensagem do WhatsApp..."
-                  className="min-h-[70px] resize-none"
-                />
-              </div>
-
-              <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/40 rounded-lg p-3">
-                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
-                <span>
-                  Abrirá o WhatsApp:{" "}
-                  <strong className="text-foreground">{whatsappNumber || "não configurado"}</strong>
-                </span>
-              </div>
-            </Card>
+            <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/40 rounded-lg p-3">
+              <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+              <span>
+                Todos os carros abrirão o WhatsApp:{" "}
+                <strong className="text-foreground">{whatsappNumber || "não configurado"}</strong>
+                {" "}— a mensagem de saudação é configurada individualmente em cada carro abaixo.
+              </span>
+            </div>
 
             <div className="space-y-3">
               {cars.map((car, i) => {
@@ -1664,6 +1641,29 @@ function NewCampaign() {
                         value={car.description}
                         onChange={(e) => updateCar(car.id, { description: e.target.value })}
                         placeholder="Ex: Consulte condições de financiamento"
+                        disabled={bulkRunning}
+                      />
+                    </div>
+
+                    <Separator />
+
+                    <div className="space-y-2">
+                      <Label>Mensagem de saudação <span className="text-muted-foreground font-normal text-xs ml-1">opcional</span></Label>
+                      <Textarea
+                        value={car.whatsappGreeting}
+                        onChange={(e) => updateCar(car.id, { whatsappGreeting: e.target.value })}
+                        placeholder="Mensagem enviada automaticamente ao abrir a conversa..."
+                        className="min-h-[70px] resize-none"
+                        disabled={bulkRunning}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Mensagem pré-pronta <span className="text-muted-foreground font-normal text-xs ml-1">opcional</span></Label>
+                      <Textarea
+                        value={car.whatsappMessage}
+                        onChange={(e) => updateCar(car.id, { whatsappMessage: e.target.value })}
+                        placeholder="Texto que já vem preenchido no campo de mensagem do WhatsApp..."
+                        className="min-h-[70px] resize-none"
                         disabled={bulkRunning}
                       />
                     </div>
