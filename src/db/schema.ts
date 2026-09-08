@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import { relations } from "drizzle-orm/relations";
 import {
   boolean,
+  check,
   date,
   index,
   integer,
@@ -24,28 +25,87 @@ function numericMoney(name: string, precision: number, scale: number) {
   return numeric(name, { precision, scale, mode: "number" });
 }
 
+// Unidade de isolamento multi-tenant — uma agência/empresa que assina o produto.
+// Todo dado do sistema pendura, direta ou indiretamente (via clients), numa organização.
+export const organizations = pgTable("organizations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  name: text("name").notNull(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 // Substitui auth.users do Supabase. Guarda credenciais próprias (bcrypt).
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  // Acesso de suporte fora do conceito de organização — lista/entra em qualquer uma.
+  // Não faz parte de nenhuma organização por padrão (profiles.organizationId fica nulo).
+  isPlatformAdmin: boolean("is_platform_admin").notNull().default(false),
+  // Desativado = login bloqueado. Usado pelo admin da organização pra remover
+  // acesso de um colega sem apagar o histórico (tarefas/campanhas criadas por ele).
+  active: boolean("active").notNull().default(true),
 });
 
-export const profiles = pgTable("profiles", {
-  id: uuid("id")
-    .primaryKey()
-    .references(() => users.id, { onDelete: "cascade" }),
-  fullName: text("full_name").notNull(),
+export const profiles = pgTable(
+  "profiles",
+  {
+    id: uuid("id")
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    fullName: text("full_name").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    role: text("role").notNull().default("member"),
+    // Nulo só pro platform admin puro (users.isPlatformAdmin), que não pertence a
+    // nenhuma organização. Todo outro usuário deve ter isso preenchido (garantido
+    // na aplicação, não no banco, pra permitir esse caso especial).
+    organizationId: uuid("organization_id").references(() => organizations.id),
+  },
+  (t) => [check("profiles_role_check", sql`${t.role} IN ('admin', 'member')`)]
+);
+
+// Token de acesso à Meta Marketing API. Uma organização pode ter vários (um por
+// gestor de tráfego que tenha seu próprio acesso à Business Manager); cada
+// cliente aponta pra um específico (clients.metaTokenId).
+export const metaTokens = pgTable("meta_tokens", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  accessToken: text("access_token").notNull(),
+  expiresAt: timestamp("expires_at"),
+  assignedUserId: uuid("assigned_user_id").references(() => profiles.id, { onDelete: "set null" }),
+  active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  role: text("role").notNull().default("member"),
+});
+
+// Instância da Evolution API (um número de WhatsApp conectado). Uma organização
+// pode ter várias; cada mensagem agendada e cada cliente monitorado aponta pra uma.
+export const whatsappInstances = pgTable("whatsapp_instances", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  label: text("label").notNull(),
+  evolutionUrl: text("evolution_url").notNull(),
+  evolutionKey: text("evolution_key").notNull(),
+  instanceName: text("instance_name").notNull(),
+  assignedUserId: uuid("assigned_user_id").references(() => profiles.id, { onDelete: "set null" }),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 export const clients = pgTable("clients", {
   id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   metaAdAccountId: text("meta_ad_account_id").notNull().unique(),
   metaPageId: text("meta_page_id"),
+  metaTokenId: uuid("meta_token_id").references(() => metaTokens.id, { onDelete: "set null" }),
   segment: text("segment").notNull().default("popular"),
   cplMin: numericMoney("cpl_min", 10, 2).notNull().default(6),
   cplMax: numericMoney("cpl_max", 10, 2).notNull().default(12),
@@ -60,6 +120,7 @@ export const clients = pgTable("clients", {
   pixActive: boolean("pix_active").notNull().default(false),
   whatsappGroupId: text("whatsapp_group_id"),
   whatsappGroupName: text("whatsapp_group_name"),
+  whatsappInstanceId: uuid("whatsapp_instance_id").references(() => whatsappInstances.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -119,11 +180,18 @@ export const syncLog = pgTable(
   (t) => [index("idx_sync_log_client").on(t.clientId, t.syncedAt.desc())]
 );
 
-export const appConfig = pgTable("app_config", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  key: text("key").notNull().unique(),
-  value: text("value").notNull(),
-});
+export const appConfig = pgTable(
+  "app_config",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    key: text("key").notNull(),
+    value: text("value").notNull(),
+  },
+  (t) => [unique("app_config_organization_id_key_key").on(t.organizationId, t.key)]
+);
 
 export const clientNotes = pgTable(
   "client_notes",
@@ -189,6 +257,9 @@ export const salesGoals = pgTable(
 
 export const tags = pgTable("tags", {
   id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   color: text("color").notNull().default("blue"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -218,6 +289,9 @@ export const conversationTemplates = pgTable("conversation_templates", {
 
 export const tasks = pgTable("tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   status: text("status").notNull().default("pendente"),
   dueDate: date("due_date"),
@@ -229,6 +303,9 @@ export const tasks = pgTable("tasks", {
 
 export const agentConversations = pgTable("agent_conversations", {
   id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   title: text("title"),
   mode: text("mode").notNull().default("trafego"),
   createdBy: uuid("created_by").references(() => profiles.id),
@@ -262,6 +339,9 @@ export const googleCalendarTokens = pgTable("google_calendar_tokens", {
 
 export const n8nJobs = pgTable("n8n_jobs", {
   id: uuid("id").primaryKey(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   status: text("status").notNull().default("pending"),
   payload: jsonb("payload"),
   campaignId: text("campaign_id"),
@@ -273,6 +353,9 @@ export const n8nJobs = pgTable("n8n_jobs", {
 
 export const driveUploads = pgTable("drive_uploads", {
   id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   fileId: text("file_id"),
   carName: text("car_name"),
   folders: jsonb("folders").notNull(),
@@ -289,6 +372,10 @@ export const driveUploads = pgTable("drive_uploads", {
 
 export const scheduledMessages = pgTable("scheduled_messages", {
   id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  whatsappInstanceId: uuid("whatsapp_instance_id").references(() => whatsappInstances.id, { onDelete: "set null" }),
   body: text("body").notNull(),
   // Colunas legadas — mensagens criadas antes de suportar múltiplas mídias
   // (scheduled_message_media). Mantidas só pra não quebrar histórico antigo.
@@ -321,17 +408,48 @@ export const scheduledMessageRecipients = pgTable("scheduled_message_recipients"
 
 // --- relations (usadas pelos joins via db.query.*) ---
 
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  profiles: many(profiles),
+  clients: many(clients),
+  metaTokens: many(metaTokens),
+  whatsappInstances: many(whatsappInstances),
+  tags: many(tags),
+  tasks: many(tasks),
+  agentConversations: many(agentConversations),
+  scheduledMessages: many(scheduledMessages),
+  driveUploads: many(driveUploads),
+  n8nJobs: many(n8nJobs),
+  appConfig: many(appConfig),
+}));
+
 export const usersRelations = relations(users, ({ one }) => ({
   profile: one(profiles, { fields: [users.id], references: [profiles.id] }),
 }));
 
-export const profilesRelations = relations(profiles, ({ many }) => ({
+export const profilesRelations = relations(profiles, ({ one, many }) => ({
+  organization: one(organizations, { fields: [profiles.organizationId], references: [organizations.id] }),
   assignedTasks: many(tasks, { relationName: "assignee" }),
   createdTasks: many(tasks, { relationName: "creator" }),
   agentConversations: many(agentConversations),
 }));
 
-export const clientsRelations = relations(clients, ({ many }) => ({
+export const metaTokensRelations = relations(metaTokens, ({ one, many }) => ({
+  organization: one(organizations, { fields: [metaTokens.organizationId], references: [organizations.id] }),
+  assignedUser: one(profiles, { fields: [metaTokens.assignedUserId], references: [profiles.id] }),
+  clients: many(clients),
+}));
+
+export const whatsappInstancesRelations = relations(whatsappInstances, ({ one, many }) => ({
+  organization: one(organizations, { fields: [whatsappInstances.organizationId], references: [organizations.id] }),
+  assignedUser: one(profiles, { fields: [whatsappInstances.assignedUserId], references: [profiles.id] }),
+  clients: many(clients),
+  scheduledMessages: many(scheduledMessages),
+}));
+
+export const clientsRelations = relations(clients, ({ one, many }) => ({
+  organization: one(organizations, { fields: [clients.organizationId], references: [organizations.id] }),
+  metaToken: one(metaTokens, { fields: [clients.metaTokenId], references: [metaTokens.id] }),
+  whatsappInstance: one(whatsappInstances, { fields: [clients.whatsappInstanceId], references: [whatsappInstances.id] }),
   notes: many(clientNotes),
   metrics: many(metricsDaily),
   campaignSnapshots: many(campaignSnapshots),
@@ -341,6 +459,7 @@ export const clientsRelations = relations(clients, ({ many }) => ({
   salesGoals: many(salesGoals),
   tasks: many(tasks),
   clientTags: many(clientTags),
+  conversationTemplates: many(conversationTemplates),
 }));
 
 export const metricsDailyRelations = relations(metricsDaily, ({ one }) => ({
@@ -353,6 +472,14 @@ export const campaignSnapshotsRelations = relations(campaignSnapshots, ({ one })
 
 export const syncLogRelations = relations(syncLog, ({ one }) => ({
   client: one(clients, { fields: [syncLog.clientId], references: [clients.id] }),
+}));
+
+export const appConfigRelations = relations(appConfig, ({ one }) => ({
+  organization: one(organizations, { fields: [appConfig.organizationId], references: [organizations.id] }),
+}));
+
+export const conversationTemplatesRelations = relations(conversationTemplates, ({ one }) => ({
+  client: one(clients, { fields: [conversationTemplates.clientId], references: [clients.id] }),
 }));
 
 export const clientNotesRelations = relations(clientNotes, ({ one }) => ({
@@ -371,7 +498,8 @@ export const salesGoalsRelations = relations(salesGoals, ({ one }) => ({
   client: one(clients, { fields: [salesGoals.clientId], references: [clients.id] }),
 }));
 
-export const tagsRelations = relations(tags, ({ many }) => ({
+export const tagsRelations = relations(tags, ({ one, many }) => ({
+  organization: one(organizations, { fields: [tags.organizationId], references: [organizations.id] }),
   clientTags: many(clientTags),
 }));
 
@@ -381,6 +509,7 @@ export const clientTagsRelations = relations(clientTags, ({ one }) => ({
 }));
 
 export const tasksRelations = relations(tasks, ({ one }) => ({
+  organization: one(organizations, { fields: [tasks.organizationId], references: [organizations.id] }),
   client: one(clients, { fields: [tasks.clientId], references: [clients.id] }),
   assignee: one(profiles, {
     fields: [tasks.assignedTo],
@@ -395,6 +524,7 @@ export const tasksRelations = relations(tasks, ({ one }) => ({
 }));
 
 export const agentConversationsRelations = relations(agentConversations, ({ one, many }) => ({
+  organization: one(organizations, { fields: [agentConversations.organizationId], references: [organizations.id] }),
   creator: one(profiles, { fields: [agentConversations.createdBy], references: [profiles.id] }),
   messages: many(agentMessages),
 }));
@@ -410,7 +540,20 @@ export const googleCalendarTokensRelations = relations(googleCalendarTokens, ({ 
   user: one(users, { fields: [googleCalendarTokens.userId], references: [users.id] }),
 }));
 
-export const scheduledMessagesRelations = relations(scheduledMessages, ({ many }) => ({
+export const n8nJobsRelations = relations(n8nJobs, ({ one }) => ({
+  organization: one(organizations, { fields: [n8nJobs.organizationId], references: [organizations.id] }),
+}));
+
+export const driveUploadsRelations = relations(driveUploads, ({ one }) => ({
+  organization: one(organizations, { fields: [driveUploads.organizationId], references: [organizations.id] }),
+}));
+
+export const scheduledMessagesRelations = relations(scheduledMessages, ({ one, many }) => ({
+  organization: one(organizations, { fields: [scheduledMessages.organizationId], references: [organizations.id] }),
+  whatsappInstance: one(whatsappInstances, {
+    fields: [scheduledMessages.whatsappInstanceId],
+    references: [whatsappInstances.id],
+  }),
   recipients: many(scheduledMessageRecipients),
 }));
 

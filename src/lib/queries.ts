@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, gte, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import {
@@ -16,11 +16,24 @@ import {
   tags,
   tasks,
 } from "@/db/schema";
-import { getSessionUserId } from "@/server/session";
+import { getSessionUserId, requireOrgContext } from "@/server/session";
 import type { ClientStatus, PeriodType, ReportStatus, TaskStatus } from "./database.types";
 import { getMetaToken, fetchAccountInsightsForRange } from "./meta";
 
 export type { ClientStatus, PeriodType, ReportStatus };
+
+// Confere que um client_id recebido do cliente pertence à organização de quem
+// está chamando — evita alguém de uma organização adivinhar o UUID de um cliente
+// de outra (nota, venda, relatório, etc. sempre penduram só de client_id).
+async function assertClientInOrg(clientId: string, organizationId: string): Promise<void> {
+  const row = await db.query.clients.findFirst({
+    where: eq(clients.id, clientId),
+    columns: { organizationId: true },
+  });
+  if (!row || row.organizationId !== organizationId) {
+    throw new Error("Cliente não encontrado.");
+  }
+}
 
 export interface TagRow {
   id: string;
@@ -47,6 +60,8 @@ export interface ClientRow {
   pix_active: boolean;
   whatsapp_group_id: string | null;
   whatsapp_group_name: string | null;
+  meta_token_id: string | null;
+  whatsapp_instance_id: string | null;
   tags?: TagRow[];
 }
 
@@ -95,6 +110,8 @@ function toClientRow(c: typeof clients.$inferSelect): ClientRow {
     pix_active: c.pixActive,
     whatsapp_group_id: c.whatsappGroupId,
     whatsapp_group_name: c.whatsappGroupName,
+    meta_token_id: c.metaTokenId,
+    whatsapp_instance_id: c.whatsappInstanceId,
   };
 }
 
@@ -150,26 +167,37 @@ function periodDateRange(
 }
 
 const _fetchActiveClients = createServerFn({ method: "GET" }).handler(async () => {
-  const rows = await db.select().from(clients).where(eq(clients.active, true)).orderBy(clients.name);
+  const { organizationId } = await requireOrgContext();
+  const rows = await db
+    .select()
+    .from(clients)
+    .where(and(eq(clients.active, true), eq(clients.organizationId, organizationId)))
+    .orderBy(clients.name);
   return rows.map(toClientRow);
 });
 
 const _fetchClientsForDate = createServerFn({ method: "GET" })
   .inputValidator(z.object({ date: z.string() }))
   .handler(async ({ data }) => {
-    const [clientRows, metricRows] = await Promise.all([
-      db.select().from(clients).where(eq(clients.active, true)).orderBy(clients.name),
-      db
-        .select({
-          clientId: metricsDaily.clientId,
-          spend: metricsDaily.spend,
-          leads: metricsDaily.leads,
-          forms: metricsDaily.forms,
-          cpl: metricsDaily.cpl,
-        })
-        .from(metricsDaily)
-        .where(eq(metricsDaily.date, data.date)),
-    ]);
+    const { organizationId } = await requireOrgContext();
+    const clientRows = await db
+      .select()
+      .from(clients)
+      .where(and(eq(clients.active, true), eq(clients.organizationId, organizationId)))
+      .orderBy(clients.name);
+    const clientIds = clientRows.map((c) => c.id);
+    const metricRows = clientIds.length
+      ? await db
+          .select({
+            clientId: metricsDaily.clientId,
+            spend: metricsDaily.spend,
+            leads: metricsDaily.leads,
+            forms: metricsDaily.forms,
+            cpl: metricsDaily.cpl,
+          })
+          .from(metricsDaily)
+          .where(and(eq(metricsDaily.date, data.date), inArray(metricsDaily.clientId, clientIds)))
+      : [];
     return { clientRows: clientRows.map(toClientRow), metricRows };
   });
 
@@ -201,15 +229,14 @@ export async function fetchClients(
 
   const clientRows = await _fetchActiveClients();
 
-  // Multi-day: busca totais agregados direto na API do Meta (metrics_daily só guarda o dia atual)
-  const token = await getMetaToken();
-
-  if (!token) {
-    return clientRows.map((c) => ({ ...c, spendToday: 0, leadsToday: 0, formsToday: 0, cplToday: null, status: "no-data" as ClientStatus }));
-  }
-
+  // Multi-day: busca totais agregados direto na API do Meta (metrics_daily só guarda o dia atual).
+  // Cada cliente pode ter seu próprio token (clients.meta_token_id) — busca em paralelo, um por cliente.
   const results = await Promise.allSettled(
-    clientRows.map((c) => fetchAccountInsightsForRange(c.meta_ad_account_id, token, start, end))
+    clientRows.map(async (c) => {
+      const token = await getMetaToken(c.id);
+      if (!token) throw new Error("Sem token");
+      return fetchAccountInsightsForRange(c.meta_ad_account_id, token, start, end);
+    })
   );
 
   return clientRows.map((c, i) => {
@@ -224,7 +251,9 @@ export async function fetchClients(
 }
 
 const _fetchAllClients = createServerFn({ method: "GET" }).handler(async () => {
+  const { organizationId } = await requireOrgContext();
   const rows = await db.query.clients.findMany({
+    where: eq(clients.organizationId, organizationId),
     orderBy: clients.name,
     with: { clientTags: { with: { tag: true } } },
   });
@@ -241,28 +270,28 @@ export async function fetchAllClients(): Promise<ClientRow[]> {
 const _fetchClientDetail = createServerFn({ method: "GET" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
     const today = new Date().toISOString().slice(0, 10);
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
-    const [client, history] = await Promise.all([
-      db.query.clients.findFirst({
-        where: eq(clients.id, data.id),
-        with: { clientTags: { with: { tag: true } } },
-      }),
-      db
-        .select({
-          date: metricsDaily.date,
-          spend: metricsDaily.spend,
-          leads: metricsDaily.leads,
-          forms: metricsDaily.forms,
-          cpl: metricsDaily.cpl,
-        })
-        .from(metricsDaily)
-        .where(and(eq(metricsDaily.clientId, data.id), gte(metricsDaily.date, thirtyDaysAgo)))
-        .orderBy(metricsDaily.date),
-    ]);
+    const client = await db.query.clients.findFirst({
+      where: eq(clients.id, data.id),
+      with: { clientTags: { with: { tag: true } } },
+    });
 
-    if (!client) throw new Error("Cliente não encontrado");
+    if (!client || client.organizationId !== organizationId) throw new Error("Cliente não encontrado");
+
+    const history = await db
+      .select({
+        date: metricsDaily.date,
+        spend: metricsDaily.spend,
+        leads: metricsDaily.leads,
+        forms: metricsDaily.forms,
+        cpl: metricsDaily.cpl,
+      })
+      .from(metricsDaily)
+      .where(and(eq(metricsDaily.clientId, data.id), gte(metricsDaily.date, thirtyDaysAgo)))
+      .orderBy(metricsDaily.date);
 
     const todayMetric = history.find((m) => m.date === today);
     const spend = todayMetric?.spend ?? 0;
@@ -302,13 +331,19 @@ const upsertClientSchema = z.object({
   pix_reference_day: z.number().nullable().optional(),
   whatsapp_group_id: z.string().nullable().optional(),
   whatsapp_group_name: z.string().nullable().optional(),
+  meta_token_id: z.string().nullable().optional(),
+  whatsapp_instance_id: z.string().nullable().optional(),
 });
 
 const _upsertClient = createServerFn({ method: "POST" })
   .inputValidator(upsertClientSchema)
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    if (data.id) await assertClientInOrg(data.id, organizationId);
+
     const values = {
       ...(data.id ? { id: data.id } : {}),
+      organizationId,
       name: data.name,
       metaAdAccountId: data.meta_ad_account_id,
       metaPageId: data.meta_page_id ?? null,
@@ -324,6 +359,8 @@ const _upsertClient = createServerFn({ method: "POST" })
       ...(data.pix_reference_day !== undefined ? { pixReferenceDay: data.pix_reference_day } : {}),
       ...(data.whatsapp_group_id !== undefined ? { whatsappGroupId: data.whatsapp_group_id } : {}),
       ...(data.whatsapp_group_name !== undefined ? { whatsappGroupName: data.whatsapp_group_name } : {}),
+      ...(data.meta_token_id !== undefined ? { metaTokenId: data.meta_token_id } : {}),
+      ...(data.whatsapp_instance_id !== undefined ? { whatsappInstanceId: data.whatsapp_instance_id } : {}),
     };
     const [row] = await db
       .insert(clients)
@@ -349,6 +386,8 @@ export async function upsertClient(data: {
   pix_reference_day?: number | null;
   whatsapp_group_id?: string | null;
   whatsapp_group_name?: string | null;
+  meta_token_id?: string | null;
+  whatsapp_instance_id?: string | null;
 }): Promise<{ id: string }> {
   return _upsertClient({ data });
 }
@@ -356,7 +395,12 @@ export async function upsertClient(data: {
 // ── Tags ──────────────────────────────────────────────────────────────────────
 
 const _fetchTags = createServerFn({ method: "GET" }).handler(async () => {
-  return db.select({ id: tags.id, name: tags.name, color: tags.color }).from(tags).orderBy(tags.name);
+  const { organizationId } = await requireOrgContext();
+  return db
+    .select({ id: tags.id, name: tags.name, color: tags.color })
+    .from(tags)
+    .where(eq(tags.organizationId, organizationId))
+    .orderBy(tags.name);
 });
 
 export async function fetchTags(): Promise<TagRow[]> {
@@ -366,9 +410,10 @@ export async function fetchTags(): Promise<TagRow[]> {
 const _createTag = createServerFn({ method: "POST" })
   .inputValidator(z.object({ name: z.string(), color: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
     const [row] = await db
       .insert(tags)
-      .values({ name: data.name, color: data.color })
+      .values({ organizationId, name: data.name, color: data.color })
       .returning({ id: tags.id, name: tags.name, color: tags.color });
     return row;
   });
@@ -380,6 +425,8 @@ export async function createTag(name: string, color: string): Promise<TagRow> {
 const _setClientTags = createServerFn({ method: "POST" })
   .inputValidator(z.object({ clientId: z.string(), tagIds: z.array(z.string()) }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertClientInOrg(data.clientId, organizationId);
     await db.transaction(async (tx) => {
       await tx.delete(clientTags).where(eq(clientTags.clientId, data.clientId));
       if (data.tagIds.length > 0) {
@@ -395,6 +442,8 @@ export async function setClientTags(clientId: string, tagIds: string[]): Promise
 const _toggleClientActive = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string(), active: z.boolean() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertClientInOrg(data.id, organizationId);
     await db.update(clients).set({ active: data.active }).where(eq(clients.id, data.id));
   });
 
@@ -405,6 +454,8 @@ export async function toggleClientActive(id: string, active: boolean) {
 const _deleteClient = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertClientInOrg(data.id, organizationId);
     await db.delete(clients).where(eq(clients.id, data.id));
   });
 
@@ -415,6 +466,8 @@ export async function deleteClient(id: string): Promise<void> {
 const _updateClientGoal = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string(), cpl_min: z.number(), cpl_max: z.number() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertClientInOrg(data.id, organizationId);
     await db.update(clients).set({ cplMin: data.cpl_min, cplMax: data.cpl_max }).where(eq(clients.id, data.id));
   });
 
@@ -432,22 +485,28 @@ export interface ClientBalance {
 }
 
 const _fetchClientBalances = createServerFn({ method: "GET" }).handler(async () => {
+  const { organizationId } = await requireOrgContext();
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
-  const [clientRows, metricRows] = await Promise.all([
-    db
-      .select({
-        id: clients.id,
-        name: clients.name,
-        segment: clients.segment,
-        paymentMethod: clients.paymentMethod,
-        metaBalance: clients.metaBalance,
-      })
-      .from(clients)
-      .where(eq(clients.active, true))
-      .orderBy(clients.name),
-    db.select({ clientId: metricsDaily.clientId, spend: metricsDaily.spend }).from(metricsDaily).where(eq(metricsDaily.date, yesterday)),
-  ]);
+  const clientRows = await db
+    .select({
+      id: clients.id,
+      name: clients.name,
+      segment: clients.segment,
+      paymentMethod: clients.paymentMethod,
+      metaBalance: clients.metaBalance,
+    })
+    .from(clients)
+    .where(and(eq(clients.active, true), eq(clients.organizationId, organizationId)))
+    .orderBy(clients.name);
+
+  const clientIds = clientRows.map((c) => c.id);
+  const metricRows = clientIds.length
+    ? await db
+        .select({ clientId: metricsDaily.clientId, spend: metricsDaily.spend })
+        .from(metricsDaily)
+        .where(and(eq(metricsDaily.date, yesterday), inArray(metricsDaily.clientId, clientIds)))
+    : [];
 
   const metricsMap = new Map(metricRows.map((m) => [m.clientId, m.spend]));
 
@@ -482,6 +541,7 @@ const brl = (reais: number) =>
   reais.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const _fetchAttentionItems = createServerFn({ method: "GET" }).handler(async (): Promise<AttentionItem[]> => {
+  const { organizationId } = await requireOrgContext();
   const items: AttentionItem[] = [];
 
   const campaignRows = await db
@@ -496,7 +556,7 @@ const _fetchAttentionItems = createServerFn({ method: "GET" }).handler(async ():
     })
     .from(campaignSnapshots)
     .innerJoin(clients, eq(campaignSnapshots.clientId, clients.id))
-    .where(and(eq(campaignSnapshots.status, "ACTIVE"), eq(clients.active, true)));
+    .where(and(eq(campaignSnapshots.status, "ACTIVE"), eq(clients.active, true), eq(clients.organizationId, organizationId)));
 
   for (const row of campaignRows) {
     if (row.cpl !== null && row.cpl > row.cplMax) {
@@ -563,19 +623,23 @@ export interface NoteWithClient {
 const _fetchNotes = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().optional() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    if (data.clientId) await assertClientInOrg(data.clientId, organizationId);
     const rows = await db.query.clientNotes.findMany({
       where: data.clientId ? eq(clientNotes.clientId, data.clientId) : undefined,
       orderBy: desc(clientNotes.createdAt),
-      with: { client: { columns: { name: true } } },
+      with: { client: { columns: { name: true, organizationId: true } } },
     });
-    return rows.map((row) => ({
-      id: row.id,
-      client_id: row.clientId,
-      client_name: row.client?.name ?? "",
-      content: row.content,
-      created_at: row.createdAt,
-      updated_at: row.updatedAt,
-    }));
+    return rows
+      .filter((row) => row.client?.organizationId === organizationId)
+      .map((row) => ({
+        id: row.id,
+        client_id: row.clientId,
+        client_name: row.client?.name ?? "",
+        content: row.content,
+        created_at: row.createdAt,
+        updated_at: row.updatedAt,
+      }));
   });
 
 export async function fetchNotes(clientId?: string): Promise<NoteWithClient[]> {
@@ -585,6 +649,8 @@ export async function fetchNotes(clientId?: string): Promise<NoteWithClient[]> {
 const _createNote = createServerFn({ method: "POST" })
   .inputValidator(z.object({ client_id: z.string(), content: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertClientInOrg(data.client_id, organizationId);
     const [row] = await db
       .insert(clientNotes)
       .values({ clientId: data.client_id, content: data.content })
@@ -607,6 +673,9 @@ export async function createNote(payload: { client_id: string; content: string }
 const _updateNote = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string(), content: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    const note = await db.query.clientNotes.findFirst({ where: eq(clientNotes.id, data.id), with: { client: { columns: { organizationId: true } } } });
+    if (!note || note.client?.organizationId !== organizationId) throw new Error("Nota não encontrada.");
     await db
       .update(clientNotes)
       .set({ content: data.content, updatedAt: new Date().toISOString() })
@@ -620,6 +689,9 @@ export async function updateNote(id: string, content: string): Promise<void> {
 const _deleteNote = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    const note = await db.query.clientNotes.findFirst({ where: eq(clientNotes.id, data.id), with: { client: { columns: { organizationId: true } } } });
+    if (!note || note.client?.organizationId !== organizationId) throw new Error("Nota não encontrada.");
     await db.delete(clientNotes).where(eq(clientNotes.id, data.id));
   });
 
@@ -641,20 +713,23 @@ export interface ReportWithClient {
 }
 
 const _fetchReports = createServerFn({ method: "GET" }).handler(async () => {
+  const { organizationId } = await requireOrgContext();
   const rows = await db.query.reportLog.findMany({
     orderBy: desc(reportLog.createdAt),
-    with: { client: { columns: { name: true } } },
+    with: { client: { columns: { name: true, organizationId: true } } },
   });
-  return rows.map((row) => ({
-    id: row.id,
-    client_id: row.clientId,
-    client_name: row.client?.name ?? "",
-    period_type: row.periodType as PeriodType,
-    period_start: row.periodStart,
-    status: row.status as ReportStatus,
-    sent_at: row.sentAt,
-    created_at: row.createdAt,
-  }));
+  return rows
+    .filter((row) => row.client?.organizationId === organizationId)
+    .map((row) => ({
+      id: row.id,
+      client_id: row.clientId,
+      client_name: row.client?.name ?? "",
+      period_type: row.periodType as PeriodType,
+      period_start: row.periodStart,
+      status: row.status as ReportStatus,
+      sent_at: row.sentAt,
+      created_at: row.createdAt,
+    }));
 });
 
 export async function fetchReports(): Promise<ReportWithClient[]> {
@@ -664,6 +739,8 @@ export async function fetchReports(): Promise<ReportWithClient[]> {
 const _createReport = createServerFn({ method: "POST" })
   .inputValidator(z.object({ client_id: z.string(), period_type: z.enum(["semanal", "mensal"]), period_start: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertClientInOrg(data.client_id, organizationId);
     await db.insert(reportLog).values({
       clientId: data.client_id,
       periodType: data.period_type,
@@ -676,9 +753,16 @@ export async function createReport(payload: { client_id: string; period_type: Pe
   await _createReport({ data: payload });
 }
 
+async function assertReportInOrg(reportId: string, organizationId: string): Promise<void> {
+  const row = await db.query.reportLog.findFirst({ where: eq(reportLog.id, reportId), with: { client: { columns: { organizationId: true } } } });
+  if (!row || row.client?.organizationId !== organizationId) throw new Error("Relatório não encontrado.");
+}
+
 const _markReportSent = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertReportInOrg(data.id, organizationId);
     await db.update(reportLog).set({ status: "enviado", sentAt: new Date().toISOString() }).where(eq(reportLog.id, data.id));
   });
 
@@ -689,6 +773,8 @@ export async function markReportSent(id: string): Promise<void> {
 const _markReportPending = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertReportInOrg(data.id, organizationId);
     await db.update(reportLog).set({ status: "pendente", sentAt: null }).where(eq(reportLog.id, data.id));
   });
 
@@ -706,6 +792,8 @@ const _updateReport = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertReportInOrg(data.id, organizationId);
     const { id, ...fields } = data;
     await db
       .update(reportLog)
@@ -727,6 +815,8 @@ export async function updateReport(
 const _deleteReport = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertReportInOrg(data.id, organizationId);
     await db.delete(reportLog).where(eq(reportLog.id, data.id));
   });
 
@@ -759,6 +849,8 @@ function toTemplate(row: typeof conversationTemplates.$inferSelect): Conversatio
 const _fetchConversationTemplates = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertClientInOrg(data.clientId, organizationId);
     const rows = await db
       .select()
       .from(conversationTemplates)
@@ -782,6 +874,8 @@ const _upsertConversationTemplate = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertClientInOrg(data.clientId, organizationId);
     const values = {
       ...(data.id ? { id: data.id } : {}),
       clientId: data.clientId,
@@ -810,6 +904,12 @@ export async function upsertConversationTemplate(template: {
 const _deleteConversationTemplate = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    const row = await db.query.conversationTemplates.findFirst({
+      where: eq(conversationTemplates.id, data.id),
+      with: { client: { columns: { organizationId: true } } },
+    });
+    if (!row || row.client?.organizationId !== organizationId) throw new Error("Modelo não encontrado.");
     await db.delete(conversationTemplates).where(eq(conversationTemplates.id, data.id));
   });
 
@@ -829,6 +929,7 @@ export interface PixClient {
 }
 
 const _fetchPixClients = createServerFn({ method: "GET" }).handler(async () => {
+  const { organizationId } = await requireOrgContext();
   const rows = await db
     .select({
       id: clients.id,
@@ -839,7 +940,7 @@ const _fetchPixClients = createServerFn({ method: "GET" }).handler(async () => {
       metaAdAccountId: clients.metaAdAccountId,
     })
     .from(clients)
-    .where(and(eq(clients.pixActive, true), eq(clients.active, true)))
+    .where(and(eq(clients.pixActive, true), eq(clients.active, true), eq(clients.organizationId, organizationId)))
     .orderBy(clients.name);
 
   return rows
@@ -869,6 +970,8 @@ const _updateClientPix = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertClientInOrg(data.id, organizationId);
     await db
       .update(clients)
       .set({
@@ -907,7 +1010,12 @@ export async function fetchCurrentProfile(): Promise<Profile | null> {
 }
 
 const _fetchProfiles = createServerFn({ method: "GET" }).handler(async () => {
-  const rows = await db.select({ id: profiles.id, fullName: profiles.fullName }).from(profiles).orderBy(profiles.fullName);
+  const { organizationId } = await requireOrgContext();
+  const rows = await db
+    .select({ id: profiles.id, fullName: profiles.fullName })
+    .from(profiles)
+    .where(eq(profiles.organizationId, organizationId))
+    .orderBy(profiles.fullName);
   return rows.map((r) => ({ id: r.id, full_name: r.fullName }));
 });
 
@@ -959,8 +1067,11 @@ function mapTask(r: {
 const _fetchTasks = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().optional() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
     const rows = await db.query.tasks.findMany({
-      where: data.clientId ? eq(tasks.clientId, data.clientId) : undefined,
+      where: data.clientId
+        ? and(eq(tasks.organizationId, organizationId), eq(tasks.clientId, data.clientId))
+        : eq(tasks.organizationId, organizationId),
       orderBy: desc(tasks.createdAt),
       with: {
         client: { columns: { name: true } },
@@ -989,8 +1100,11 @@ const _createTask = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    if (data.client_id) await assertClientInOrg(data.client_id, organizationId);
     const userId = await getSessionUserId();
     await db.insert(tasks).values({
+      organizationId,
       title: data.title,
       status: data.status,
       dueDate: data.due_date ?? null,
@@ -1010,6 +1124,11 @@ export async function createTask(fields: {
   await _createTask({ data: fields });
 }
 
+async function assertTaskInOrg(taskId: string, organizationId: string): Promise<void> {
+  const row = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId), columns: { organizationId: true } });
+  if (!row || row.organizationId !== organizationId) throw new Error("Tarefa não encontrada.");
+}
+
 const _updateTask = createServerFn({ method: "POST" })
   .inputValidator(
     z.object({
@@ -1022,6 +1141,9 @@ const _updateTask = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertTaskInOrg(data.id, organizationId);
+    if (data.client_id) await assertClientInOrg(data.client_id, organizationId);
     const { id, ...fields } = data;
     await db
       .update(tasks)
@@ -1051,6 +1173,8 @@ export async function updateTask(
 const _deleteTask = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertTaskInOrg(data.id, organizationId);
     await db.delete(tasks).where(eq(tasks.id, data.id));
   });
 
@@ -1083,16 +1207,23 @@ function toSaleRow(r: typeof sales.$inferSelect): SaleRow {
 const _fetchSales = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().optional(), since: z.string(), until: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    if (data.clientId) {
+      await assertClientInOrg(data.clientId, organizationId);
+      const rows = await db
+        .select()
+        .from(sales)
+        .where(and(eq(sales.clientId, data.clientId), gte(sales.date, data.since), lte(sales.date, data.until)))
+        .orderBy(desc(sales.date));
+      return rows.map(toSaleRow);
+    }
+    const orgClientIds = await db.select({ id: clients.id }).from(clients).where(eq(clients.organizationId, organizationId));
+    const ids = orgClientIds.map((c) => c.id);
+    if (ids.length === 0) return [];
     const rows = await db
       .select()
       .from(sales)
-      .where(
-        and(
-          data.clientId ? eq(sales.clientId, data.clientId) : undefined,
-          gte(sales.date, data.since),
-          lte(sales.date, data.until)
-        )
-      )
+      .where(and(inArray(sales.clientId, ids), gte(sales.date, data.since), lte(sales.date, data.until)))
       .orderBy(desc(sales.date));
     return rows.map(toSaleRow);
   });
@@ -1108,6 +1239,8 @@ export async function fetchSalesByClient(clientId: string, since: string, until:
 const _createSale = createServerFn({ method: "POST" })
   .inputValidator(z.object({ client_id: z.string(), date: z.string(), value: z.number().nullable().optional(), obs: z.string().nullable().optional() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertClientInOrg(data.client_id, organizationId);
     await db.insert(sales).values({ clientId: data.client_id, date: data.date, value: data.value ?? null, obs: data.obs ?? null });
   });
 
@@ -1118,6 +1251,9 @@ export async function createSale(payload: { client_id: string; date: string; val
 const _deleteSale = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    const row = await db.query.sales.findFirst({ where: eq(sales.id, data.id), with: { client: { columns: { organizationId: true } } } });
+    if (!row || row.client?.organizationId !== organizationId) throw new Error("Venda não encontrada.");
     await db.delete(sales).where(eq(sales.id, data.id));
   });
 
@@ -1128,10 +1264,12 @@ export async function deleteSale(id: string): Promise<void> {
 const _fetchSalesGoals = createServerFn({ method: "GET" })
   .inputValidator(z.object({ month: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
     const rows = await db
       .select({ id: salesGoals.id, clientId: salesGoals.clientId, month: salesGoals.month, goal: salesGoals.goal })
       .from(salesGoals)
-      .where(eq(salesGoals.month, data.month));
+      .innerJoin(clients, eq(clients.id, salesGoals.clientId))
+      .where(and(eq(salesGoals.month, data.month), eq(clients.organizationId, organizationId)));
     return rows.map((r) => ({ id: r.id, client_id: r.clientId, month: r.month, goal: r.goal }));
   });
 
@@ -1142,6 +1280,8 @@ export async function fetchSalesGoals(month: string): Promise<SalesGoalRow[]> {
 const _upsertSalesGoal = createServerFn({ method: "POST" })
   .inputValidator(z.object({ clientId: z.string(), month: z.string(), goal: z.number() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await assertClientInOrg(data.clientId, organizationId);
     await db
       .insert(salesGoals)
       .values({ clientId: data.clientId, month: data.month, goal: data.goal })

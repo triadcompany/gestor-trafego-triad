@@ -61,6 +61,13 @@ export const Route = createRootRoute({
     if (!user) {
       throw redirect({ to: "/login" });
     }
+    // Platform admin sem organização "ativa" (não entrou em nenhuma pra dar
+    // suporte) só tem o que fazer em /admin — o resto das telas presume uma
+    // organização escopada e não faz sentido pra essa conta.
+    const effectiveOrgId = user.actingOrganizationId ?? user.organizationId;
+    if (!effectiveOrgId && user.isPlatformAdmin && !location.pathname.startsWith("/admin")) {
+      throw redirect({ to: "/admin/organizations" });
+    }
   },
   shellComponent: RootShell,
   component: RootComponent,

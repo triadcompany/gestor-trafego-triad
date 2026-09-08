@@ -353,7 +353,7 @@ function BalanceDiagnosticSection({ hasToken }: { hasToken: boolean }) {
 
   const { data: token } = useQuery({
     queryKey: ["meta-token-raw"],
-    queryFn: getMetaToken,
+    queryFn: () => getMetaToken(),
     enabled: hasToken,
   });
 

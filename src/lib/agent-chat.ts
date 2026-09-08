@@ -6,7 +6,7 @@ import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { db } from "@/db/client";
 import { agentConversations, agentMessages } from "@/db/schema";
-import { getSessionUserId } from "@/server/session";
+import { requireOrgContext } from "@/server/session";
 import { fetchClients } from "./queries";
 import { getOpenAIKey } from "./meta";
 import { TOOL_DEFINITIONS, WRITE_TOOLS, executeTool, executeConfirmedAction, describeAction, type JsonArgs } from "./agent-tools";
@@ -465,22 +465,29 @@ ${clientSummary}`;
 
 // ── Conversation helpers ──────────────────────────────────────────────────────
 
-async function ensureConversation(conversationId: string | null, userId: string | null, mode: AgentMode): Promise<string> {
+async function ensureConversation(
+  conversationId: string | null,
+  userId: string | null,
+  mode: AgentMode,
+  organizationId: string
+): Promise<string> {
   if (conversationId) return conversationId;
   const [row] = await db
     .insert(agentConversations)
-    .values({ createdBy: userId, mode, lastMsgAt: new Date().toISOString() })
+    .values({ organizationId, createdBy: userId, mode, lastMsgAt: new Date().toISOString() })
     .returning({ id: agentConversations.id });
   return row.id;
 }
 
-async function getConversationMode(conversationId: string): Promise<AgentMode> {
+async function getConversationMode(conversationId: string, organizationId: string): Promise<AgentMode> {
   const rows = await db
-    .select({ mode: agentConversations.mode })
+    .select({ mode: agentConversations.mode, organizationId: agentConversations.organizationId })
     .from(agentConversations)
     .where(eq(agentConversations.id, conversationId))
     .limit(1);
-  return (rows[0]?.mode as AgentMode) ?? "trafego";
+  const row = rows[0];
+  if (!row || row.organizationId !== organizationId) throw new Error("Conversa não encontrada.");
+  return (row.mode as AgentMode) ?? "trafego";
 }
 
 async function loadHistory(conversationId: string): Promise<ChatCompletionMessageParam[]> {
@@ -531,13 +538,12 @@ export const agentSendMessage = createServerFn({ method: "POST" })
     const openai = new OpenAI({ apiKey: openaiKey });
 
     try {
-      const userId = await getSessionUserId();
-      if (!userId) return { type: "error", message: "Não autenticado." };
+      const { userId, organizationId } = await requireOrgContext();
 
       const mode: AgentMode = data.conversation_id
-        ? await getConversationMode(data.conversation_id)
+        ? await getConversationMode(data.conversation_id, organizationId)
         : (data.mode ?? "trafego");
-      const convId = await ensureConversation(data.conversation_id, userId, mode);
+      const convId = await ensureConversation(data.conversation_id, userId, mode, organizationId);
       const history = await loadHistory(convId);
       const systemPrompt = await buildSystemPrompt(mode);
 
@@ -620,6 +626,9 @@ export const agentExecuteAction = createServerFn({ method: "POST" })
     const openai = new OpenAI({ apiKey: openaiKey });
 
     try {
+      const { organizationId } = await requireOrgContext();
+      await getConversationMode(data.conversation_id, organizationId); // valida posse da conversa
+
       const result = await executeConfirmedAction(data.pending_action.tool, data.pending_action.args);
       if (result.type === "error") return { type: "error", message: result.message };
 
@@ -643,6 +652,7 @@ export const agentExecuteAction = createServerFn({ method: "POST" })
 
 export const agentListConversations = createServerFn({ method: "GET" }).handler(
   async (): Promise<Array<{ id: string; title: string | null; last_msg_at: string; mode: string }>> => {
+    const { organizationId } = await requireOrgContext();
     const rows = await db
       .select({
         id: agentConversations.id,
@@ -651,6 +661,7 @@ export const agentListConversations = createServerFn({ method: "GET" }).handler(
         mode: agentConversations.mode,
       })
       .from(agentConversations)
+      .where(eq(agentConversations.organizationId, organizationId))
       .orderBy(desc(agentConversations.lastMsgAt))
       .limit(30);
     return rows;
@@ -660,6 +671,8 @@ export const agentListConversations = createServerFn({ method: "GET" }).handler(
 export const agentLoadMessages = createServerFn({ method: "GET" })
   .inputValidator(loadMessagesSchema)
   .handler(async ({ data }): Promise<ChatMessage[]> => {
+    const { organizationId } = await requireOrgContext();
+    await getConversationMode(data.conversation_id, organizationId); // valida posse da conversa
     const rows = await db
       .select({ role: agentMessages.role, content: agentMessages.content })
       .from(agentMessages)

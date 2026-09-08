@@ -25,6 +25,7 @@ import { Route as ClientsIndexRouteImport } from './routes/clients.index'
 import { Route as ClientsIdRouteImport } from './routes/clients.$id'
 import { Route as CampaignsNewRouteImport } from './routes/campaigns.new'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
+import { Route as AdminOrganizationsRouteImport } from './routes/admin.organizations'
 import { Route as CampaignsEditIdRouteImport } from './routes/campaigns.edit.$id'
 import { Route as AuthGoogleCallbackRouteImport } from './routes/auth.google.callback'
 
@@ -108,6 +109,11 @@ const AuthCallbackRoute = AuthCallbackRouteImport.update({
   path: '/auth/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminOrganizationsRoute = AdminOrganizationsRouteImport.update({
+  id: '/admin/organizations',
+  path: '/admin/organizations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CampaignsEditIdRoute = CampaignsEditIdRouteImport.update({
   id: '/campaigns/edit/$id',
   path: '/campaigns/edit/$id',
@@ -132,6 +138,7 @@ export interface FileRoutesByFullPath {
   '/tarefas': typeof TarefasRoute
   '/vendas': typeof VendasRoute
   '/visao-geral': typeof VisaoGeralRoute
+  '/admin/organizations': typeof AdminOrganizationsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
   '/clients/$id': typeof ClientsIdRoute
@@ -152,6 +159,7 @@ export interface FileRoutesByTo {
   '/tarefas': typeof TarefasRoute
   '/vendas': typeof VendasRoute
   '/visao-geral': typeof VisaoGeralRoute
+  '/admin/organizations': typeof AdminOrganizationsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
   '/clients/$id': typeof ClientsIdRoute
@@ -173,6 +181,7 @@ export interface FileRoutesById {
   '/tarefas': typeof TarefasRoute
   '/vendas': typeof VendasRoute
   '/visao-geral': typeof VisaoGeralRoute
+  '/admin/organizations': typeof AdminOrganizationsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
   '/clients/$id': typeof ClientsIdRoute
@@ -195,6 +204,7 @@ export interface FileRouteTypes {
     | '/tarefas'
     | '/vendas'
     | '/visao-geral'
+    | '/admin/organizations'
     | '/auth/callback'
     | '/campaigns/new'
     | '/clients/$id'
@@ -215,6 +225,7 @@ export interface FileRouteTypes {
     | '/tarefas'
     | '/vendas'
     | '/visao-geral'
+    | '/admin/organizations'
     | '/auth/callback'
     | '/campaigns/new'
     | '/clients/$id'
@@ -235,6 +246,7 @@ export interface FileRouteTypes {
     | '/tarefas'
     | '/vendas'
     | '/visao-geral'
+    | '/admin/organizations'
     | '/auth/callback'
     | '/campaigns/new'
     | '/clients/$id'
@@ -256,6 +268,7 @@ export interface RootRouteChildren {
   TarefasRoute: typeof TarefasRoute
   VendasRoute: typeof VendasRoute
   VisaoGeralRoute: typeof VisaoGeralRoute
+  AdminOrganizationsRoute: typeof AdminOrganizationsRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   CampaignsNewRoute: typeof CampaignsNewRoute
   ClientsIdRoute: typeof ClientsIdRoute
@@ -378,6 +391,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/organizations': {
+      id: '/admin/organizations'
+      path: '/admin/organizations'
+      fullPath: '/admin/organizations'
+      preLoaderRoute: typeof AdminOrganizationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/campaigns/edit/$id': {
       id: '/campaigns/edit/$id'
       path: '/campaigns/edit/$id'
@@ -408,6 +428,7 @@ const rootRouteChildren: RootRouteChildren = {
   TarefasRoute: TarefasRoute,
   VendasRoute: VendasRoute,
   VisaoGeralRoute: VisaoGeralRoute,
+  AdminOrganizationsRoute: AdminOrganizationsRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   CampaignsNewRoute: CampaignsNewRoute,
   ClientsIdRoute: ClientsIdRoute,

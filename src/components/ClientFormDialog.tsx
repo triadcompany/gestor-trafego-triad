@@ -19,7 +19,8 @@ import {
 import { Plus, X, Check, Search, Loader2, Users } from "lucide-react";
 import { fetchTags, createTag, upsertClient, type ClientRow, type TagRow } from "@/lib/queries";
 import { TagBadge, TAG_COLORS } from "@/components/TagBadge";
-import { searchEvolutionRecipients, type EvolutionRecipient } from "@/lib/whatsapp-messages";
+import { searchEvolutionRecipients, fetchWhatsappInstances, type EvolutionRecipient } from "@/lib/whatsapp-messages";
+import { fetchMetaTokens } from "@/lib/meta";
 
 const segmentDefaults = {
   popular: { cpl_min: 6, cpl_max: 12 },
@@ -51,8 +52,21 @@ export function ClientFormDialog({
   const [whatsappGroup, setWhatsappGroup] = useState<EvolutionRecipient | null>(
     client?.whatsapp_group_id ? { remoteJid: client.whatsapp_group_id, name: client.whatsapp_group_name ?? client.whatsapp_group_id, isGroup: true } : null
   );
+  const [metaTokenId, setMetaTokenId] = useState<string | null>(client?.meta_token_id ?? null);
+  const [whatsappInstanceId, setWhatsappInstanceId] = useState<string | null>(client?.whatsapp_instance_id ?? null);
 
   const queryClient = useQueryClient();
+  const { data: metaTokens = [] } = useQuery({ queryKey: ["meta-tokens"], queryFn: fetchMetaTokens });
+  const { data: whatsappInstances = [] } = useQuery({ queryKey: ["whatsapp-instances"], queryFn: fetchWhatsappInstances });
+
+  // Se a organização só tem 1 token/instância, usa ele automaticamente sem pedir escolha.
+  useEffect(() => {
+    if (!metaTokenId && metaTokens.length === 1) setMetaTokenId(metaTokens[0].id);
+  }, [metaTokens, metaTokenId]);
+  useEffect(() => {
+    if (!whatsappInstanceId && whatsappInstances.length === 1) setWhatsappInstanceId(whatsappInstances[0].id);
+  }, [whatsappInstances, whatsappInstanceId]);
+
   const { data: allTags = [] } = useQuery({ queryKey: ["tags"], queryFn: fetchTags });
   const createTagMutation = useMutation({
     mutationFn: ({ name, color }: { name: string; color: string }) => createTag(name, color),
@@ -87,6 +101,8 @@ export function ClientFormDialog({
         pix_reference_day: pixActive ? Number(pixRefDay) : null,
         whatsapp_group_id: whatsappGroup?.remoteJid ?? null,
         whatsapp_group_name: whatsappGroup?.name ?? null,
+        meta_token_id: metaTokenId,
+        whatsapp_instance_id: whatsappInstanceId,
       },
       selectedTagIds,
     );
@@ -180,6 +196,40 @@ export function ClientFormDialog({
             />
           </div>
         </div>
+        {(metaTokens.length > 1 || whatsappInstances.length > 1) && (
+          <div className="grid grid-cols-2 gap-3">
+            {metaTokens.length > 1 && (
+              <div className="space-y-1">
+                <Label>Token Meta</Label>
+                <Select value={metaTokenId ?? ""} onValueChange={setMetaTokenId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecionar token" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {metaTokens.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+            {whatsappInstances.length > 1 && (
+              <div className="space-y-1">
+                <Label>Instância WhatsApp</Label>
+                <Select value={whatsappInstanceId ?? ""} onValueChange={setWhatsappInstanceId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecionar instância" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {whatsappInstances.map((i) => (
+                      <SelectItem key={i.id} value={i.id}>{i.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+        )}
         <div className="space-y-1">
           <Label>Orçamento mensal (R$)</Label>
           <Input

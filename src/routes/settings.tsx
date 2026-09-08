@@ -9,9 +9,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
-  ShieldCheck,
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
   ShieldAlert,
-  ShieldX,
   Copy,
   Check,
   ExternalLink,
@@ -21,6 +27,10 @@ import {
   Bot,
   Webhook,
   Send,
+  Plus,
+  Trash2,
+  Users as UsersIcon,
+  MessageCircle,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -32,15 +42,19 @@ import {
 } from "@/components/ui/select";
 import { toast } from "sonner";
 import {
-  getTokenInfo,
-  saveMetaToken,
   getOpenAIKey,
   saveOpenAIKey,
   getSendDestinations,
   saveSendDestinations,
+  fetchMetaTokens,
+  upsertMetaToken,
+  deleteMetaToken,
   type SendDestination,
 } from "@/lib/meta";
+import { fetchWhatsappInstances, upsertWhatsappInstance, deleteWhatsappInstance } from "@/lib/whatsapp-messages";
 import { getN8nWebhookUrl, saveN8nWebhookUrl } from "@/lib/n8n";
+import { fetchOrgMembers, createOrgMember, updateOrgMemberRole, setOrgMemberActive } from "@/server/team";
+import { getCurrentUser } from "@/server/session";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -50,45 +64,469 @@ export const Route = createFileRoute("/settings")({
 });
 
 function SettingsPage() {
-  const queryClient = useQueryClient();
-  const [newToken, setNewToken] = useState("");
-  const [newOpenAIKey, setNewOpenAIKey] = useState("");
-  const [newWebhookUrl, setNewWebhookUrl] = useState("");
-  const [copied, setCopied] = useState(false);
+  const { data: currentUser } = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser, staleTime: 1000 * 60 });
+  const isAdmin = currentUser?.role === "admin";
 
-  const { data: tokenInfo, isLoading } = useQuery({
-    queryKey: ["token-info"],
-    queryFn: getTokenInfo,
-    staleTime: 1000 * 60 * 5,
-  });
+  return (
+    <AppShell>
+      <div className="px-4 md:px-8 py-8 max-w-2xl mx-auto">
+        <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
+          <div>
+            <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              {currentUser?.organizationName ? `Organização: ${currentUser.organizationName}` : "Integrações e preferências do sistema."}
+            </p>
+          </div>
+          <Button variant="outline" asChild>
+            <Link to="/diagnostico-meta" className="gap-2">
+              <Stethoscope className="h-4 w-4" />
+              Ver diagnóstico Meta
+            </Link>
+          </Button>
+        </div>
+
+        <MetaTokensSection isAdmin={isAdmin} />
+        <WhatsappInstancesSection isAdmin={isAdmin} />
+        {isAdmin && <UsersSection />}
+        <OpenAISection />
+        <N8nSection />
+        <SendDestinationsSection />
+
+        <section>
+          <div className="flex items-center gap-2 mb-3">
+            <div className="h-1 w-1 rounded-full bg-muted-foreground" />
+            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Sistema</h2>
+          </div>
+          <Card className="divide-y divide-border">
+            {[
+              { label: "Versão", value: "0.2.0" },
+              { label: "API Meta", value: "Graph API v21.0" },
+              { label: "Sync automático", value: "A cada hora" },
+              { label: "Dados armazenados", value: "PostgreSQL (VPS própria)" },
+            ].map(({ label, value }) => (
+              <div key={label} className="flex items-center justify-between px-5 py-3">
+                <span className="text-sm text-muted-foreground">{label}</span>
+                <span className="text-sm font-medium">{value}</span>
+              </div>
+            ))}
+          </Card>
+        </section>
+      </div>
+    </AppShell>
+  );
+}
+
+// ── Tokens Meta ──────────────────────────────────────────────────────────────
+
+function MetaTokensSection({ isAdmin }: { isAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [token, setToken] = useState("");
+  const [assignedUserId, setAssignedUserId] = useState<string>("none");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const { data: tokens = [], isLoading } = useQuery({ queryKey: ["meta-tokens"], queryFn: fetchMetaTokens });
+  const { data: members = [] } = useQuery({ queryKey: ["org-members"], queryFn: fetchOrgMembers, enabled: isAdmin });
 
   const saveMutation = useMutation({
-    mutationFn: async (token: string) => {
-      // Validate via /me
-      const res = await fetch(
-        `https://graph.facebook.com/v21.0/me?access_token=${token}`
-      );
-      const json = (await res.json()) as {
-        name?: string;
-        error?: { message: string };
-      };
-      if (json.error || !json.name) {
-        throw new Error(json.error?.message ?? "Token inválido");
-      }
+    mutationFn: async () => {
+      const res = await fetch(`https://graph.facebook.com/v21.0/me?access_token=${token.trim()}`);
+      const json = (await res.json()) as { name?: string; error?: { message: string } };
+      if (json.error || !json.name) throw new Error(json.error?.message ?? "Token inválido");
       const expiresAt = new Date(Date.now() + 60 * 24 * 3600 * 1000);
-      await saveMetaToken(token, expiresAt);
+      await upsertMetaToken({
+        label: label.trim() || "Principal",
+        accessToken: token.trim(),
+        expiresAt: expiresAt.toISOString(),
+        assignedUserId: assignedUserId === "none" ? null : assignedUserId,
+      });
       return json.name;
     },
     onSuccess: (name) => {
       toast.success(`Token salvo! Conectado como ${name}.`);
-      setNewToken("");
-      queryClient.invalidateQueries({ queryKey: ["token-info"] });
-      queryClient.invalidateQueries({ queryKey: ["last-synced-at"] });
+      setOpen(false);
+      setLabel("");
+      setToken("");
+      setAssignedUserId("none");
+      queryClient.invalidateQueries({ queryKey: ["meta-tokens"] });
     },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : "Erro ao salvar token");
-    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar token"),
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteMetaToken,
+    onSuccess: () => {
+      toast.success("Token removido.");
+      queryClient.invalidateQueries({ queryKey: ["meta-tokens"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao remover token"),
+  });
+
+  return (
+    <section className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <KeyRound className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Tokens Meta Ads</h2>
+        </div>
+        {isAdmin && (
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" /> Novo token
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Novo token Meta</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <div className="space-y-1.5">
+                  <Label>Nome (ex: "Token do João")</Label>
+                  <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Principal" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Token de acesso</Label>
+                  <Textarea
+                    value={token}
+                    onChange={(e) => setToken(e.target.value)}
+                    placeholder="EAASR9JZBuCzIBO..."
+                    className="font-mono text-xs resize-none h-20"
+                    spellCheck={false}
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Atribuir a um gestor (opcional)</Label>
+                  <Select value={assignedUserId} onValueChange={setAssignedUserId}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Ninguém em específico</SelectItem>
+                      {members.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>{m.fullName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={() => saveMutation.mutate()} disabled={!token.trim() || saveMutation.isPending}>
+                  {saveMutation.isPending ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Validar e salvar
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+
+      <Card className="divide-y divide-border">
+        {isLoading ? (
+          <div className="px-5 py-4 text-sm text-muted-foreground">Carregando...</div>
+        ) : tokens.length === 0 ? (
+          <div className="px-5 py-4 flex items-center gap-3">
+            <ShieldAlert className="h-5 w-5 text-destructive shrink-0" />
+            <p className="text-sm text-muted-foreground">
+              Nenhum token configurado. {isAdmin ? "Adicione um acima para sincronizar campanhas." : "Peça a um admin da organização para configurar."}
+            </p>
+          </div>
+        ) : (
+          tokens.map((t) => {
+            const daysLeft = t.expiresAt ? Math.floor((new Date(t.expiresAt).getTime() - Date.now()) / 86400000) : null;
+            const assigned = members.find((m) => m.id === t.assignedUserId);
+            return (
+              <div key={t.id} className="px-5 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{t.label}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {daysLeft !== null ? (daysLeft <= 0 ? "Expirado" : `Expira em ${daysLeft} dias`) : "Sem validade definida"}
+                    {assigned ? ` · ${assigned.fullName}` : ""}
+                  </p>
+                </div>
+                <Badge variant="outline" className={t.active ? "border-status-on-target/40 text-status-on-target" : "border-muted-foreground/30 text-muted-foreground"}>
+                  {t.active ? "Ativo" : "Inativo"}
+                </Badge>
+                {isAdmin && (
+                  <Button size="icon" variant="ghost" onClick={() => deleteMutation.mutate(t.id)} className="text-destructive hover:text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            );
+          })
+        )}
+      </Card>
+    </section>
+  );
+}
+
+// ── Instâncias WhatsApp ────────────────────────────────────────────────────
+
+function WhatsappInstancesSection({ isAdmin }: { isAdmin: boolean }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [label, setLabel] = useState("");
+  const [url, setUrl] = useState("");
+  const [apiKey, setApiKey] = useState("");
+  const [instanceName, setInstanceName] = useState("");
+  const [assignedUserId, setAssignedUserId] = useState<string>("none");
+
+  const { data: instances = [], isLoading } = useQuery({ queryKey: ["whatsapp-instances"], queryFn: fetchWhatsappInstances });
+  const { data: members = [] } = useQuery({ queryKey: ["org-members"], queryFn: fetchOrgMembers, enabled: isAdmin });
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      upsertWhatsappInstance({
+        label: label.trim() || "Principal",
+        evolutionUrl: url.trim(),
+        evolutionKey: apiKey.trim(),
+        instanceName: instanceName.trim(),
+        assignedUserId: assignedUserId === "none" ? null : assignedUserId,
+      }),
+    onSuccess: () => {
+      toast.success("Instância salva!");
+      setOpen(false);
+      setLabel("");
+      setUrl("");
+      setApiKey("");
+      setInstanceName("");
+      setAssignedUserId("none");
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar instância"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: deleteWhatsappInstance,
+    onSuccess: () => {
+      toast.success("Instância removida.");
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao remover instância"),
+  });
+
+  return (
+    <section className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <MessageCircle className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Instâncias WhatsApp</h2>
+        </div>
+        {isAdmin && (
+          <Dialog open={open} onOpenChange={setOpen}>
+            <DialogTrigger asChild>
+              <Button size="sm" variant="outline" className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" /> Nova instância
+              </Button>
+            </DialogTrigger>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Nova instância WhatsApp (Evolution API)</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-3 py-2">
+                <div className="space-y-1.5">
+                  <Label>Nome (ex: "WhatsApp do João")</Label>
+                  <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Principal" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>URL da Evolution API</Label>
+                  <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://evolution.seuservidor.com" className="font-mono text-xs" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Chave de API</Label>
+                  <Input value={apiKey} onChange={(e) => setApiKey(e.target.value)} className="font-mono text-xs" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Nome da instância</Label>
+                  <Input value={instanceName} onChange={(e) => setInstanceName(e.target.value)} />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Atribuir a um gestor (opcional)</Label>
+                  <Select value={assignedUserId} onValueChange={setAssignedUserId}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Ninguém em específico</SelectItem>
+                      {members.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>{m.fullName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button
+                  onClick={() => saveMutation.mutate()}
+                  disabled={!url.trim() || !apiKey.trim() || !instanceName.trim() || saveMutation.isPending}
+                >
+                  {saveMutation.isPending ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
+                  Salvar
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
+        )}
+      </div>
+
+      <Card className="divide-y divide-border">
+        {isLoading ? (
+          <div className="px-5 py-4 text-sm text-muted-foreground">Carregando...</div>
+        ) : instances.length === 0 ? (
+          <div className="px-5 py-4 text-sm text-muted-foreground">
+            Nenhuma instância configurada. {isAdmin ? "Adicione uma acima para agendar mensagens e monitorar grupos." : "Peça a um admin da organização para configurar."}
+          </div>
+        ) : (
+          instances.map((i) => {
+            const assigned = members.find((m) => m.id === i.assignedUserId);
+            return (
+              <div key={i.id} className="px-5 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{i.label}</p>
+                  <p className="text-xs text-muted-foreground font-mono">
+                    {i.instanceName}{assigned ? ` · ${assigned.fullName}` : ""}
+                  </p>
+                </div>
+                <Badge variant="outline" className={i.active ? "border-status-on-target/40 text-status-on-target" : "border-muted-foreground/30 text-muted-foreground"}>
+                  {i.active ? "Ativa" : "Inativa"}
+                </Badge>
+                {isAdmin && (
+                  <Button size="icon" variant="ghost" onClick={() => deleteMutation.mutate(i.id)} className="text-destructive hover:text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
+            );
+          })
+        )}
+      </Card>
+    </section>
+  );
+}
+
+// ── Usuários ─────────────────────────────────────────────────────────────────
+
+function UsersSection() {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+
+  const { data: members = [], isLoading } = useQuery({ queryKey: ["org-members"], queryFn: fetchOrgMembers });
+
+  const createMutation = useMutation({
+    mutationFn: () => createOrgMember({ fullName: fullName.trim(), email: email.trim(), password, role: "member" }),
+    onSuccess: () => {
+      toast.success("Usuário criado! Compartilhe a senha com ele por fora do sistema.");
+      setOpen(false);
+      setFullName("");
+      setEmail("");
+      setPassword("");
+      queryClient.invalidateQueries({ queryKey: ["org-members"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao criar usuário"),
+  });
+
+  const roleMutation = useMutation({
+    mutationFn: ({ userId, role }: { userId: string; role: "admin" | "member" }) => updateOrgMemberRole(userId, role),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["org-members"] }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao alterar papel"),
+  });
+
+  const activeMutation = useMutation({
+    mutationFn: ({ userId, active }: { userId: string; active: boolean }) => setOrgMemberActive(userId, active),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["org-members"] }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao alterar acesso"),
+  });
+
+  return (
+    <section className="mb-6">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <UsersIcon className="h-4 w-4 text-muted-foreground" />
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Usuários</h2>
+        </div>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline" className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" /> Novo usuário
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Novo usuário da organização</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <div className="space-y-1.5">
+                <Label>Nome</Label>
+                <Input value={fullName} onChange={(e) => setFullName(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Email</Label>
+                <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Senha inicial</Label>
+                <Input type="text" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="mín. 8 caracteres" />
+                <p className="text-[11px] text-muted-foreground">Compartilhe essa senha com a pessoa por fora do sistema — ela pode trocar depois.</p>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button
+                onClick={() => createMutation.mutate()}
+                disabled={!fullName.trim() || !email.trim() || password.length < 8 || createMutation.isPending}
+              >
+                {createMutation.isPending ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Criar usuário
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <Card className="divide-y divide-border">
+        {isLoading ? (
+          <div className="px-5 py-4 text-sm text-muted-foreground">Carregando...</div>
+        ) : (
+          members.map((m) => (
+            <div key={m.id} className="px-5 py-3 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+                <p className={`text-sm font-medium truncate ${!m.active ? "text-muted-foreground line-through" : ""}`}>{m.fullName}</p>
+                <p className="text-xs text-muted-foreground truncate">{m.email}</p>
+              </div>
+              <Select value={m.role} onValueChange={(v) => roleMutation.mutate({ userId: m.id, role: v as "admin" | "member" })}>
+                <SelectTrigger className="w-28 h-8 text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Admin</SelectItem>
+                  <SelectItem value="member">Membro</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-xs"
+                onClick={() => activeMutation.mutate({ userId: m.id, active: !m.active })}
+              >
+                {m.active ? "Desativar" : "Ativar"}
+              </Button>
+            </div>
+          ))
+        )}
+      </Card>
+    </section>
+  );
+}
+
+// ── OpenAI, n8n e destino dos envios (sem mudanças de fundo) ─────────────────
+
+function OpenAISection() {
+  const queryClient = useQueryClient();
+  const [newOpenAIKey, setNewOpenAIKey] = useState("");
 
   const { data: openAIKey, isLoading: isLoadingOpenAI } = useQuery({
     queryKey: ["openai-key"],
@@ -103,10 +541,74 @@ function SettingsPage() {
       setNewOpenAIKey("");
       queryClient.invalidateQueries({ queryKey: ["openai-key"] });
     },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : "Erro ao salvar chave");
-    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar chave"),
   });
+
+  return (
+    <section className="mb-6">
+      <div className="flex items-center gap-2 mb-3">
+        <Bot className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">API Key do Agente (OpenAI)</h2>
+      </div>
+
+      <Card className="overflow-hidden">
+        <div className="px-5 py-4 flex items-center gap-4 border-b border-border bg-muted/10">
+          <KeyRound className="h-5 w-5 text-muted-foreground shrink-0" />
+          <div className="flex-1 min-w-0">
+            {isLoadingOpenAI ? (
+              <p className="text-sm text-muted-foreground">Verificando...</p>
+            ) : openAIKey ? (
+              <>
+                <p className="text-sm font-medium text-status-on-target">Chave configurada</p>
+                <p className="text-xs text-muted-foreground mt-0.5 font-mono">
+                  {openAIKey.slice(0, 6)}...{openAIKey.slice(-4)}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-destructive">Sem chave configurada</p>
+                <p className="text-xs text-muted-foreground mt-0.5">O agente de IA não poderá funcionar.</p>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="openai-input">{!openAIKey ? "Cole a nova chave API" : "Atualizar chave API"}</Label>
+            <Textarea
+              id="openai-input"
+              value={newOpenAIKey}
+              onChange={(e) => setNewOpenAIKey(e.target.value)}
+              placeholder="sk-..."
+              className="font-mono text-xs resize-none h-12 leading-relaxed"
+              spellCheck={false}
+            />
+          </div>
+
+          <Button
+            onClick={() => saveOpenAIMutation.mutate(newOpenAIKey.trim())}
+            disabled={!newOpenAIKey.trim() || saveOpenAIMutation.isPending}
+            className="w-full sm:w-auto"
+          >
+            {saveOpenAIMutation.isPending ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Salvando...
+              </>
+            ) : (
+              "Salvar chave"
+            )}
+          </Button>
+        </div>
+      </Card>
+    </section>
+  );
+}
+
+function N8nSection() {
+  const queryClient = useQueryClient();
+  const [newWebhookUrl, setNewWebhookUrl] = useState("");
 
   const { data: n8nWebhookUrl, isLoading: isLoadingN8n } = useQuery({
     queryKey: ["n8n-webhook-url"],
@@ -121,11 +623,72 @@ function SettingsPage() {
       setNewWebhookUrl("");
       queryClient.invalidateQueries({ queryKey: ["n8n-webhook-url"] });
     },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : "Erro ao salvar URL");
-    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar URL"),
   });
 
+  return (
+    <section className="mb-6">
+      <div className="flex items-center gap-2 mb-3">
+        <Webhook className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Webhook n8n</h2>
+      </div>
+
+      <Card className="overflow-hidden">
+        <div className="px-5 py-4 flex items-center gap-4 border-b border-border bg-muted/10">
+          <Webhook className="h-5 w-5 text-muted-foreground shrink-0" />
+          <div className="flex-1 min-w-0">
+            {isLoadingN8n ? (
+              <p className="text-sm text-muted-foreground">Verificando...</p>
+            ) : n8nWebhookUrl ? (
+              <>
+                <p className="text-sm font-medium text-status-on-target">Webhook configurado</p>
+                <p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">{n8nWebhookUrl}</p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-medium text-destructive">Webhook não configurado</p>
+                <p className="text-xs text-muted-foreground mt-0.5">Sem URL configurada — criação de anúncios usará chamada direta ao Meta.</p>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="p-5 space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="n8n-webhook-input">{!n8nWebhookUrl ? "Cole a URL do webhook" : "Atualizar URL"}</Label>
+            <Input
+              id="n8n-webhook-input"
+              value={newWebhookUrl}
+              onChange={(e) => setNewWebhookUrl(e.target.value)}
+              placeholder="https://seu-n8n.host/webhook/criar-anuncio"
+              className="font-mono text-xs"
+              spellCheck={false}
+            />
+            <p className="text-[11px] text-muted-foreground">URL de produção gerada pelo n8n no nó "Webhook — Receber Payload".</p>
+          </div>
+
+          <Button
+            onClick={() => saveN8nMutation.mutate(newWebhookUrl.trim())}
+            disabled={!newWebhookUrl.trim() || saveN8nMutation.isPending}
+            className="w-full sm:w-auto"
+          >
+            {saveN8nMutation.isPending ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Salvando...
+              </>
+            ) : (
+              "Salvar URL"
+            )}
+          </Button>
+        </div>
+      </Card>
+    </section>
+  );
+}
+
+function SendDestinationsSection() {
+  const queryClient = useQueryClient();
   const { data: sendDestinations, isLoading: isLoadingSendDestinations } = useQuery({
     queryKey: ["send-destinations"],
     queryFn: getSendDestinations,
@@ -138,456 +701,71 @@ function SettingsPage() {
       toast.success("Destino atualizado!");
       queryClient.invalidateQueries({ queryKey: ["send-destinations"] });
     },
-    onError: (e) => {
-      toast.error(e instanceof Error ? e.message : "Erro ao salvar destino");
-    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar destino"),
   });
 
-  const maskedToken = tokenInfo?.token
-    ? `${tokenInfo.token.slice(0, 10)}${"•".repeat(20)}${tokenInfo.token.slice(-6)}`
-    : null;
-
-  const handleCopy = () => {
-    if (tokenInfo?.token) {
-      navigator.clipboard.writeText(tokenInfo.token);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  };
-
-  const tokenStatus = !tokenInfo?.token
-    ? "missing"
-    : (tokenInfo.daysUntilExpiry ?? 0) <= 0
-    ? "expired"
-    : (tokenInfo.daysUntilExpiry ?? 99) <= 7
-    ? "expiring"
-    : "ok";
-
   return (
-    <AppShell>
-      <div className="px-4 md:px-8 py-8 max-w-2xl mx-auto">
-        {/* Header */}
-        <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Gerencie o token de acesso ao Meta Ads e outras preferências do sistema.
-            </p>
-          </div>
-          <Button variant="outline" asChild>
-            <Link to="/diagnostico-meta" className="gap-2">
-              <Stethoscope className="h-4 w-4" />
-              Ver diagnóstico Meta
-            </Link>
-          </Button>
+    <section className="mb-6">
+      <div className="flex items-center gap-2 mb-3">
+        <div className="h-1 w-1 rounded-full bg-muted-foreground" />
+        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Destino dos envios manuais</h2>
+      </div>
+
+      <Card className="p-5 space-y-4">
+        <div className="flex items-center gap-3">
+          <Send className="h-5 w-5 text-muted-foreground shrink-0" />
+          <p className="text-sm text-muted-foreground">
+            Escolha pra onde vão as mensagens dos botões "Enviar lista de campanhas ativas" e "Enviar relatório
+            semanal" na página do cliente. Se o destino for "Grupo do cliente" e o cliente ainda não tiver um
+            grupo vinculado, a mensagem cai automaticamente no grupo Operacional.
+          </p>
         </div>
 
-        {/* Token section */}
-        <section className="mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <KeyRound className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              Token do Meta
-            </h2>
-          </div>
-
-          <Card className="overflow-hidden">
-            {/* Status bar */}
-            <div
-              className={`px-5 py-4 flex items-center gap-4 border-b border-border ${
-                tokenStatus === "ok"
-                  ? "bg-status-on-target/5"
-                  : tokenStatus === "expiring"
-                  ? "bg-status-attention/5"
-                  : "bg-destructive/5"
-              }`}
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div className="space-y-1.5">
+            <Label>Lista de campanhas ativas</Label>
+            <Select
+              value={sendDestinations?.campaignsListDestination ?? "operacional"}
+              disabled={isLoadingSendDestinations || saveSendDestinationsMutation.isPending}
+              onValueChange={(v) =>
+                saveSendDestinationsMutation.mutate({
+                  campaignsListDestination: v as SendDestination,
+                  weeklyReportDestination: sendDestinations?.weeklyReportDestination ?? "operacional",
+                })
+              }
             >
-              {isLoading ? (
-                <RefreshCw className="h-5 w-5 text-muted-foreground animate-spin" />
-              ) : tokenStatus === "ok" ? (
-                <ShieldCheck className="h-5 w-5 text-status-on-target shrink-0" />
-              ) : tokenStatus === "expiring" ? (
-                <ShieldAlert className="h-5 w-5 text-status-attention shrink-0" />
-              ) : (
-                <ShieldX className="h-5 w-5 text-destructive shrink-0" />
-              )}
-
-              <div className="flex-1 min-w-0">
-                {isLoading ? (
-                  <p className="text-sm text-muted-foreground">Verificando token...</p>
-                ) : tokenStatus === "ok" ? (
-                  <>
-                    <p className="text-sm font-medium text-status-on-target">Token ativo</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Expira em{" "}
-                      <strong>{tokenInfo?.daysUntilExpiry} dias</strong>
-                      {tokenInfo?.expiresAt && (
-                        <> · {tokenInfo.expiresAt.toLocaleDateString("pt-BR")}</>
-                      )}
-                    </p>
-                  </>
-                ) : tokenStatus === "expiring" ? (
-                  <>
-                    <p className="text-sm font-medium text-status-attention">
-                      Expira em breve
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Restam <strong>{tokenInfo?.daysUntilExpiry} dias</strong> —
-                      renove antes que os dados parem de sincronizar.
-                    </p>
-                  </>
-                ) : tokenStatus === "expired" ? (
-                  <>
-                    <p className="text-sm font-medium text-destructive">Token expirado</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Sincronização pausada. Cole um novo token abaixo.
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium text-destructive">Sem token</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Nenhum token configurado. Cole um abaixo para começar.
-                    </p>
-                  </>
-                )}
-              </div>
-
-              {maskedToken && (
-                <Badge variant="outline" className="font-mono text-xs shrink-0 hidden sm:flex items-center gap-1.5">
-                  {maskedToken}
-                  <button
-                    onClick={handleCopy}
-                    className="ml-1 text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    {copied ? (
-                      <Check className="h-3 w-3 text-status-on-target" />
-                    ) : (
-                      <Copy className="h-3 w-3" />
-                    )}
-                  </button>
-                </Badge>
-              )}
-            </div>
-
-            {/* Update form */}
-            <div className="p-5 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="token-input">
-                  {tokenStatus === "missing" || tokenStatus === "expired"
-                    ? "Cole o novo token"
-                    : "Atualizar token"}
-                </Label>
-                <Textarea
-                  id="token-input"
-                  value={newToken}
-                  onChange={(e) => setNewToken(e.target.value)}
-                  placeholder="EAASR9JZBuCzIBO..."
-                  className="font-mono text-xs resize-none h-20 leading-relaxed"
-                  spellCheck={false}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  O token será validado e salvo com validade de 60 dias.
-                </p>
-              </div>
-
-              <Button
-                onClick={() => saveMutation.mutate(newToken.trim())}
-                disabled={!newToken.trim() || saveMutation.isPending}
-                className="w-full sm:w-auto"
-              >
-                {saveMutation.isPending ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    Validando...
-                  </>
-                ) : (
-                  "Salvar token"
-                )}
-              </Button>
-            </div>
-
-            <Separator />
-
-            {/* Instructions */}
-            <div className="p-5">
-              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">
-                Como obter o token
-              </p>
-              <ol className="space-y-3">
-                {[
-                  <>
-                    Acesse o{" "}
-                    <a
-                      href="https://developers.facebook.com/tools/explorer/"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary underline underline-offset-2 inline-flex items-center gap-1"
-                    >
-                      Graph API Explorer
-                      <ExternalLink className="h-3 w-3" />
-                    </a>{" "}
-                    e selecione seu app no topo.
-                  </>,
-                  <>
-                    Clique em <strong>Add a Permission</strong> e marque{" "}
-                    <code className="bg-muted px-1 py-0.5 rounded text-[11px]">ads_read</code>{" "}
-                    e{" "}
-                    <code className="bg-muted px-1 py-0.5 rounded text-[11px]">ads_management</code>.
-                  </>,
-                  <>
-                    Clique em <strong>Generate Access Token</strong> e autorize o app.
-                  </>,
-                  <>
-                    Para token de longa duração (60 dias), chame via URL ou cole o token
-                    curto aqui — o sistema aceita ambos.
-                  </>,
-                ].map((step, i) => (
-                  <li key={i} className="flex gap-3 text-sm text-muted-foreground">
-                    <span className="h-5 w-5 rounded-full bg-muted flex items-center justify-center text-[11px] font-semibold text-foreground shrink-0 mt-0.5">
-                      {i + 1}
-                    </span>
-                    <span className="leading-relaxed">{step}</span>
-                  </li>
-                ))}
-              </ol>
-
-              <div className="mt-4 p-3 bg-muted/40 rounded-lg text-[11px] text-muted-foreground leading-relaxed">
-                <strong className="text-foreground">Token de longa duração manual:</strong>
-                <br />
-                <code className="break-all select-all">
-                  {`https://graph.facebook.com/v21.0/oauth/access_token?grant_type=fb_exchange_token&client_id={APP_ID}&client_secret={APP_SECRET}&fb_exchange_token={TOKEN_CURTO}`}
-                </code>
-              </div>
-            </div>
-          </Card>
-        </section>
-
-        {/* OpenAI Key section */}
-        <section className="mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <Bot className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              API Key do Agente (OpenAI)
-            </h2>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="operacional">Operacional</SelectItem>
+                <SelectItem value="client_group">Grupo do cliente</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-
-          <Card className="overflow-hidden">
-            <div className="px-5 py-4 flex items-center gap-4 border-b border-border bg-muted/10">
-              <KeyRound className="h-5 w-5 text-muted-foreground shrink-0" />
-              <div className="flex-1 min-w-0">
-                {isLoadingOpenAI ? (
-                   <p className="text-sm text-muted-foreground">Verificando...</p>
-                ) : openAIKey ? (
-                  <>
-                    <p className="text-sm font-medium text-status-on-target">Chave configurada</p>
-                    <p className="text-xs text-muted-foreground mt-0.5 font-mono">
-                      {openAIKey.slice(0, 6)}...{openAIKey.slice(-4)}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium text-destructive">Sem chave configurada</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      O agente de IA não poderá funcionar.
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="p-5 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="openai-input">
-                  {!openAIKey ? "Cole a nova chave API" : "Atualizar chave API"}
-                </Label>
-                <Textarea
-                  id="openai-input"
-                  value={newOpenAIKey}
-                  onChange={(e) => setNewOpenAIKey(e.target.value)}
-                  placeholder="sk-..."
-                  className="font-mono text-xs resize-none h-12 leading-relaxed"
-                  spellCheck={false}
-                />
-              </div>
-
-              <Button
-                onClick={() => saveOpenAIMutation.mutate(newOpenAIKey.trim())}
-                disabled={!newOpenAIKey.trim() || saveOpenAIMutation.isPending}
-                className="w-full sm:w-auto"
-              >
-                {saveOpenAIMutation.isPending ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    Salvando...
-                  </>
-                ) : (
-                  "Salvar chave"
-                )}
-              </Button>
-            </div>
-          </Card>
-        </section>
-
-        {/* n8n Webhook section */}
-        <section className="mb-6">
-          <div className="flex items-center gap-2 mb-3">
-            <Webhook className="h-4 w-4 text-muted-foreground" />
-            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              Webhook n8n
-            </h2>
+          <div className="space-y-1.5">
+            <Label>Relatório semanal (7 dias)</Label>
+            <Select
+              value={sendDestinations?.weeklyReportDestination ?? "operacional"}
+              disabled={isLoadingSendDestinations || saveSendDestinationsMutation.isPending}
+              onValueChange={(v) =>
+                saveSendDestinationsMutation.mutate({
+                  campaignsListDestination: sendDestinations?.campaignsListDestination ?? "operacional",
+                  weeklyReportDestination: v as SendDestination,
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="operacional">Operacional</SelectItem>
+                <SelectItem value="client_group">Grupo do cliente</SelectItem>
+              </SelectContent>
+            </Select>
           </div>
-
-          <Card className="overflow-hidden">
-            <div className="px-5 py-4 flex items-center gap-4 border-b border-border bg-muted/10">
-              <Webhook className="h-5 w-5 text-muted-foreground shrink-0" />
-              <div className="flex-1 min-w-0">
-                {isLoadingN8n ? (
-                  <p className="text-sm text-muted-foreground">Verificando...</p>
-                ) : n8nWebhookUrl ? (
-                  <>
-                    <p className="text-sm font-medium text-status-on-target">Webhook configurado</p>
-                    <p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">
-                      {n8nWebhookUrl}
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium text-destructive">Webhook não configurado</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">
-                      Sem URL configurada — criação de anúncios usará chamada direta ao Meta.
-                    </p>
-                  </>
-                )}
-              </div>
-            </div>
-
-            <div className="p-5 space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="n8n-webhook-input">
-                  {!n8nWebhookUrl ? "Cole a URL do webhook" : "Atualizar URL"}
-                </Label>
-                <Input
-                  id="n8n-webhook-input"
-                  value={newWebhookUrl}
-                  onChange={(e) => setNewWebhookUrl(e.target.value)}
-                  placeholder="https://seu-n8n.host/webhook/criar-anuncio"
-                  className="font-mono text-xs"
-                  spellCheck={false}
-                />
-                <p className="text-[11px] text-muted-foreground">
-                  URL de produção gerada pelo n8n no nó "Webhook — Receber Payload".
-                </p>
-              </div>
-
-              <Button
-                onClick={() => saveN8nMutation.mutate(newWebhookUrl.trim())}
-                disabled={!newWebhookUrl.trim() || saveN8nMutation.isPending}
-                className="w-full sm:w-auto"
-              >
-                {saveN8nMutation.isPending ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                    Salvando...
-                  </>
-                ) : (
-                  "Salvar URL"
-                )}
-              </Button>
-            </div>
-          </Card>
-        </section>
-
-        {/* Destino dos envios manuais */}
-        <section>
-          <div className="flex items-center gap-2 mb-3">
-            <div className="h-1 w-1 rounded-full bg-muted-foreground" />
-            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              Destino dos envios manuais
-            </h2>
-          </div>
-
-          <Card className="p-5 space-y-4">
-            <div className="flex items-center gap-3">
-              <Send className="h-5 w-5 text-muted-foreground shrink-0" />
-              <p className="text-sm text-muted-foreground">
-                Escolha pra onde vão as mensagens dos botões "Enviar lista de campanhas ativas" e "Enviar relatório
-                semanal" na página do cliente. Se o destino for "Grupo do cliente" e o cliente ainda não tiver um
-                grupo vinculado, a mensagem cai automaticamente no grupo Operacional.
-              </p>
-            </div>
-
-            <div className="grid sm:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <Label>Lista de campanhas ativas</Label>
-                <Select
-                  value={sendDestinations?.campaignsListDestination ?? "operacional"}
-                  disabled={isLoadingSendDestinations || saveSendDestinationsMutation.isPending}
-                  onValueChange={(v) =>
-                    saveSendDestinationsMutation.mutate({
-                      campaignsListDestination: v as SendDestination,
-                      weeklyReportDestination: sendDestinations?.weeklyReportDestination ?? "operacional",
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="operacional">Operacional Triad Company</SelectItem>
-                    <SelectItem value="client_group">Grupo do cliente</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Relatório semanal (7 dias)</Label>
-                <Select
-                  value={sendDestinations?.weeklyReportDestination ?? "operacional"}
-                  disabled={isLoadingSendDestinations || saveSendDestinationsMutation.isPending}
-                  onValueChange={(v) =>
-                    saveSendDestinationsMutation.mutate({
-                      campaignsListDestination: sendDestinations?.campaignsListDestination ?? "operacional",
-                      weeklyReportDestination: v as SendDestination,
-                    })
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="operacional">Operacional Triad Company</SelectItem>
-                    <SelectItem value="client_group">Grupo do cliente</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-          </Card>
-        </section>
-
-        {/* System info */}
-        <section>
-          <div className="flex items-center gap-2 mb-3">
-            <div className="h-1 w-1 rounded-full bg-muted-foreground" />
-            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
-              Sistema
-            </h2>
-          </div>
-
-          <Card className="divide-y divide-border">
-            {[
-              { label: "Versão", value: "0.1.0" },
-              { label: "API Meta", value: "Graph API v21.0" },
-              { label: "Sync automático", value: "A cada hora" },
-              { label: "Dados armazenados", value: "PostgreSQL (VPS própria)" },
-            ].map(({ label, value }) => (
-              <div key={label} className="flex items-center justify-between px-5 py-3">
-                <span className="text-sm text-muted-foreground">{label}</span>
-                <span className="text-sm font-medium">{value}</span>
-              </div>
-            ))}
-          </Card>
-        </section>
-      </div>
-    </AppShell>
+        </div>
+      </Card>
+    </section>
   );
 }

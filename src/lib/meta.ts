@@ -1,37 +1,151 @@
 import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
-import { eq, inArray } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { appConfig, campaignSnapshots, clients as clientsTable, metricsDaily, syncLog } from "@/db/schema";
+import { appConfig, campaignSnapshots, clients as clientsTable, metaTokens, metricsDaily, syncLog } from "@/db/schema";
+import { requireOrgContext } from "@/server/session";
 
 async function getConfigValues(keys: string[]): Promise<Record<string, string>> {
-  const rows = await db.select({ key: appConfig.key, value: appConfig.value }).from(appConfig).where(inArray(appConfig.key, keys));
+  const { organizationId } = await requireOrgContext();
+  const rows = await db
+    .select({ key: appConfig.key, value: appConfig.value })
+    .from(appConfig)
+    .where(and(eq(appConfig.organizationId, organizationId), inArray(appConfig.key, keys)));
   return Object.fromEntries(rows.map((r) => [r.key, r.value]));
 }
 
 async function setConfigValues(entries: { key: string; value: string }[]): Promise<void> {
+  const { organizationId } = await requireOrgContext();
   for (const entry of entries) {
-    await db.insert(appConfig).values(entry).onConflictDoUpdate({ target: appConfig.key, set: { value: entry.value } });
+    await db
+      .insert(appConfig)
+      .values({ organizationId, ...entry })
+      .onConflictDoUpdate({ target: [appConfig.organizationId, appConfig.key], set: { value: entry.value } });
   }
 }
 
 const GRAPH_VERSION = "v21.0";
 const BASE_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
 
-// ── Token storage ──────────────────────────────────────────────
+// ── Meta tokens ──────────────────────────────────────────────────
+// Uma organização pode ter N tokens (um por gestor com acesso próprio à Business
+// Manager); cada cliente aponta pro que deve usar (clients.metaTokenId). Sem
+// clientId, resolve o "padrão" da organização: o token atribuído ao usuário
+// logado, senão o mais antigo ativo.
 
-const _saveMetaToken = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ token: z.string(), expiresAt: z.string() }))
+export interface MetaTokenRow {
+  id: string;
+  label: string;
+  expiresAt: string | null;
+  assignedUserId: string | null;
+  active: boolean;
+  createdAt: string;
+}
+
+const _fetchMetaTokens = createServerFn({ method: "GET" }).handler(async (): Promise<MetaTokenRow[]> => {
+  const { organizationId } = await requireOrgContext();
+  return db
+    .select({
+      id: metaTokens.id,
+      label: metaTokens.label,
+      expiresAt: metaTokens.expiresAt,
+      assignedUserId: metaTokens.assignedUserId,
+      active: metaTokens.active,
+      createdAt: metaTokens.createdAt,
+    })
+    .from(metaTokens)
+    .where(eq(metaTokens.organizationId, organizationId))
+    .orderBy(metaTokens.createdAt);
+});
+
+export async function fetchMetaTokens(): Promise<MetaTokenRow[]> {
+  return _fetchMetaTokens();
+}
+
+const upsertMetaTokenSchema = z.object({
+  id: z.string().optional(),
+  label: z.string(),
+  accessToken: z.string().optional(), // vazio ao editar = mantém o token salvo
+  expiresAt: z.string().nullable().optional(),
+  assignedUserId: z.string().nullable().optional(),
+  active: z.boolean().optional(),
+});
+
+const _upsertMetaToken = createServerFn({ method: "POST" })
+  .inputValidator(upsertMetaTokenSchema)
   .handler(async ({ data }) => {
-    await setConfigValues([
-      { key: "meta_access_token", value: data.token },
-      { key: "meta_token_expires_at", value: data.expiresAt },
-    ]);
+    const { organizationId } = await requireOrgContext("admin");
+    if (data.id) {
+      const existing = await db.query.metaTokens.findFirst({ where: eq(metaTokens.id, data.id) });
+      if (!existing || existing.organizationId !== organizationId) throw new Error("Token não encontrado.");
+      await db
+        .update(metaTokens)
+        .set({
+          label: data.label,
+          ...(data.accessToken ? { accessToken: data.accessToken } : {}),
+          expiresAt: data.expiresAt ?? null,
+          assignedUserId: data.assignedUserId ?? null,
+          ...(data.active !== undefined ? { active: data.active } : {}),
+        })
+        .where(eq(metaTokens.id, data.id));
+      return { id: data.id };
+    }
+    if (!data.accessToken) throw new Error("Token é obrigatório.");
+    const [row] = await db
+      .insert(metaTokens)
+      .values({
+        organizationId,
+        label: data.label,
+        accessToken: data.accessToken,
+        expiresAt: data.expiresAt ?? null,
+        assignedUserId: data.assignedUserId ?? null,
+      })
+      .returning({ id: metaTokens.id });
+    return { id: row.id };
   });
 
-export async function saveMetaToken(token: string, expiresAt: Date) {
-  await _saveMetaToken({ data: { token, expiresAt: expiresAt.toISOString() } });
+export async function upsertMetaToken(data: z.infer<typeof upsertMetaTokenSchema>): Promise<{ id: string }> {
+  return _upsertMetaToken({ data });
 }
+
+const _deleteMetaToken = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext("admin");
+    const existing = await db.query.metaTokens.findFirst({ where: eq(metaTokens.id, data.id) });
+    if (!existing || existing.organizationId !== organizationId) throw new Error("Token não encontrado.");
+    await db.delete(metaTokens).where(eq(metaTokens.id, data.id));
+  });
+
+export async function deleteMetaToken(id: string): Promise<void> {
+  await _deleteMetaToken({ data: { id } });
+}
+
+const _resolveMetaToken = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string().optional() }))
+  .handler(async ({ data }): Promise<{ accessToken: string; expiresAt: string | null } | null> => {
+    const { organizationId, userId } = await requireOrgContext();
+
+    if (data.clientId) {
+      const client = await db.query.clients.findFirst({
+        where: eq(clientsTable.id, data.clientId),
+        columns: { organizationId: true, metaTokenId: true },
+      });
+      if (!client || client.organizationId !== organizationId) throw new Error("Cliente não encontrado.");
+      if (client.metaTokenId) {
+        const row = await db.query.metaTokens.findFirst({ where: eq(metaTokens.id, client.metaTokenId) });
+        if (row?.active) return row;
+      }
+    }
+
+    const candidates = await db
+      .select()
+      .from(metaTokens)
+      .where(and(eq(metaTokens.organizationId, organizationId), eq(metaTokens.active, true)))
+      .orderBy(metaTokens.createdAt);
+    if (candidates.length === 0) return null;
+    return candidates.find((t) => t.assignedUserId === userId) ?? candidates[0];
+  });
 
 export interface TokenInfo {
   token: string | null;
@@ -39,40 +153,29 @@ export interface TokenInfo {
   daysUntilExpiry: number | null;
 }
 
-const _getConfigValues = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ keys: z.array(z.string()) }))
-  .handler(async ({ data }) => getConfigValues(data.keys));
+function tokenInfoFromRow(row: { accessToken: string; expiresAt: string | null } | null): TokenInfo {
+  if (!row) return { token: null, expiresAt: null, daysUntilExpiry: null };
+  const expiresAt = row.expiresAt ? new Date(row.expiresAt) : null;
+  if (expiresAt && expiresAt < new Date()) return { token: null, expiresAt, daysUntilExpiry: 0 };
+  const daysUntilExpiry = expiresAt ? Math.floor((expiresAt.getTime() - Date.now()) / 86400000) : null;
+  return { token: row.accessToken, expiresAt, daysUntilExpiry };
+}
 
+// Info sobre o token "padrão" da organização (usado no banner de expiração e
+// no diagnóstico) — mesma resolução de getMetaToken() sem clientId.
 export async function getTokenInfo(): Promise<TokenInfo> {
-  const rows = await _getConfigValues({
-    data: { keys: ["meta_access_token", "meta_token_expires_at", "last_synced_at"] },
-  });
-
-  const tokenValue = rows["meta_access_token"];
-  const expiresValue = rows["meta_token_expires_at"];
-
-  if (!tokenValue) return { token: null, expiresAt: null, daysUntilExpiry: null };
-
-  const expiresAt = expiresValue ? new Date(expiresValue) : null;
-
-  if (expiresAt && expiresAt < new Date()) {
-    return { token: null, expiresAt, daysUntilExpiry: 0 };
-  }
-
-  const daysUntilExpiry = expiresAt
-    ? Math.floor((expiresAt.getTime() - Date.now()) / 86400000)
-    : null;
-
-  return { token: tokenValue, expiresAt, daysUntilExpiry };
+  const row = await _resolveMetaToken({ data: {} });
+  return tokenInfoFromRow(row);
 }
 
-export async function getMetaToken(): Promise<string | null> {
-  const { token } = await getTokenInfo();
-  return token;
+export async function getMetaToken(clientId?: string): Promise<string | null> {
+  const row = await _resolveMetaToken({ data: { clientId } });
+  return tokenInfoFromRow(row).token;
 }
 
-export async function requireMetaToken(): Promise<string> {
-  const { token, expiresAt, daysUntilExpiry } = await getTokenInfo();
+export async function requireMetaToken(clientId?: string): Promise<string> {
+  const row = await _resolveMetaToken({ data: { clientId } });
+  const { token, expiresAt, daysUntilExpiry } = tokenInfoFromRow(row);
   if (!token) {
     if (expiresAt && expiresAt < new Date()) {
       throw new Error("Token da Meta expirado. Acesse Configurações e reconecte sua conta Meta.");
@@ -84,6 +187,10 @@ export async function requireMetaToken(): Promise<string> {
   }
   return token;
 }
+
+const _getConfigValues = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ keys: z.array(z.string()) }))
+  .handler(async ({ data }) => getConfigValues(data.keys));
 
 export async function getOpenAIKey(): Promise<string | null> {
   const rows = await _getConfigValues({ data: { keys: ["openai_api_key"] } });
@@ -357,13 +464,14 @@ export async function fetchAccountInsightsForRange(
 const _sendWeeklyMetricsReport = createServerFn({ method: "POST" })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
     const [client] = await db
-      .select({ metaAdAccountId: clientsTable.metaAdAccountId, whatsappGroupId: clientsTable.whatsappGroupId })
+      .select({ organizationId: clientsTable.organizationId, metaAdAccountId: clientsTable.metaAdAccountId, whatsappGroupId: clientsTable.whatsappGroupId })
       .from(clientsTable)
       .where(eq(clientsTable.id, data.clientId));
-    if (!client) throw new Error("Cliente não encontrado.");
+    if (!client || client.organizationId !== organizationId) throw new Error("Cliente não encontrado.");
 
-    const token = await requireMetaToken();
+    const token = await requireMetaToken(data.clientId);
 
     const until = new Date().toISOString().slice(0, 10);
     const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
@@ -383,26 +491,16 @@ const _sendWeeklyMetricsReport = createServerFn({ method: "POST" })
 Dos carros que estamos anunciando, quais estão tendo mais dificuldade nas negociações e quais objeções?
 Vou usar esse feedback para melhorar o tráfego!`;
 
-    const configRows = await getConfigValues([
-      "evolution_api_url",
-      "evolution_api_key",
-      "evolution_instance",
-      "whatsapp_group_operacional_id",
-      "weekly_report_destination",
-    ]);
-    const url = configRows["evolution_api_url"];
-    const apiKey = configRows["evolution_api_key"];
-    const instance = configRows["evolution_instance"];
+    const { resolveWhatsappInstance } = await import("./whatsapp-messages");
+    const { url, apiKey, instance } = await resolveWhatsappInstance(data.clientId);
+    const configRows = await getConfigValues(["whatsapp_group_operacional_id", "weekly_report_destination"]);
     const destination = (configRows["weekly_report_destination"] as SendDestination) || "operacional";
     const groupId =
       destination === "client_group" && client.whatsappGroupId
         ? client.whatsappGroupId
         : configRows["whatsapp_group_operacional_id"];
-    if (!url || !apiKey || !instance) {
-      throw new Error("Evolution API não configurada (evolution_api_url/evolution_api_key/evolution_instance em app_config).");
-    }
     if (!groupId) {
-      throw new Error("Grupo de destino não configurado (whatsapp_group_operacional_id em app_config).");
+      throw new Error("Grupo de destino não configurado (whatsapp_group_operacional_id em Configurações).");
     }
 
     const res = await fetch(`${url}/message/sendText/${instance}`, {
@@ -420,18 +518,27 @@ export async function sendWeeklyMetricsReport(clientId: string): Promise<void> {
   await _sendWeeklyMetricsReport({ data: { clientId } });
 }
 
-export const syncAllClients = createServerOnlyFn(async function syncAllClients(token: string): Promise<MetaSyncResult> {
+// Sincroniza todos os clientes ativos da organização de quem chamou — cada um
+// com seu próprio token (clients.metaTokenId), já que uma organização pode ter
+// vários. Sempre chamada de dentro de uma sessão logada (browser), nunca por um
+// cron global — por isso resolve a organização via requireOrgContext.
+export const syncAllClients = createServerOnlyFn(async function syncAllClients(): Promise<MetaSyncResult> {
+  const { organizationId } = await requireOrgContext();
   const activeClients = await db
     .select({ id: clientsTable.id, metaAdAccountId: clientsTable.metaAdAccountId })
     .from(clientsTable)
-    .where(eq(clientsTable.active, true));
+    .where(and(eq(clientsTable.active, true), eq(clientsTable.organizationId, organizationId)));
 
   if (activeClients.length === 0) {
     return { synced: 0, errors: [], syncedAt: new Date().toISOString() };
   }
 
   const results = await Promise.allSettled(
-    activeClients.map((c) => syncClientMetrics(c.id, c.metaAdAccountId, token))
+    activeClients.map(async (c) => {
+      const token = await getMetaToken(c.id);
+      if (!token) throw new Error("Sem token Meta configurado para este cliente");
+      return syncClientMetrics(c.id, c.metaAdAccountId, token);
+    })
   );
 
   const errors: string[] = [];
@@ -1653,7 +1760,8 @@ export async function getLastMetaError(): Promise<LastMetaError | null> {
 }
 
 const _clearLastMetaError = createServerFn({ method: "POST" }).handler(async () => {
-  await db.delete(appConfig).where(inArray(appConfig.key, META_ERROR_KEYS));
+  const { organizationId } = await requireOrgContext();
+  await db.delete(appConfig).where(and(eq(appConfig.organizationId, organizationId), inArray(appConfig.key, META_ERROR_KEYS)));
 });
 
 export async function clearLastMetaError(): Promise<void> {

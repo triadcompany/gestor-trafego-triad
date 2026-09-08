@@ -1,8 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { appConfig, n8nJobs } from "@/db/schema";
+import { requireOrgContext } from "@/server/session";
 import type { AdCreativeOptions, CreateFromScratchOptions } from "./meta";
 
 export interface N8nCampaignPayload {
@@ -24,7 +25,12 @@ export interface N8nJobStatus {
 }
 
 const _getN8nWebhookUrl = createServerFn({ method: "GET" }).handler(async () => {
-  const rows = await db.select({ value: appConfig.value }).from(appConfig).where(eq(appConfig.key, "n8n_campaign_webhook_url")).limit(1);
+  const { organizationId } = await requireOrgContext();
+  const rows = await db
+    .select({ value: appConfig.value })
+    .from(appConfig)
+    .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, "n8n_campaign_webhook_url")))
+    .limit(1);
   return rows[0]?.value ?? null;
 });
 
@@ -35,10 +41,11 @@ export async function getN8nWebhookUrl(): Promise<string | null> {
 const _saveN8nWebhookUrl = createServerFn({ method: "POST" })
   .inputValidator(z.object({ url: z.string() }))
   .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext("admin");
     await db
       .insert(appConfig)
-      .values({ key: "n8n_campaign_webhook_url", value: data.url })
-      .onConflictDoUpdate({ target: appConfig.key, set: { value: data.url } });
+      .values({ organizationId, key: "n8n_campaign_webhook_url", value: data.url })
+      .onConflictDoUpdate({ target: [appConfig.organizationId, appConfig.key], set: { value: data.url } });
   });
 
 export async function saveN8nWebhookUrl(url: string): Promise<void> {
@@ -56,6 +63,7 @@ const _triggerN8nCampaign = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }): Promise<{ jobId: string }> => {
+    const { organizationId } = await requireOrgContext();
     const payload = data as N8nCampaignPayload;
     const webhookUrl = await _getN8nWebhookUrl();
     if (!webhookUrl) throw new Error("URL do webhook n8n não configurada. Acesse Configurações.");
@@ -64,6 +72,7 @@ const _triggerN8nCampaign = createServerFn({ method: "POST" })
     db.insert(n8nJobs)
       .values({
         id: payload.callbackId,
+        organizationId,
         status: "pending",
         payload: { campaignName: payload.campaignOptions.name },
       })
@@ -92,9 +101,10 @@ export async function triggerN8nCampaign(payload: N8nCampaignPayload): Promise<{
 const _pollN8nJob = createServerFn({ method: "GET" })
   .inputValidator(z.object({ jobId: z.string() }))
   .handler(async ({ data }): Promise<N8nJobStatus | null> => {
+    const { organizationId } = await requireOrgContext();
     const rows = await db.select().from(n8nJobs).where(eq(n8nJobs.id, data.jobId)).limit(1);
     const row = rows[0];
-    if (!row) return null;
+    if (!row || row.organizationId !== organizationId) return null;
     return {
       id: row.id,
       status: row.status as N8nJobStatus["status"],
