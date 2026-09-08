@@ -38,7 +38,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { fetchAllClients, upsertClient, toggleClientActive, deleteClient, setClientTags, type ClientRow } from "@/lib/queries";
+import { fetchAllClients, upsertClient, toggleClientActive, deleteClient, setClientTags, upsertConversationTemplate, type ClientRow } from "@/lib/queries";
 import { TagBadge } from "@/components/TagBadge";
 import { brl } from "@/lib/mock-data";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
@@ -64,8 +64,25 @@ function ClientsList() {
 
   const saveMutation = useMutation({
     mutationFn: async ({ clientData, tagIds }: { clientData: Parameters<typeof upsertClient>[0]; tagIds: string[] }) => {
+      const isNewClient = !clientData.id;
       const { id } = await upsertClient(clientData);
       await setClientTags(id, tagIds);
+
+      // Cliente novo já nasce com um modelo de conversa pronto pra duplicar/editar
+      // por campanha — evita começar do zero toda vez que sobe o primeiro anúncio.
+      if (isNewClient) {
+        await upsertConversationTemplate({
+          clientId: id,
+          name: "Padrão",
+          greeting: [
+            "🚘 Loja especializada em vendas de carros seminovos",
+            "📌 Confiança, qualidade e transparência",
+            "📍 [Endereço da loja]",
+            `📲 ${clientData.name}`,
+          ].join("\n"),
+          pre_message: "Olá, tenho interesse no: [Nome do carro]",
+        });
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["clients-all"] });
