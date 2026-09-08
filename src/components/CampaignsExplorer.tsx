@@ -10,7 +10,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ArrowUp, ArrowDown, SlidersHorizontal, Check, X, Copy, Pencil, Scale, Search } from "lucide-react";
+import { ArrowUp, ArrowDown, ArrowLeftRight, SlidersHorizontal, Check, X, Copy, Pencil, Scale, Search } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchAllAdSets,
@@ -19,6 +19,7 @@ import {
   updateMetaObject,
   duplicateAdSet,
   duplicateAd,
+  duplicateCampaign,
   type MetaCampaign,
   type MetaAdSet,
   type MetaAd,
@@ -271,6 +272,38 @@ export function CampaignsExplorer({
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao duplicar anúncio"),
   });
 
+  const duplicateFlipObjectiveMutation = useMutation({
+    mutationFn: async (row: Row) => {
+      const token = await getMetaToken();
+      if (!token) throw new Error("Token não encontrado");
+      const pid = `flip-${row.id}`;
+      toast.loading("Duplicando com objetivo invertido...", { id: pid });
+      try {
+        const newId = await duplicateCampaign(
+          row.id,
+          adAccountId,
+          `${row.name} — Cópia (objetivo trocado)`,
+          token,
+          (msg) => toast.loading(msg, { id: pid }),
+          whatsappNumber,
+          undefined,
+          undefined,
+          true
+        );
+        toast.dismiss(pid);
+        return newId;
+      } catch (e) {
+        toast.dismiss(pid);
+        throw e;
+      }
+    },
+    onSuccess: () => {
+      toast.success("Campanha duplicada com objetivo invertido (Engajamento ↔ Vendas).");
+      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao duplicar com objetivo invertido", { duration: 10000 }),
+  });
+
   const nameMutation = useMutation({
     mutationFn: async ({ id, name }: { id: string; name: string }) => {
       const token = await getMetaToken();
@@ -447,6 +480,8 @@ export function CampaignsExplorer({
                     clientId={clientId}
                     onDuplicateAdSet={level === "adset" ? () => duplicateAdSetMutation.mutate(row) : undefined}
                     onDuplicateAd={level === "ad" ? () => duplicateAdMutation.mutate(row) : undefined}
+                    onDuplicateFlipObjective={level === "campaign" ? () => duplicateFlipObjectiveMutation.mutate(row) : undefined}
+                    duplicatingFlip={duplicateFlipObjectiveMutation.isPending && duplicateFlipObjectiveMutation.variables?.id === row.id}
                     duplicating={
                       (level === "adset" && duplicateAdSetMutation.isPending && duplicateAdSetMutation.variables?.id === row.id) ||
                       (level === "ad" && duplicateAdMutation.isPending && duplicateAdMutation.variables?.id === row.id)
@@ -623,7 +658,9 @@ function ExplorerRow({
   clientId,
   onDuplicateAdSet,
   onDuplicateAd,
+  onDuplicateFlipObjective,
   duplicating,
+  duplicatingFlip,
 }: {
   row: Row;
   level: ExplorerLevel;
@@ -638,7 +675,9 @@ function ExplorerRow({
   clientId: string;
   onDuplicateAdSet?: () => void;
   onDuplicateAd?: () => void;
+  onDuplicateFlipObjective?: () => void;
   duplicating?: boolean;
+  duplicatingFlip?: boolean;
 }) {
   const [editingBudget, setEditingBudget] = useState(false);
   const [budgetInput, setBudgetInput] = useState(row.daily_budget ?? 0);
@@ -770,11 +809,23 @@ function ExplorerRow({
       ))}
       <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
         {level === "campaign" ? (
-          <Button asChild size="icon" variant="ghost" className="h-7 w-7" title="Duplicar campanha">
-            <Link to="/campaigns/new" search={{ client: clientId, duplicateFrom: row.id, duplicateFromName: row.name }}>
-              <Copy className="h-3.5 w-3.5" />
-            </Link>
-          </Button>
+          <div className="flex items-center justify-end gap-1">
+            <Button asChild size="icon" variant="ghost" className="h-7 w-7" title="Duplicar campanha">
+              <Link to="/campaigns/new" search={{ client: clientId, duplicateFrom: row.id, duplicateFromName: row.name }}>
+                <Copy className="h-3.5 w-3.5" />
+              </Link>
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              title="Duplicar trocando o objetivo (Engajamento ↔ Vendas)"
+              disabled={duplicatingFlip}
+              onClick={onDuplicateFlipObjective}
+            >
+              <ArrowLeftRight className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         ) : (
           <Button
             size="icon"

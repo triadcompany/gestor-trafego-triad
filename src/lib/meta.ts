@@ -1799,7 +1799,8 @@ export async function duplicateCampaign(
   onProgress?: (msg: string) => void,
   whatsappNumber?: string, // número WhatsApp Business do cliente, injeta no promoted_object se estiver faltando
   adSetName?: string, // só aplicado quando a campanha original tem exatamente 1 conjunto
-  adName?: string // só aplicado quando esse único conjunto tem exatamente 1 anúncio
+  adName?: string, // só aplicado quando esse único conjunto tem exatamente 1 anúncio
+  flipObjective?: boolean // troca Engajamento↔Vendas na campanha nova, mantendo o resto idêntico
 ): Promise<string> {
   onProgress?.("Buscando estrutura da campanha...");
 
@@ -1856,11 +1857,22 @@ export async function duplicateCampaign(
     onProgress?.(`Esta campanha tem ${adSets.length} conjuntos — os nomes originais serão mantidos.`);
   }
 
+  let objective = srcJson.objective ?? "OUTCOME_ENGAGEMENT";
+  if (flipObjective) {
+    if (objective === "OUTCOME_ENGAGEMENT") objective = "OUTCOME_SALES";
+    else if (objective === "OUTCOME_SALES") objective = "OUTCOME_ENGAGEMENT";
+    else {
+      throw new Error(
+        `Não é possível inverter o objetivo "${objective}" — esse recurso só troca entre Engajamento e Vendas.`
+      );
+    }
+  }
+
   // 4. Cria a nova campanha com daily_budget (CBO) — conjuntos não precisam de orçamento próprio
   // Campanha CBO sem bid_strategy explícita — ad sets herdam budget sem exigir is_adset_budget_sharing_enabled
   const newCampaign = (await postMeta(`${adAccountId}/campaigns`, {
     name: newName,
-    objective: srcJson.objective ?? "OUTCOME_ENGAGEMENT",
+    objective,
     status: "PAUSED",
     special_ad_categories: "[]",
     daily_budget: String(campaignDailyBudget),
