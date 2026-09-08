@@ -31,6 +31,7 @@ import {
   Video,
   AlertCircle,
   MapPin,
+  Plus,
 } from "lucide-react";
 // Import dinâmico (nunca estático) — o Leaflet acessa `window` na hora de
 // carregar o módulo e derruba a renderização no servidor (SSR) se for
@@ -84,6 +85,161 @@ const IG_POSITIONS = [
   { value: "reels", label: "Reels" },
 ];
 
+// ── Criar em massa: 1 campanha por carro, mesma config. compartilhada ────────
+
+interface BulkCar {
+  id: string;
+  name: string;
+  mediaType: "image" | "video";
+  mediaFile: File | null;
+  mediaPreview: string | null;
+  primaryText: string;
+  headline: string;
+  description: string;
+}
+
+function makeEmptyBulkCar(): BulkCar {
+  return {
+    id: crypto.randomUUID(),
+    name: "",
+    mediaType: "image",
+    mediaFile: null,
+    mediaPreview: null,
+    primaryText: "",
+    headline: "",
+    description: "",
+  };
+}
+
+interface BulkSharedConfig {
+  adAccountId: string;
+  pageId: string;
+  whatsappNumber: string;
+  campaignType: "engagement" | "sales";
+  budget: number;
+  placementMode: "advantage_plus" | "manual";
+  platforms: { facebook: boolean; instagram: boolean };
+  fbPositions: string[];
+  igPositions: string[];
+  bidAmount: number | "";
+  instagramActorId?: string;
+  ageMin: number;
+  ageMax: number;
+  genderMode: "all" | "male" | "female";
+  locations: SelectedLocation[];
+  interests: MetaInterest[];
+  whatsappGreeting: string;
+  whatsappMessage: string;
+}
+
+async function waitForN8nJob(jobId: string, onProgress?: (msg: string) => void): Promise<string> {
+  const start = Date.now();
+  const timeoutMs = 5 * 60 * 1000;
+  while (Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 4000));
+    const status = await pollN8nJob(jobId);
+    if (status?.status === "done") {
+      if (!status.campaignId) throw new Error("n8n concluiu mas não retornou o ID da campanha.");
+      return status.campaignId;
+    }
+    if (status?.status === "error") throw new Error(status.errorMessage || "Erro desconhecido no n8n.");
+    onProgress?.("Aguardando o n8n processar...");
+  }
+  throw new Error("O n8n não respondeu a tempo (5min).");
+}
+
+/**
+ * Cria 1 campanha completa (campanha + conjunto + criativo + anúncio) pra 1 carro
+ * do modo "Criar em massa". Duplica de propósito a lógica de criação de
+ * campanhas.new.tsx (createMutation) em vez de compartilhar — mantém o fluxo de
+ * criação única (já testado) intocado, evitando qualquer regressão nele.
+ */
+async function createOneBulkCampaign(
+  shared: BulkSharedConfig,
+  car: BulkCar,
+  token: string,
+  onProgress?: (msg: string) => void
+): Promise<string> {
+  if (!car.mediaFile) throw new Error("Selecione uma imagem ou vídeo.");
+  if (!car.name.trim()) throw new Error("Digite o nome do carro.");
+
+  let finalImageHash: string | undefined;
+  let finalVideoId: string | undefined;
+  let finalThumbnailUrl: string | undefined;
+
+  if (car.mediaType === "image") {
+    onProgress?.("Enviando imagem...");
+    finalImageHash = await uploadAdImage(shared.adAccountId, car.mediaFile, token);
+  } else {
+    onProgress?.("Enviando vídeo...");
+    finalVideoId = await uploadAdVideo(shared.adAccountId, car.mediaFile, token, onProgress);
+    finalThumbnailUrl = (await waitForVideoReady(finalVideoId, token, onProgress)) ?? undefined;
+  }
+
+  const tag = shared.campaignType === "sales" ? "VENDAS-WHATS" : "ENG-MSG";
+  const campaignName = `[${tag}] [${car.name.trim().toUpperCase()}]`;
+  const adSetName = "CA1 - ABERTO";
+  const adName = `AD1 - ${car.mediaType === "video" ? "VIDEO" : "ARTE"}`;
+  const normalizedPhone = (shared.whatsappNumber || "").replace(/\D/g, "");
+
+  const campaignOptions = {
+    name: campaignName,
+    adSetName,
+    adAccountId: shared.adAccountId,
+    pageId: shared.pageId,
+    whatsappNumber: shared.whatsappNumber || undefined,
+    dailyBudget: shared.budget,
+    placementMode: shared.placementMode,
+    placements: shared.platforms,
+    fbPositions: shared.platforms.facebook ? shared.fbPositions : [],
+    igPositions: shared.platforms.instagram ? shared.igPositions : [],
+    bidAmount: shared.placementMode === "manual" && shared.bidAmount !== "" ? shared.bidAmount : undefined,
+    campaignType: shared.campaignType,
+    instagramActorId: shared.instagramActorId,
+    targeting: {
+      ageMin: shared.ageMin,
+      ageMax: shared.ageMax,
+      genderMode: shared.genderMode,
+      locations: shared.locations,
+      interests: shared.interests,
+    },
+  };
+  const creativeOptions = {
+    name: campaignName,
+    pageId: shared.pageId,
+    whatsappNumber: normalizedPhone,
+    whatsappMessage: shared.whatsappMessage || undefined,
+    whatsappGreeting: shared.whatsappGreeting || undefined,
+    primaryText: car.primaryText,
+    headline: car.headline,
+    description: car.description || undefined,
+    mediaType: car.mediaType,
+    imageHash: finalImageHash,
+    videoId: finalVideoId,
+    thumbnailUrl: finalThumbnailUrl,
+  };
+
+  const n8nUrl = await getN8nWebhookUrl();
+  if (n8nUrl) {
+    onProgress?.("Enviando para o n8n...");
+    const callbackId = crypto.randomUUID();
+    await triggerN8nCampaign({ callbackId, token, campaignOptions, creativeOptions, adName });
+    onProgress?.("Aguardando o n8n criar a campanha...");
+    return waitForN8nJob(callbackId, onProgress);
+  }
+
+  onProgress?.("Criando campanha e conjunto...");
+  const { campaignId, adSetId } = await createCampaignFromScratch({ ...campaignOptions, token });
+
+  onProgress?.("Criando criativo...");
+  const creativeId = await createAdCreative(shared.adAccountId, creativeOptions, token);
+
+  onProgress?.("Criando anúncio...");
+  await createAd(shared.adAccountId, { name: adName, adSetId, creativeId }, token);
+
+  return campaignId;
+}
+
 interface SearchParams {
   client?: string;
   duplicateFrom?: string;
@@ -111,7 +267,7 @@ function NewCampaign() {
 
   // ── Step 1: Campaign ────────────────────────────────────────
   const [clientId, setClientId] = useState(search.client ?? "");
-  const [mode, setMode] = useState<"duplicate" | "scratch">(search.duplicateFrom ? "duplicate" : "scratch");
+  const [mode, setMode] = useState<"duplicate" | "scratch" | "bulk">(search.duplicateFrom ? "duplicate" : "scratch");
   const [baseCampaignId, setBaseCampaignId] = useState(search.duplicateFrom ?? "");
   const [campaignName, setCampaignName] = useState(
     search.duplicateFromName ? `${search.duplicateFromName} — Cópia` : ""
@@ -166,6 +322,90 @@ function NewCampaign() {
   // ── Result ──────────────────────────────────────────────────
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+
+  // ── Criar em massa ────────────────────────────────────────────
+  const [cars, setCars] = useState<BulkCar[]>([makeEmptyBulkCar()]);
+  const [bulkRunning, setBulkRunning] = useState(false);
+  const [bulkResults, setBulkResults] = useState<
+    Record<string, { status: "idle" | "running" | "done" | "error"; message?: string; campaignId?: string }>
+  >({});
+
+  const updateCar = (id: string, patch: Partial<BulkCar>) => {
+    setCars((prev) => prev.map((c) => (c.id === id ? { ...c, ...patch } : c)));
+  };
+  const addCar = () => setCars((prev) => [...prev, makeEmptyBulkCar()]);
+  const removeCar = (id: string) => setCars((prev) => (prev.length > 1 ? prev.filter((c) => c.id !== id) : prev));
+
+  const handleBulkFileSelect = useCallback((carId: string, mediaType: "image" | "video", file: File) => {
+    if (mediaType === "image") {
+      const img = new window.Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        if (img.width < 500 || img.height < 500) {
+          toast.error(`Imagem muito pequena: ${img.width}×${img.height}px. Meta exige mínimo 500×500px.`, { duration: 6000 });
+          URL.revokeObjectURL(url);
+          return;
+        }
+        updateCar(carId, { mediaFile: file, mediaPreview: url });
+      };
+      img.src = url;
+    } else {
+      const url = URL.createObjectURL(file);
+      updateCar(carId, { mediaFile: file, mediaPreview: url });
+    }
+  }, []);
+
+  const bulkValid =
+    !!clientId &&
+    budget > 0 &&
+    !!pageId &&
+    cars.every((c) => !!c.mediaFile && !!c.name.trim() && !!c.primaryText && !!c.headline);
+
+  const runBulk = async () => {
+    if (!selectedClient) { toast.error("Selecione um cliente."); return; }
+    const token = await getMetaToken();
+    if (!token) { toast.error("Token Meta não encontrado. Acesse Configurações."); return; }
+
+    setBulkRunning(true);
+    setBulkResults(Object.fromEntries(cars.map((c) => [c.id, { status: "idle" as const }])));
+
+    const shared: BulkSharedConfig = {
+      adAccountId: selectedClient.meta_ad_account_id,
+      pageId,
+      whatsappNumber,
+      campaignType,
+      budget,
+      placementMode,
+      platforms,
+      fbPositions,
+      igPositions,
+      bidAmount,
+      instagramActorId,
+      ageMin,
+      ageMax,
+      genderMode,
+      locations,
+      interests,
+      whatsappGreeting,
+      whatsappMessage,
+    };
+
+    for (const car of cars) {
+      setBulkResults((prev) => ({ ...prev, [car.id]: { status: "running", message: "Iniciando..." } }));
+      try {
+        const campaignId = await createOneBulkCampaign(shared, car, token, (msg) => {
+          setBulkResults((prev) => ({ ...prev, [car.id]: { status: "running", message: msg } }));
+        });
+        setBulkResults((prev) => ({ ...prev, [car.id]: { status: "done", campaignId } }));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Erro desconhecido";
+        setBulkResults((prev) => ({ ...prev, [car.id]: { status: "error", message: msg } }));
+      }
+    }
+
+    setBulkRunning(false);
+    queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+  };
 
   // ── Data ────────────────────────────────────────────────────
   const queryClient = useQueryClient();
@@ -555,6 +795,7 @@ function NewCampaign() {
   // ── Validation ───────────────────────────────────────────────
   const step1ValidDuplicate = !!clientId && !!campaignName && !!baseCampaignId;
   const step1ValidScratch = !!clientId && !!campaignName && budget > 0;
+  const step1ValidBulk = !!clientId && budget > 0 && !!pageId;
   const hasMedia = !!mediaFile || !!(existingVideoId || existingImageHash);
   const step3Valid = hasMedia && !!primaryText && !!headline;
 
@@ -642,7 +883,7 @@ function NewCampaign() {
         </p>
 
         {/* Step indicator — scratch mode only */}
-        {mode === "scratch" && <div className="flex items-center gap-2 mb-8">
+        {(mode === "scratch" || mode === "bulk") && <div className="flex items-center gap-2 mb-8">
           {([1, 2, 3] as const).map((n) => (
             <div key={n} className="flex items-center gap-2">
               <button
@@ -663,7 +904,7 @@ function NewCampaign() {
                 ].join(" ")}>
                   {step > n ? <Check className="h-3 w-3" /> : n}
                 </span>
-                {n === 1 ? "Campanha" : n === 2 ? "Conjunto" : "Anúncio"}
+                {n === 1 ? "Campanha" : n === 2 ? "Conjunto" : mode === "bulk" ? "Carros" : "Anúncio"}
               </button>
               {n < 3 && <div className="h-px w-6 bg-border" />}
             </div>
@@ -681,7 +922,7 @@ function NewCampaign() {
                 <RadioGroup
                   value={mode}
                   onValueChange={(v) => {
-                    setMode(v as "duplicate" | "scratch");
+                    setMode(v as "duplicate" | "scratch" | "bulk");
                     setBaseCampaignId("");
                     setCampaignName("");
                   }}
@@ -694,6 +935,10 @@ function NewCampaign() {
                   <div className="flex items-center gap-2">
                     <RadioGroupItem value="duplicate" id="dup" />
                     <Label htmlFor="dup" className="font-normal cursor-pointer">Duplicar existente</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="bulk" id="bulk" />
+                    <Label htmlFor="bulk" className="font-normal cursor-pointer">Criar em massa</Label>
                   </div>
                 </RadioGroup>
               </div>
@@ -756,40 +1001,50 @@ function NewCampaign() {
                 )}
               </div>
 
-              <div className="space-y-2">
-                <Label>Nome da campanha</Label>
-                <Input
-                  value={campaignName}
-                  onChange={(e) => setCampaignName(e.target.value)}
-                  placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: [ENG-MSG] [CIVIC 2024]"}
-                />
-              </div>
+              {mode === "bulk" && (
+                <p className="text-xs text-muted-foreground bg-muted/40 rounded-lg p-3">
+                  No modo em massa, o nome da campanha/conjunto/anúncio é gerado automaticamente a partir do nome de cada carro, no passo 3.
+                </p>
+              )}
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {mode !== "bulk" && (
                 <div className="space-y-2">
-                  <Label>Nome do conjunto de anúncios</Label>
+                  <Label>Nome da campanha</Label>
                   <Input
-                    value={adSetName}
-                    onChange={(e) => setAdSetName(e.target.value)}
-                    placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: CA1 - ABERTO"}
+                    value={campaignName}
+                    onChange={(e) => setCampaignName(e.target.value)}
+                    placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: [ENG-MSG] [CIVIC 2024]"}
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label>Nome do anúncio</Label>
-                  <Input
-                    value={adName}
-                    onChange={(e) => setAdName(e.target.value)}
-                    placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: Anúncio 1"}
-                  />
+              )}
+
+              {mode !== "bulk" && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Nome do conjunto de anúncios</Label>
+                    <Input
+                      value={adSetName}
+                      onChange={(e) => setAdSetName(e.target.value)}
+                      placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: CA1 - ABERTO"}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Nome do anúncio</Label>
+                    <Input
+                      value={adName}
+                      onChange={(e) => setAdName(e.target.value)}
+                      placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: Anúncio 1"}
+                    />
+                  </div>
                 </div>
-              </div>
+              )}
               {mode === "duplicate" && (
                 <p className="text-xs text-muted-foreground -mt-2">
                   Se a campanha base tiver mais de um conjunto, esses nomes são ignorados e os nomes originais são mantidos.
                 </p>
               )}
 
-              {mode === "scratch" && (
+              {(mode === "scratch" || mode === "bulk") && (
                 <>
                   <div className="space-y-2">
                     <Label>Tipo</Label>
@@ -912,7 +1167,7 @@ function NewCampaign() {
                     : "Duplicar via API"}
                 </Button>
               ) : (
-                <Button onClick={() => setStep(2)} disabled={!step1ValidScratch}>
+                <Button onClick={() => setStep(2)} disabled={mode === "bulk" ? !step1ValidBulk : !step1ValidScratch}>
                   Avançar →
                 </Button>
               )}
@@ -1058,7 +1313,7 @@ function NewCampaign() {
         )}
 
         {/* ── STEP 3: Ad creative ── */}
-        {step === 3 && (
+        {step === 3 && mode !== "bulk" && (
           <div className="space-y-5">
             <Card className="p-5 space-y-4">
               <SectionTitle>Mídia</SectionTitle>
@@ -1255,6 +1510,185 @@ function NewCampaign() {
                 {(createMutation.isPending || pendingJobId) ? (
                   <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Criando...</>
                 ) : "Criar Campanha"}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* ── STEP 3 (massa): Configuração da conversa + lista de carros ── */}
+        {step === 3 && mode === "bulk" && (
+          <div className="space-y-5">
+            <Card className="p-5 space-y-4">
+              <SectionTitle>Configuração da conversa</SectionTitle>
+              <p className="text-xs text-muted-foreground -mt-2">Compartilhada por todos os carros do lote.</p>
+
+              <div className="space-y-2">
+                <Label>Mensagem de saudação <span className="text-muted-foreground font-normal text-xs ml-1">opcional</span></Label>
+                <Textarea
+                  value={whatsappGreeting}
+                  onChange={(e) => setWhatsappGreeting(e.target.value)}
+                  placeholder="Mensagem enviada automaticamente ao abrir a conversa..."
+                  className="min-h-[70px] resize-none"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Mensagem pré-pronta <span className="text-muted-foreground font-normal text-xs ml-1">opcional</span></Label>
+                <Textarea
+                  value={whatsappMessage}
+                  onChange={(e) => setWhatsappMessage(e.target.value)}
+                  placeholder="Texto que já vem preenchido no campo de mensagem do WhatsApp..."
+                  className="min-h-[70px] resize-none"
+                />
+              </div>
+
+              <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/40 rounded-lg p-3">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+                <span>
+                  Abrirá o WhatsApp:{" "}
+                  <strong className="text-foreground">{whatsappNumber || "não configurado"}</strong>
+                </span>
+              </div>
+            </Card>
+
+            <div className="space-y-3">
+              {cars.map((car, i) => {
+                const result = bulkResults[car.id];
+                return (
+                  <Card key={car.id} className="p-5 space-y-4">
+                    <div className="flex items-center justify-between">
+                      <SectionTitle>Carro {i + 1}</SectionTitle>
+                      <div className="flex items-center gap-2">
+                        {result?.status === "running" && (
+                          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            {result.message}
+                          </span>
+                        )}
+                        {result?.status === "done" && (
+                          <span className="flex items-center gap-1.5 text-xs text-status-on-target">
+                            <Check className="h-3.5 w-3.5" />
+                            Criada
+                          </span>
+                        )}
+                        {result?.status === "error" && (
+                          <span className="flex items-center gap-1.5 text-xs text-status-critical" title={result.message}>
+                            <AlertCircle className="h-3.5 w-3.5" />
+                            Falhou
+                          </span>
+                        )}
+                        {cars.length > 1 && !bulkRunning && (
+                          <button onClick={() => removeCar(car.id)} className="text-muted-foreground hover:text-foreground">
+                            <X className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {result?.status === "error" && (
+                      <p className="text-xs text-status-critical bg-status-critical/10 rounded-md p-2.5">{result.message}</p>
+                    )}
+                    {result?.status === "done" && result.campaignId && (
+                      <a
+                        href={`https://adsmanager.facebook.com/adsmanager/manage/campaigns?selected_campaign_ids=${result.campaignId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Abrir no Meta
+                      </a>
+                    )}
+
+                    <div className="space-y-2">
+                      <Label>Nome do carro</Label>
+                      <Input
+                        value={car.name}
+                        onChange={(e) => updateCar(car.id, { name: e.target.value })}
+                        placeholder="Ex: Onix 2022"
+                        disabled={bulkRunning}
+                      />
+                    </div>
+
+                    <div className="flex gap-2">
+                      {(["image", "video"] as const).map((t) => (
+                        <button
+                          key={t}
+                          type="button"
+                          disabled={bulkRunning}
+                          onClick={() => updateCar(car.id, { mediaType: t, mediaFile: null, mediaPreview: null })}
+                          className={[
+                            "flex-1 flex items-center justify-center gap-2 py-2 rounded-lg border text-sm font-medium transition-colors",
+                            car.mediaType === t
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border text-muted-foreground hover:border-border/80",
+                          ].join(" ")}
+                        >
+                          {t === "image" ? <Image className="h-4 w-4" /> : <Video className="h-4 w-4" />}
+                          {t === "image" ? "Imagem" : "Vídeo"}
+                        </button>
+                      ))}
+                    </div>
+
+                    <UploadZone
+                      mediaType={car.mediaType}
+                      file={car.mediaFile}
+                      preview={car.mediaPreview}
+                      onFile={(f) => handleBulkFileSelect(car.id, car.mediaType, f)}
+                      onClear={() => updateCar(car.id, { mediaFile: null, mediaPreview: null })}
+                    />
+
+                    <div className="space-y-2">
+                      <Label>Texto principal</Label>
+                      <Textarea
+                        value={car.primaryText}
+                        onChange={(e) => updateCar(car.id, { primaryText: e.target.value })}
+                        placeholder="Texto que aparece acima do criativo..."
+                        className="min-h-[90px] resize-none"
+                        disabled={bulkRunning}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Título</Label>
+                      <Input
+                        value={car.headline}
+                        onChange={(e) => updateCar(car.id, { headline: e.target.value })}
+                        placeholder="Ex: Chevrolet Onix 2022 — R$ 74.900"
+                        disabled={bulkRunning}
+                      />
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label>Descrição <span className="text-muted-foreground font-normal text-xs ml-1">opcional</span></Label>
+                      <Input
+                        value={car.description}
+                        onChange={(e) => updateCar(car.id, { description: e.target.value })}
+                        placeholder="Ex: Consulte condições de financiamento"
+                        disabled={bulkRunning}
+                      />
+                    </div>
+                  </Card>
+                );
+              })}
+            </div>
+
+            <Button variant="outline" onClick={addCar} disabled={bulkRunning} className="w-full gap-2">
+              <Plus className="h-4 w-4" />
+              Adicionar carro
+            </Button>
+
+            {Object.keys(bulkResults).length > 0 && !bulkRunning && (
+              <div className="rounded-lg border border-border p-3 text-sm">
+                {Object.values(bulkResults).filter((r) => r.status === "done").length} de {cars.length} campanhas criadas com sucesso.
+              </div>
+            )}
+
+            <div className="flex justify-between gap-3">
+              <Button variant="outline" onClick={() => setStep(2)} disabled={bulkRunning}>← Voltar</Button>
+              <Button onClick={runBulk} disabled={!bulkValid || bulkRunning} className="px-6">
+                {bulkRunning ? (
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Criando campanhas...</>
+                ) : `Criar ${cars.length} campanha${cars.length > 1 ? "s" : ""}`}
               </Button>
             </div>
           </div>
