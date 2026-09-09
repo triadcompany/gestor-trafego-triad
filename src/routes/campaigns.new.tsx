@@ -274,12 +274,10 @@ function NewCampaign() {
   const [campaignName, setCampaignName] = useState(
     search.duplicateFromName ? `${search.duplicateFromName} — Cópia` : ""
   );
-  const [adSetName, setAdSetName] = useState(
-    search.duplicateFromName ? `${search.duplicateFromName} — Cópia` : ""
-  );
-  const [adName, setAdName] = useState(
-    search.duplicateFromName ? `${search.duplicateFromName} — Cópia` : ""
-  );
+  // Padrão de nomenclatura fixo (igual ao modo em massa) — tanto pra criar do
+  // zero quanto pra duplicar. O usuário ainda pode editar se quiser.
+  const [adSetName, setAdSetName] = useState("CA1 - ABERTO");
+  const [adName, setAdName] = useState("AD1 - ARTE");
   const [campaignType, setCampaignType] = useState<"engagement" | "sales">("engagement");
   const [budget, setBudget] = useState(50);
   const [pageId, setPageId] = useState("");
@@ -300,6 +298,17 @@ function NewCampaign() {
   // ── Step 3: Ad creative ─────────────────────────────────────
   const [mediaType, setMediaType] = useState<"image" | "video">("image");
   const [mediaFile, setMediaFile] = useState<File | null>(null);
+
+  // Acompanha o padrão fixo (AD1 - ARTE / AD1 - VIDEO) conforme o tipo de mídia
+  // muda — só sobrescreve se o campo ainda estiver num dos dois valores padrão,
+  // pra não apagar um nome customizado pelo usuário.
+  useEffect(() => {
+    setAdName((current) =>
+      current === "AD1 - ARTE" || current === "AD1 - VIDEO"
+        ? `AD1 - ${mediaType === "video" ? "VIDEO" : "ARTE"}`
+        : current
+    );
+  }, [mediaType]);
   const [mediaPreview, setMediaPreview] = useState<string | null>(null);
   const [primaryText, setPrimaryText] = useState("");
   const [headline, setHeadline] = useState("");
@@ -604,8 +613,8 @@ function NewCampaign() {
     const campaign = clientCampaigns.find((c) => c.id === id);
     if (campaign) {
       setCampaignName(`${campaign.name} — Cópia`);
-      setAdSetName(`${campaign.name} — Cópia`);
-      setAdName(`${campaign.name} — Cópia`);
+      // Nome do conjunto/anúncio seguem o padrão fixo (CA1 - ABERTO / AD1 - ARTE|VIDEO)
+      // já pré-preenchido — não sobrescreve aqui pra não perder edição manual do usuário.
     }
   };
 
@@ -842,8 +851,8 @@ function NewCampaign() {
             <Button variant="ghost" onClick={() => {
               setCreatedId(null);
               setCampaignName("");
-              setAdSetName("");
-              setAdName("");
+              setAdSetName("CA1 - ABERTO");
+              setAdName(`AD1 - ${mediaType === "video" ? "VIDEO" : "ARTE"}`);
               setBaseCampaignId("");
               setMediaFile(null);
               setMediaPreview(null);
@@ -1025,7 +1034,7 @@ function NewCampaign() {
                     <Input
                       value={adSetName}
                       onChange={(e) => setAdSetName(e.target.value)}
-                      placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: CA1 - ABERTO"}
+                      placeholder="Ex: CA1 - ABERTO"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1033,7 +1042,7 @@ function NewCampaign() {
                     <Input
                       value={adName}
                       onChange={(e) => setAdName(e.target.value)}
-                      placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: Anúncio 1"}
+                      placeholder="Ex: AD1 - ARTE"
                     />
                   </div>
                 </div>
