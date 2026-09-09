@@ -84,7 +84,7 @@ export function CampaignSheet({
         <SheetHeader className="px-5 pt-5 pb-4 border-b border-border shrink-0">
           <div className="flex items-start justify-between gap-3 pr-6">
             <div className="min-w-0 flex-1">
-              <SheetTitleEditor campaign={campaign} onNameChange={invalidateCampaigns} />
+              <SheetTitleEditor campaign={campaign} clientId={clientId} onNameChange={invalidateCampaigns} />
               <p className="text-xs text-muted-foreground mt-0.5">{campaign.id}</p>
             </div>
             <a href={metaUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-0.5">
@@ -99,6 +99,7 @@ export function CampaignSheet({
         <div className="flex-1 overflow-y-auto">
           <CampaignSection
             campaign={campaign}
+            clientId={clientId}
             cplMax={cplMax}
             onStatusChange={invalidateCampaigns}
             onNameChange={invalidateCampaigns}
@@ -123,9 +124,11 @@ export function CampaignSheet({
 
 function SheetTitleEditor({
   campaign,
+  clientId,
   onNameChange,
 }: {
   campaign: MetaCampaign;
+  clientId: string;
   onNameChange: () => void;
 }) {
   const [editingName, setEditingName] = useState(false);
@@ -133,7 +136,7 @@ function SheetTitleEditor({
 
   const nameMutation = useMutation({
     mutationFn: async () => {
-      const token = await getMetaToken();
+      const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token não encontrado");
       await updateMetaObject(campaign.id, { name: nameInput.trim() }, token);
     },
@@ -185,11 +188,13 @@ function SheetTitleEditor({
 
 function CampaignSection({
   campaign,
+  clientId,
   cplMax,
   onStatusChange,
   onNameChange,
 }: {
   campaign: MetaCampaign;
+  clientId: string;
   cplMax: number;
   onStatusChange: () => void;
   onNameChange: () => void;
@@ -200,7 +205,7 @@ function CampaignSection({
 
   const statusMutation = useMutation({
     mutationFn: async () => {
-      const token = await getMetaToken();
+      const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token não encontrado");
       await updateMetaObject(campaign.id, { status: isActive ? "PAUSED" : "ACTIVE" }, token);
     },
@@ -210,7 +215,7 @@ function CampaignSection({
 
   const nameMutation = useMutation({
     mutationFn: async () => {
-      const token = await getMetaToken();
+      const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token não encontrado");
       await updateMetaObject(campaign.id, { name: nameInput.trim() }, token);
     },
@@ -296,7 +301,7 @@ function AdSetsSection({
   const { data: adSets, isLoading } = useQuery({
     queryKey: ["adsets", campaignId],
     queryFn: async () => {
-      const token = await getMetaToken();
+      const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token não encontrado");
       return fetchAdSets(campaignId, token);
     },
@@ -359,14 +364,14 @@ function AdSetRow({
   useEffect(() => {
     if (startExpanded) {
       setExpanded(true);
-      getMetaToken().then(setToken);
+      getMetaToken(clientId).then(setToken);
     }
   }, [startExpanded]);
 
   // Fetch token once when expanding
   const handleExpand = async () => {
     if (!expanded && !token) {
-      const t = await getMetaToken();
+      const t = await getMetaToken(clientId);
       setToken(t);
     }
     setExpanded(!expanded);
@@ -375,7 +380,7 @@ function AdSetRow({
   const { data: ads, isLoading: adsLoading } = useQuery({
     queryKey: ["ads", adSet.id],
     queryFn: async () => {
-      const t = token ?? await getMetaToken();
+      const t = token ?? await getMetaToken(clientId);
       if (!t) throw new Error("Token não encontrado");
       return fetchAds(adSet.id, t);
     },
@@ -384,7 +389,7 @@ function AdSetRow({
 
   const statusMutation = useMutation({
     mutationFn: async () => {
-      const t = await getMetaToken();
+      const t = await getMetaToken(clientId);
       if (!t) throw new Error("Token não encontrado");
       await updateMetaObject(adSet.id, { status: isActive ? "PAUSED" : "ACTIVE" }, t);
     },
@@ -394,7 +399,7 @@ function AdSetRow({
 
   const nameMutation = useMutation({
     mutationFn: async () => {
-      const t = await getMetaToken();
+      const t = await getMetaToken(clientId);
       if (!t) throw new Error("Token não encontrado");
       await updateMetaObject(adSet.id, { name: nameInput.trim() }, t);
     },
@@ -404,7 +409,7 @@ function AdSetRow({
 
   const budgetMutation = useMutation({
     mutationFn: async () => {
-      const t = await getMetaToken();
+      const t = await getMetaToken(clientId);
       if (!t) throw new Error("Token não encontrado");
       await updateMetaObject(adSet.id, { daily_budget: String(Math.round(budgetInput * 100)) }, t);
     },
@@ -548,7 +553,7 @@ function AdRow({
 
   const statusMutation = useMutation({
     mutationFn: async () => {
-      const t = await getMetaToken();
+      const t = await getMetaToken(clientId);
       if (!t) throw new Error("Token não encontrado");
       await updateMetaObject(ad.id, { status: isActive ? "PAUSED" : "ACTIVE" }, t);
     },

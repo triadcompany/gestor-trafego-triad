@@ -172,7 +172,7 @@ function EditCampaign() {
   const { data: prefill, isLoading: prefillLoading } = useQuery({
     queryKey: ["campaign-prefill-edit", campaignId],
     queryFn: async () => {
-      const token = await getMetaToken();
+      const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token Meta não encontrado.");
       return fetchBaseCampaignPrefill(campaignId, token);
     },
@@ -289,7 +289,7 @@ function EditCampaign() {
   // Step 1: save campaign name + budget
   const saveCampaignMutation = useMutation({
     mutationFn: async () => {
-      const token = await getMetaToken();
+      const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token Meta não encontrado.");
       await updateMetaObject(campaignId, {
         name: campaignName,
@@ -307,7 +307,7 @@ function EditCampaign() {
   const saveTargetingMutation = useMutation({
     mutationFn: async () => {
       if (!adsetId) throw new Error("ID do conjunto não encontrado.");
-      const token = await getMetaToken();
+      const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token Meta não encontrado.");
 
       const geoLocations: Record<string, unknown> = {};
@@ -355,7 +355,7 @@ function EditCampaign() {
   const saveCreativeMutation = useMutation({
     mutationFn: async () => {
       if (!adId) throw new Error("ID do anúncio não encontrado.");
-      const token = await getMetaToken();
+      const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token Meta não encontrado.");
 
       const conversationOverrides = whatsappGreeting

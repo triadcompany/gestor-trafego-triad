@@ -221,7 +221,7 @@ function ClientDetail() {
     queryKey: ["insights", id, datePreset, customSince, customUntil],
     queryFn: async () => {
       if (!client) return [];
-      const token = await getMetaToken();
+      const token = await getMetaToken(client.id);
       if (!token) throw new Error("Token não encontrado");
       return fetchDailyInsights(client.meta_ad_account_id, token, metaPreset, customRange);
     },
@@ -242,7 +242,7 @@ function ClientDetail() {
     queryKey: ["insights-b", id, datePresetB, customSinceB, customUntilB],
     queryFn: async () => {
       if (!client) return [];
-      const token = await getMetaToken();
+      const token = await getMetaToken(client.id);
       if (!token) throw new Error("Token não encontrado");
       return fetchDailyInsights(client.meta_ad_account_id, token, metaPresetB, customRangeB);
     },
@@ -268,7 +268,7 @@ function ClientDetail() {
     queryKey: ["campaigns", id, datePreset, customSince, customUntil],
     queryFn: async () => {
       if (!client) return [];
-      const token = await getMetaToken();
+      const token = await getMetaToken(client.id);
       if (!token) throw new Error("Token não encontrado");
       return fetchCampaigns(client.meta_ad_account_id, token, metaPreset, customRange);
     },
@@ -279,7 +279,7 @@ function ClientDetail() {
     queryKey: ["campaign-auto-open", openCampaignId],
     queryFn: async () => {
       if (!openCampaignId) return null;
-      const token = await getMetaToken();
+      const token = await getMetaToken(client?.id);
       if (!token) return null;
       return fetchCampaignById(openCampaignId, token);
     },

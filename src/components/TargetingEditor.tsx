@@ -76,7 +76,7 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
     queryFn: () => fetchAdSetTargeting(adSetId, token),
   });
 
-  const { data: whatsappNumber, isLoading: whatsappLoading } = useQuery({
+  const { data: whatsappNumber, isLoading: whatsappLoading, error: whatsappError } = useQuery({
     queryKey: ["adset-whatsapp", adSetId],
     queryFn: () => fetchAdSetWhatsappNumber(adSetId, token),
   });
@@ -184,6 +184,10 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
             <MessageCircle className="h-4 w-4 text-muted-foreground shrink-0" />
             {whatsappNumber ? (
               <span className="font-medium tabular-nums">{formatWhatsappNumber(whatsappNumber)}</span>
+            ) : whatsappError ? (
+              <span className="text-destructive">
+                Erro ao buscar: {whatsappError instanceof Error ? whatsappError.message : "erro desconhecido"}
+              </span>
             ) : (
               <span className="text-muted-foreground">Não configurado</span>
             )}

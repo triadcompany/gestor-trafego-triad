@@ -272,7 +272,7 @@ export async function executeTool(
         const clients = await fetchClients();
         const client = clients.find((c) => c.id === args.client_id);
         if (!client) return { type: "error", message: "Cliente não encontrado." };
-        const token = await getMetaToken();
+        const token = await getMetaToken(client.id);
         if (!token) return { type: "error", message: "Token Meta não configurado." };
         const datePreset = (args.date_preset as string | undefined) ?? "today";
         const campaigns = await fetchCampaigns(
@@ -363,13 +363,13 @@ export async function executeConfirmedAction(
       }
 
       case "create_campaign": {
-        const token = await getMetaToken();
-        if (!token) return { type: "error", message: "Token Meta não configurado." };
         const clients = await fetchClients();
         const client = clients.find((c) => c.id === args.client_id);
         if (!client) return { type: "error", message: "Cliente não encontrado." };
         if (!client.meta_page_id) return { type: "error", message: `Cliente "${client.name}" não tem Page ID configurado. Edite o cadastro do cliente.` };
         if (!client.meta_whatsapp_number) return { type: "error", message: `Cliente "${client.name}" não tem WhatsApp Business configurado. Edite o cadastro do cliente.` };
+        const token = await getMetaToken(client.id);
+        if (!token) return { type: "error", message: "Token Meta não configurado." };
 
         const placements = (args.placements as string | undefined) ?? "ambos";
         const result = await createCampaignFromScratch({

@@ -374,7 +374,7 @@ function NewCampaign() {
 
   const runBulk = async () => {
     if (!selectedClient) { toast.error("Selecione um cliente."); return; }
-    const token = await getMetaToken();
+    const token = await getMetaToken(selectedClient.id);
     if (!token) { toast.error("Token Meta não encontrado. Acesse Configurações."); return; }
 
     setBulkRunning(true);
@@ -482,7 +482,7 @@ function NewCampaign() {
     const load = async () => {
       setPrefillLoading(true);
       try {
-        const token = await getMetaToken();
+        const token = await getMetaToken(selectedClient?.id);
         if (!token || cancelled) return;
         const d = await fetchBaseCampaignPrefill(baseCampaignId, token);
         if (cancelled) return;
@@ -521,7 +521,7 @@ function NewCampaign() {
   const { data: clientCampaigns = [], isLoading: campaignsLoading } = useQuery({
     queryKey: ["campaigns-for-new", clientId],
     queryFn: async () => {
-      const token = await getMetaToken();
+      const token = await getMetaToken(selectedClient?.id);
       if (!token || !selectedClient) return [];
       return fetchCampaigns(selectedClient.meta_ad_account_id, token, "maximum");
     },
@@ -645,7 +645,7 @@ function NewCampaign() {
   // ── Duplicate mutation ───────────────────────────────────────
   const duplicateMutation = useMutation({
     mutationFn: async () => {
-      const token = await getMetaToken();
+      const token = await getMetaToken(selectedClient?.id);
       if (!token) throw new Error("Token Meta não encontrado. Acesse Configurações para renovar.");
       if (!selectedClient) throw new Error("Selecione um cliente.");
       if (!baseCampaignId) throw new Error("Selecione a campanha base.");
@@ -688,7 +688,7 @@ function NewCampaign() {
   // ── Create mutation (scratch mode) ───────────────────────────
   const createMutation = useMutation({
     mutationFn: async () => {
-      const token = await getMetaToken();
+      const token = await getMetaToken(selectedClient?.id);
       if (!token) throw new Error("Token Meta não encontrado. Acesse Configurações.");
       if (!selectedClient) throw new Error("Selecione um cliente.");
       if (!pageId) throw new Error("ID da Página é obrigatório.");
