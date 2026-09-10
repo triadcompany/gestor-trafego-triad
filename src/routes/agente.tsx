@@ -16,6 +16,8 @@ import {
   TrendingUp,
   ListChecks,
   Search,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -23,6 +25,8 @@ import {
   agentExecuteAction,
   agentListConversations,
   agentLoadMessages,
+  agentRenameConversation,
+  agentDeleteConversation,
   type ChatMessage,
   type PendingAction,
 } from "@/lib/agent-chat";
@@ -68,6 +72,7 @@ function AgentePage() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
 
@@ -78,6 +83,32 @@ function AgentePage() {
   });
 
   const activeConversation = conversations.find((c) => c.id === conversationId);
+
+  const renameMutation = useMutation({
+    mutationFn: ({ id, title }: { id: string; title: string }) =>
+      agentRenameConversation({ data: { conversation_id: id, title } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agent-conversations"] }),
+    onError: () => toast.error("Não foi possível renomear a conversa."),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => agentDeleteConversation({ data: { conversation_id: id } }),
+    onSuccess: (_res, id) => {
+      qc.invalidateQueries({ queryKey: ["agent-conversations"] });
+      if (conversationId === id) {
+        setConversationId(null);
+        setMessages([]);
+      }
+    },
+    onError: () => toast.error("Não foi possível excluir a conversa."),
+  });
+
+  const commitRename = (id: string, raw: string) => {
+    const title = raw.trim();
+    setEditingId(null);
+    const current = conversations.find((c) => c.id === id)?.title ?? "";
+    if (title && title !== current) renameMutation.mutate({ id, title });
+  };
 
   const loadMessagesMutation = useMutation({
     mutationFn: (cId: string) => agentLoadMessages({ data: { conversation_id: cId } }),
@@ -235,30 +266,88 @@ function AgentePage() {
               )}
               {conversations.map((c) => {
                 const active = conversationId === c.id;
+                const editing = editingId === c.id;
                 return (
-                  <button
+                  <div
                     key={c.id}
-                    onClick={() => selectConversation(c.id)}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => !editing && selectConversation(c.id)}
+                    onKeyDown={(e) => {
+                      if (!editing && (e.key === "Enter" || e.key === " ")) {
+                        e.preventDefault();
+                        selectConversation(c.id);
+                      }
+                    }}
                     className={cn(
-                      "group relative w-full overflow-hidden rounded-lg px-3 py-2 text-left transition-colors",
+                      "group relative w-full cursor-pointer rounded-lg px-3 py-2 text-left transition-colors",
                       active
                         ? "bg-sidebar-accent text-sidebar-accent-foreground"
                         : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
                     )}
                   >
                     {active && (
-                      <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary" />
+                      <span className="absolute left-0 top-3 h-5 w-0.5 rounded-full bg-primary" />
                     )}
-                    <div className="flex min-w-0 items-center gap-2">
-                      <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
-                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
-                        {c.title ?? "Conversa"}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 pl-[22px] text-[10px] text-muted-foreground/60">
-                      {formatDay(c.last_msg_at)}
-                    </div>
-                  </button>
+
+                    {editing ? (
+                      <input
+                        autoFocus
+                        defaultValue={c.title ?? ""}
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => {
+                          e.stopPropagation();
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            commitRename(c.id, e.currentTarget.value);
+                          } else if (e.key === "Escape") {
+                            setEditingId(null);
+                          }
+                        }}
+                        onBlur={(e) => commitRename(c.id, e.currentTarget.value)}
+                        className="w-full rounded-md border border-primary/50 bg-background px-2 py-1 text-[13px] font-medium text-foreground outline-none"
+                      />
+                    ) : (
+                      <>
+                        <div className="flex min-w-0 items-start gap-2 pr-12">
+                          <MessageSquare className="mt-0.5 h-3.5 w-3.5 shrink-0 opacity-70" />
+                          <span className="min-w-0 flex-1 whitespace-normal break-words text-[13px] font-medium leading-snug">
+                            {c.title ?? "Conversa"}
+                          </span>
+                        </div>
+                        <div className="mt-0.5 pl-[22px] text-[10px] text-muted-foreground/60">
+                          {formatDay(c.last_msg_at)}
+                        </div>
+
+                        <div className="absolute right-1.5 top-1.5 flex gap-0.5 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+                          <button
+                            type="button"
+                            title="Renomear"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setEditingId(c.id);
+                            }}
+                            className="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-foreground"
+                          >
+                            <Pencil className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            title="Excluir"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.confirm(`Excluir a conversa "${c.title ?? "sem título"}"? Isso apaga o histórico dela.`)) {
+                                deleteMutation.mutate(c.id);
+                              }
+                            }}
+                            className="rounded-md p-1 text-muted-foreground hover:bg-background hover:text-destructive"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
                 );
               })}
             </div>

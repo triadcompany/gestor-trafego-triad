@@ -55,6 +55,11 @@ const loadMessagesSchema = z.object({
   conversation_id: z.string(),
 });
 
+const renameConversationSchema = z.object({
+  conversation_id: z.string(),
+  title: z.string().trim().min(1).max(120),
+});
+
 // ── System prompt builder ─────────────────────────────────────────────────────
 
 const COPY_AUTOMOTIVO_PROMPT = `Você é um especialista em copywriting para anúncios de veículos (Meta Ads/Instagram), focado em campanhas que levam o cliente para o WhatsApp.
@@ -667,6 +672,26 @@ export const agentListConversations = createServerFn({ method: "GET" }).handler(
     return rows;
   }
 );
+
+export const agentRenameConversation = createServerFn({ method: "POST" })
+  .inputValidator(renameConversationSchema)
+  .handler(async ({ data }): Promise<void> => {
+    const { organizationId, userId } = await requireOrgContext();
+    await getConversationMode(data.conversation_id, organizationId, userId); // valida posse
+    await db
+      .update(agentConversations)
+      .set({ title: data.title.trim().slice(0, 120) })
+      .where(eq(agentConversations.id, data.conversation_id));
+  });
+
+export const agentDeleteConversation = createServerFn({ method: "POST" })
+  .inputValidator(loadMessagesSchema)
+  .handler(async ({ data }): Promise<void> => {
+    const { organizationId, userId } = await requireOrgContext();
+    await getConversationMode(data.conversation_id, organizationId, userId); // valida posse
+    await db.delete(agentMessages).where(eq(agentMessages.conversationId, data.conversation_id));
+    await db.delete(agentConversations).where(eq(agentConversations.id, data.conversation_id));
+  });
 
 export const agentLoadMessages = createServerFn({ method: "GET" })
   .inputValidator(loadMessagesSchema)
