@@ -888,11 +888,21 @@ export async function fetchAdSetTargeting(adSetId: string, token: string): Promi
 }
 
 export async function fetchAdSetWhatsappNumber(adSetId: string, token: string): Promise<string | null> {
-  const params = new URLSearchParams({ fields: "promoted_object", access_token: token });
+  // Caminho 1: promoted_object.whatsapp_phone_number no próprio conjunto — pede
+  // o subcampo explicitamente (só "promoted_object" às vezes não devolve ele).
+  const params = new URLSearchParams({
+    fields: "promoted_object{whatsapp_phone_number,page_id}",
+    access_token: token,
+  });
   const res = await fetch(`${BASE_URL}/${adSetId}?${params}`);
   const json = await res.json() as { promoted_object?: { whatsapp_phone_number?: string }; error?: { message: string } };
   if (json.error) throw new Error(json.error.message);
-  return json.promoted_object?.whatsapp_phone_number ?? null;
+  const fromPromoted = json.promoted_object?.whatsapp_phone_number;
+  if (fromPromoted) return fromPromoted.startsWith("+") ? fromPromoted : `+${fromPromoted.replace(/\D/g, "")}`;
+
+  // Caminho 2: o número vive no criativo do primeiro anúncio (CTA WHATSAPP_MESSAGE
+  // ou link wa.me/...) — comum em campanhas de engajamento/mensagem.
+  return fetchWhatsappNumberFromAdSet(adSetId, token);
 }
 
 export async function updateAdSetTargeting(adSetId: string, targeting: MetaTargeting, token: string): Promise<void> {
