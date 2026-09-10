@@ -416,10 +416,12 @@ export const messageAutomations = pgTable("message_automations", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   active: boolean("active").notNull().default(true),
-  contentType: text("content_type").notNull(), // 'text' | 'report'
+  contentType: text("content_type").notNull(), // 'text' | 'report' | 'group_summary'
   body: text("body"), // texto livre — só quando contentType='text'
   clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
   reportPeriodDays: integer("report_period_days").notNull().default(7), // 7 | 15 | 30
+  summaryTurno: text("summary_turno"), // 'manha' | 'tarde' — só p/ group_summary
+  summaryClientIds: uuid("summary_client_ids").array().notNull().default([]), // clientes cujos grupos entram no resumo
   recurrenceType: text("recurrence_type").notNull(), // 'weekly' | 'daily' | 'monthly'
   recurrenceDays: integer("recurrence_days").array().notNull().default([]), // weekly: 1..7 (1=segunda); monthly: 1..28
   sendHour: integer("send_hour").notNull(), // 0..23, fuso America/Sao_Paulo

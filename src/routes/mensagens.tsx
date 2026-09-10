@@ -565,6 +565,9 @@ function contentLabel(r: MessageAutomationRow): string {
   if (r.content_type === "report") {
     return `Relatório ${r.report_period_days} dias${r.client_name ? ` · ${r.client_name}` : ""}`;
   }
+  if (r.content_type === "group_summary") {
+    return `Resumo de grupo · ${r.summary_turno === "tarde" ? "tarde" : "manhã"} · ${r.summary_client_ids.length} cliente${r.summary_client_ids.length === 1 ? "" : "s"}`;
+  }
   return "Texto";
 }
 
@@ -664,6 +667,7 @@ function AutomacoesTab() {
               <SelectItem value="all">Todos os tipos</SelectItem>
               <SelectItem value="report">Relatório</SelectItem>
               <SelectItem value="text">Mensagem</SelectItem>
+              <SelectItem value="group_summary">Resumo de grupo</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -772,10 +776,12 @@ function AutomationComposerDialog({
   const qc = useQueryClient();
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [contentType, setContentType] = useState<"text" | "report">("text");
+  const [contentType, setContentType] = useState<"text" | "report" | "group_summary">("text");
   const [body, setBody] = useState("");
   const [clientId, setClientId] = useState<string>("none");
   const [reportPeriodDays, setReportPeriodDays] = useState<number>(7);
+  const [summaryTurno, setSummaryTurno] = useState<"manha" | "tarde">("manha");
+  const [summaryClientIds, setSummaryClientIds] = useState<string[]>([]);
   const [recurrenceType, setRecurrenceType] = useState<"weekly" | "daily" | "monthly">("weekly");
   const [weekdays, setWeekdays] = useState<number[]>([1]);
   const [monthdays, setMonthdays] = useState<number[]>([1]);
@@ -794,6 +800,7 @@ function AutomationComposerDialog({
   const reset = () => {
     setLoadedId(null);
     setName(""); setContentType("text"); setBody(""); setClientId("none"); setReportPeriodDays(7);
+    setSummaryTurno("manha"); setSummaryClientIds([]);
     setRecurrenceType("weekly"); setWeekdays([1]); setMonthdays([1]); setSendHour("10"); setSendMinute("00");
     setInstanceId("auto"); setUseClientGroup(false); setCustomRecipients([]); setMediaFiles([]); setExistingMedia([]);
   };
@@ -805,6 +812,8 @@ function AutomationComposerDialog({
     setBody(editing.body ?? "");
     setClientId(editing.client_id ?? "none");
     setReportPeriodDays(editing.report_period_days);
+    setSummaryTurno(editing.summary_turno ?? "manha");
+    setSummaryClientIds(editing.summary_client_ids ?? []);
     setRecurrenceType(editing.recurrence_type);
     if (editing.recurrence_type === "weekly") setWeekdays(editing.recurrence_days.length ? editing.recurrence_days : [1]);
     if (editing.recurrence_type === "monthly") setMonthdays(editing.recurrence_days.length ? editing.recurrence_days : [1]);
@@ -854,6 +863,8 @@ function AutomationComposerDialog({
         name: name.trim(),
         contentType,
         body: contentType === "text" ? body : null,
+        summaryTurno: contentType === "group_summary" ? summaryTurno : null,
+        summaryClientIds: contentType === "group_summary" ? summaryClientIds : [],
         clientId: clientId === "none" ? null : clientId,
         reportPeriodDays,
         recurrenceType,
@@ -877,7 +888,11 @@ function AutomationComposerDialog({
   const hasClient = clientId !== "none";
   const canSubmit =
     name.trim().length > 0 &&
-    (contentType === "text" ? body.trim().length > 0 || mediaFiles.length > 0 || existingMedia.length > 0 : hasClient) &&
+    (contentType === "text"
+      ? body.trim().length > 0 || mediaFiles.length > 0 || existingMedia.length > 0
+      : contentType === "report"
+        ? hasClient
+        : summaryClientIds.length > 0) &&
     (recurrenceType === "daily" ||
       (recurrenceType === "weekly" && weekdays.length > 0) ||
       (recurrenceType === "monthly" && monthdays.length > 0)) &&
@@ -898,12 +913,15 @@ function AutomationComposerDialog({
 
           <div className="space-y-1.5">
             <Label>Tipo de conteúdo</Label>
-            <RadioGroup value={contentType} onValueChange={(v) => setContentType(v as "text" | "report")} className="flex gap-4">
+            <RadioGroup value={contentType} onValueChange={(v) => setContentType(v as "text" | "report" | "group_summary")} className="flex flex-wrap gap-x-4 gap-y-2">
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <RadioGroupItem value="text" /> Texto
               </label>
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <RadioGroupItem value="report" /> Relatório de métricas
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <RadioGroupItem value="group_summary" /> Resumo de grupo
               </label>
             </RadioGroup>
           </div>
@@ -949,7 +967,7 @@ function AutomationComposerDialog({
                 </Select>
               </div>
             </>
-          ) : (
+          ) : contentType === "report" ? (
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Cliente</Label>
@@ -970,6 +988,40 @@ function AutomationComposerDialog({
                     <SelectItem value="30">30 dias</SelectItem>
                   </SelectContent>
                 </Select>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>Turno</Label>
+                <RadioGroup value={summaryTurno} onValueChange={(v) => setSummaryTurno(v as "manha" | "tarde")} className="flex gap-4">
+                  <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="manha" /> Manhã (00h–12h)</label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="tarde" /> Tarde (12h–17h30)</label>
+                </RadioGroup>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Clientes no resumo <span className="text-muted-foreground font-normal text-xs ml-1.5">os grupos desses clientes entram</span></Label>
+                <div className="max-h-44 overflow-y-auto rounded-md border border-border divide-y divide-border">
+                  {clients.length === 0 ? (
+                    <p className="px-3 py-2 text-sm text-muted-foreground">Nenhum cliente.</p>
+                  ) : (
+                    clients.map((c) => (
+                      <label key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer">
+                        <Checkbox
+                          checked={summaryClientIds.includes(c.id)}
+                          onCheckedChange={(v) =>
+                            setSummaryClientIds((prev) => (v === true ? [...prev, c.id] : prev.filter((x) => x !== c.id)))
+                          }
+                        />
+                        <span className="flex-1 truncate">{c.name}</span>
+                        {!c.whatsapp_group_id && <span className="text-[10px] text-muted-foreground shrink-0">sem grupo</span>}
+                      </label>
+                    ))
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {summaryClientIds.length} selecionado{summaryClientIds.length === 1 ? "" : "s"}. Clientes "sem grupo" aparecem no aviso do resumo, mas não são lidos.
+                </p>
               </div>
             </div>
           )}

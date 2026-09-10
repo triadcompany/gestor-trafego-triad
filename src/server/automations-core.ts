@@ -130,6 +130,109 @@ export function ruleDueNow(rule: AutomationRuleRow, base = new Date()): boolean 
   return true;
 }
 
+// ── Resumo de grupo ─────────────────────────────────────────────────────────
+// Portado do workflow n8n "Resumidor de Grupo": lê as mensagens dos grupos dos
+// clientes selecionados na janela do turno e classifica por palavra-chave.
+
+const SUMMARY_RULES: { tipo: string; emoji: string; label: string; keywords: string[] }[] = [
+  { tipo: "venda", emoji: "🟢", label: "Venda", keywords: ["vendi", "vendeu", "fechou", "fechei"] },
+  { tipo: "pausar_veiculo", emoji: "⏸️", label: "Pausar veículo", keywords: ["pausa", "pausar", "pausado", "retirar", "tirar do ar"] },
+  { tipo: "crm", emoji: "🎯", label: "CRM", keywords: ["crm", "kommo", "follow-up", "followup", "lead parado", "leads parados"] },
+  { tipo: "marketing", emoji: "📄", label: "Marketing", keywords: ["criativo", "vídeo", "video", "foto", "arte", "marketing"] },
+  { tipo: "trafego", emoji: "📈", label: "Tráfego", keywords: ["verba", "orçamento", "orcamento", "budget", "tráfego", "trafego", "performance", "aumentar campanha", "aumentar a verba"] },
+];
+
+function classifySummary(textLower: string) {
+  return SUMMARY_RULES.filter((r) => r.keywords.some((kw) => textLower.includes(kw)));
+}
+
+// [inícioSeg, fimSeg) em epoch — janela do turno pra HOJE em BRT (UTC-3).
+function summaryWindow(turno: string): { since: number; until: number; label: string; emoji: string } {
+  const sp = nowInSaoPaulo();
+  const utc = (h: number, min = 0) => Math.floor(Date.UTC(sp.year, sp.month - 1, sp.day, h + 3, min, 0) / 1000);
+  if (turno === "tarde") {
+    return { since: utc(12), until: utc(17, 30), label: "tarde", emoji: "🌆" };
+  }
+  return { since: utc(0), until: utc(12), label: "manhã", emoji: "🌞" };
+}
+
+interface SummaryInstance {
+  url: string;
+  apiKey: string;
+  instance: string;
+}
+
+async function buildGroupSummaryText(
+  rule: typeof messageAutomations.$inferSelect,
+  instance: SummaryInstance
+): Promise<string> {
+  const { since, until, label, emoji } = summaryWindow(rule.summaryTurno ?? "manha");
+
+  const rows = await db
+    .select({ id: clients.id, name: clients.name, groupId: clients.whatsappGroupId })
+    .from(clients)
+    .where(eq(clients.organizationId, rule.organizationId));
+  const selected = rows.filter((c) => rule.summaryClientIds.includes(c.id));
+  const comGrupo = selected.filter((c) => c.groupId);
+  const semGrupo = selected.filter((c) => !c.groupId).map((c) => c.name);
+
+  const blocks: string[] = [];
+  const semNovidade: string[] = [];
+
+  for (const c of comGrupo) {
+    let records: Array<{ key?: { fromMe?: boolean }; messageTimestamp?: number; message?: Record<string, unknown> }> = [];
+    try {
+      const res = await fetch(`${instance.url.replace(/\/+$/, "")}/chat/findMessages/${encodeURIComponent(instance.instance)}`, {
+        method: "POST",
+        headers: { apikey: instance.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ where: { key: { remoteJid: c.groupId } }, limit: 200 }),
+      });
+      const json = (await res.json()) as { messages?: { records?: typeof records } };
+      records = json?.messages?.records ?? [];
+    } catch {
+      blocks.push(`*${c.name}*\n_Erro ao ler o grupo_`);
+      continue;
+    }
+
+    const mensagens = records
+      .filter((r) => r.key?.fromMe === false)
+      .filter((r) => typeof r.messageTimestamp === "number" && r.messageTimestamp >= since && r.messageTimestamp < until)
+      .map((r) => {
+        const msg = (r.message ?? {}) as { conversation?: string; extendedTextMessage?: { text?: string } };
+        return (msg.conversation || msg.extendedTextMessage?.text || "").trim();
+      })
+      .filter((t) => t.length > 0);
+
+    const categorias = new Map<string, { emoji: string; label: string; resumo: string }>();
+    for (const m of mensagens) {
+      for (const rc of classifySummary(m.toLowerCase())) {
+        if (!categorias.has(rc.tipo)) categorias.set(rc.tipo, { emoji: rc.emoji, label: rc.label, resumo: m.slice(0, 140) });
+      }
+    }
+    const semCategoria = mensagens.filter((m) => classifySummary(m.toLowerCase()).length === 0);
+    const pedido = semCategoria.find((m) => {
+      const l = m.toLowerCase();
+      return l.includes("?") || l.startsWith("pode ") || l.startsWith("preciso") || l.startsWith("por favor");
+    });
+    if (pedido) categorias.set("pedido", { emoji: "📌", label: "Pedido/tarefa", resumo: pedido.slice(0, 140) });
+
+    if (categorias.size > 0) {
+      const linhas = Array.from(categorias.values()).map((cat) => `${cat.emoji} ${cat.label}: ${cat.resumo}`).join("\n");
+      blocks.push(`*${c.name}*\n${linhas}`);
+    } else {
+      semNovidade.push(c.name);
+    }
+  }
+
+  for (const nome of semNovidade) blocks.push(`*${nome}*\n_Sem mensagens relevantes_`);
+
+  const sp = nowInSaoPaulo();
+  const dataStr = `${String(sp.day).padStart(2, "0")}/${String(sp.month).padStart(2, "0")}`;
+  let text = `${emoji} *Resumo da ${label} — ${dataStr}*\n\n${blocks.join("\n\n")}`;
+  if (semGrupo.length > 0) text += `\n\n⚠️ Sem grupo vinculado: ${semGrupo.join(", ")}`;
+  return text;
+}
+
 // ── Materialização ──────────────────────────────────────────────────────────
 
 export interface MaterializeResult {
@@ -156,7 +259,15 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
       })
     : null;
 
-  // 1. Texto
+  // 1. Instância (necessária já pra ler mensagens no caso do resumo de grupo)
+  const instance = await pickWhatsappInstance({
+    organizationId: rule.organizationId,
+    clientId: rule.clientId,
+    explicitInstanceId: rule.whatsappInstanceId,
+  });
+  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp ativa na organização.`] };
+
+  // 2. Texto
   let text: string;
   if (rule.contentType === "report") {
     if (!client) return { created: false, warnings: [`Regra "${rule.name}": cliente não encontrado.`] };
@@ -170,20 +281,21 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
     } catch (e) {
       return { created: false, warnings: [`Regra "${rule.name}": falha ao gerar relatório — ${e instanceof Error ? e.message : String(e)}`] };
     }
+  } else if (rule.contentType === "group_summary") {
+    if (rule.summaryClientIds.length === 0) {
+      return { created: false, warnings: [`Regra "${rule.name}": nenhum cliente selecionado pro resumo.`] };
+    }
+    try {
+      text = await buildGroupSummaryText(rule, instance);
+    } catch (e) {
+      return { created: false, warnings: [`Regra "${rule.name}": falha ao montar resumo — ${e instanceof Error ? e.message : String(e)}`] };
+    }
   } else {
     text = rule.body ?? "";
     if (!text.trim() && rule.media.length === 0) {
       return { created: false, warnings: [`Regra "${rule.name}": sem texto nem mídia.`] };
     }
   }
-
-  // 2. Instância
-  const instance = await pickWhatsappInstance({
-    organizationId: rule.organizationId,
-    clientId: rule.clientId,
-    explicitInstanceId: rule.whatsappInstanceId,
-  });
-  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp ativa na organização.`] };
 
   // 3. Destinos
   const recipients: { remoteJid: string; name: string }[] = [];

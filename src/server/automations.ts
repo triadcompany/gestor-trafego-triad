@@ -23,11 +23,13 @@ export interface MessageAutomationRow {
   id: string;
   name: string;
   active: boolean;
-  content_type: "text" | "report";
+  content_type: "text" | "report" | "group_summary";
   body: string | null;
   client_id: string | null;
   client_name: string | null;
   report_period_days: number;
+  summary_turno: "manha" | "tarde" | null;
+  summary_client_ids: string[];
   recurrence_type: "weekly" | "daily" | "monthly";
   recurrence_days: number[];
   send_hour: number;
@@ -55,11 +57,13 @@ const _fetchMessageAutomations = createServerFn({ method: "GET" }).handler(async
     id: r.id,
     name: r.name,
     active: r.active,
-    content_type: r.contentType as "text" | "report",
+    content_type: r.contentType as "text" | "report" | "group_summary",
     body: r.body,
     client_id: r.clientId,
     client_name: r.client?.name ?? null,
     report_period_days: r.reportPeriodDays,
+    summary_turno: (r.summaryTurno as "manha" | "tarde" | null) ?? null,
+    summary_client_ids: r.summaryClientIds,
     recurrence_type: r.recurrenceType as "weekly" | "daily" | "monthly",
     recurrence_days: r.recurrenceDays,
     send_hour: r.sendHour,
@@ -106,10 +110,12 @@ const mediaItemSchema = z.object({ base64: z.string(), mimetype: z.string(), fil
 const upsertSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  contentType: z.enum(["text", "report"]),
+  contentType: z.enum(["text", "report", "group_summary"]),
   body: z.string().nullable().optional(),
   clientId: z.string().nullable().optional(),
   reportPeriodDays: z.number().int(),
+  summaryTurno: z.enum(["manha", "tarde"]).nullable().optional(),
+  summaryClientIds: z.array(z.string()).default([]),
   recurrenceType: z.enum(["weekly", "daily", "monthly"]),
   recurrenceDays: z.array(z.number().int()),
   sendHour: z.number().int().min(0).max(23),
@@ -121,7 +127,7 @@ const upsertSchema = z.object({
   media: z.array(mediaItemSchema).default([]),
 });
 
-export type UpsertAutomationInput = z.infer<typeof upsertSchema>;
+export type UpsertAutomationInput = z.input<typeof upsertSchema>;
 
 const _upsertMessageAutomation = createServerFn({ method: "POST" })
   .inputValidator(upsertSchema)
@@ -131,6 +137,15 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
     if (data.contentType === "report") {
       if (!data.clientId) throw new Error("Relatório exige um cliente.");
       if (![7, 15, 30].includes(data.reportPeriodDays)) throw new Error("Período do relatório inválido.");
+    } else if (data.contentType === "group_summary") {
+      if (!data.summaryTurno) throw new Error("Escolha o turno (manhã ou tarde).");
+      if (data.summaryClientIds.length === 0) throw new Error("Selecione ao menos um cliente pro resumo.");
+      const orgClients = await db
+        .select({ id: clients.id })
+        .from(clients)
+        .where(eq(clients.organizationId, organizationId));
+      const orgIds = new Set(orgClients.map((c) => c.id));
+      if (data.summaryClientIds.some((id) => !orgIds.has(id))) throw new Error("Cliente do resumo não encontrado.");
     } else if (!data.body?.trim() && data.media.length === 0) {
       throw new Error("Mensagem de texto precisa de um texto ou pelo menos uma mídia.");
     }
@@ -163,6 +178,8 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
       body: data.contentType === "text" ? (data.body ?? null) : null,
       clientId: data.clientId ?? null,
       reportPeriodDays: data.reportPeriodDays,
+      summaryTurno: data.contentType === "group_summary" ? (data.summaryTurno ?? null) : null,
+      summaryClientIds: data.contentType === "group_summary" ? data.summaryClientIds : [],
       recurrenceType: data.recurrenceType,
       recurrenceDays: data.recurrenceType === "daily" ? [] : data.recurrenceDays,
       sendHour: data.sendHour,

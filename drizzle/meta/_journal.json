@@ -71,6 +71,13 @@
       "when": 1789073334126,
       "tag": "0009_message_automations",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1789081107082,
+      "tag": "0010_group_summary_fields",
+      "breakpoints": true
     }
   ]
 }
