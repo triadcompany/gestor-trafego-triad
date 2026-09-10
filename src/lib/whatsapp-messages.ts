@@ -62,7 +62,30 @@ export async function resolveWhatsappInstance(clientId?: string): Promise<{
   return _resolveWhatsappInstance({ data: { clientId } });
 }
 
-// ── Instâncias WhatsApp (CRUD, admin) ──────────────────────────────
+// ── Instâncias WhatsApp ────────────────────────────────────────────
+// Todas as organizações usam o MESMO servidor Evolution (env EVOLUTION_API_URL /
+// EVOLUTION_API_KEY, com fallback pros valores atuais). Cada usuário gera a
+// própria instância dentro dele; o app cria na Evolution, mostra o QR e guarda a
+// linha em whatsapp_instances com a chave própria daquela instância.
+
+const EVOLUTION_URL = () => (process.env.EVOLUTION_API_URL || "https://triadcompany-evolution-api.upw28y.easypanel.host").replace(/\/+$/, "");
+const EVOLUTION_ADMIN_KEY = () => process.env.EVOLUTION_API_KEY || "429683C4C977415CAAFCCE10F7D57E11";
+
+async function evoFetch(path: string, init: RequestInit & { apikey?: string } = {}) {
+  const { apikey, ...rest } = init;
+  const res = await fetch(`${EVOLUTION_URL()}${path}`, {
+    ...rest,
+    headers: { apikey: apikey || EVOLUTION_ADMIN_KEY(), "Content-Type": "application/json", ...(rest.headers || {}) },
+  });
+  const text = await res.text();
+  let json: unknown = null;
+  try { json = text ? JSON.parse(text) : null; } catch { json = text; }
+  if (!res.ok) {
+    const msg = (json && typeof json === "object" && "message" in json && (json as { message: unknown }).message) || text || res.statusText;
+    throw new Error(`Evolution ${res.status}: ${typeof msg === "string" ? msg : JSON.stringify(msg)}`);
+  }
+  return json;
+}
 
 export interface WhatsappInstanceRow {
   id: string;
@@ -93,63 +116,138 @@ export async function fetchWhatsappInstances(): Promise<WhatsappInstanceRow[]> {
   return _fetchWhatsappInstances();
 }
 
-const upsertWhatsappInstanceSchema = z.object({
-  id: z.string().optional(),
-  label: z.string(),
-  evolutionUrl: z.string().optional(), // vazio ao editar = mantém o valor salvo
-  evolutionKey: z.string().optional(),
-  instanceName: z.string().optional(),
-  assignedUserId: z.string().nullable().optional(),
-  active: z.boolean().optional(),
-});
+function sanitizeInstanceName(raw: string): string {
+  return raw
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40);
+}
 
-const _upsertWhatsappInstance = createServerFn({ method: "POST" })
-  .inputValidator(upsertWhatsappInstanceSchema)
-  .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext("admin");
-    if (data.id) {
-      const existing = await db.query.whatsappInstances.findFirst({ where: eq(whatsappInstances.id, data.id) });
-      if (!existing || existing.organizationId !== organizationId) throw new Error("Instância não encontrada.");
-      await db
-        .update(whatsappInstances)
-        .set({
-          label: data.label,
-          ...(data.evolutionUrl ? { evolutionUrl: data.evolutionUrl } : {}),
-          ...(data.evolutionKey ? { evolutionKey: data.evolutionKey } : {}),
-          ...(data.instanceName ? { instanceName: data.instanceName } : {}),
-          assignedUserId: data.assignedUserId ?? null,
-          ...(data.active !== undefined ? { active: data.active } : {}),
-        })
-        .where(eq(whatsappInstances.id, data.id));
-      return { id: data.id };
-    }
-    if (!data.evolutionUrl || !data.evolutionKey || !data.instanceName) {
-      throw new Error("URL, chave e nome da instância são obrigatórios.");
-    }
+// Cria a instância na Evolution e grava a linha. Retorna o QR code (base64) já
+// pronto pra escanear.
+const _createWhatsappInstance = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      label: z.string().min(1),
+      instanceName: z.string().min(1),
+      assignedUserId: z.string().nullable().optional(),
+    })
+  )
+  .handler(async ({ data }): Promise<{ id: string; qrBase64: string | null }> => {
+    const { organizationId } = await requireOrgContext();
+    const base = sanitizeInstanceName(data.instanceName);
+    if (!base) throw new Error("Nome da instância inválido — use letras e números.");
+    // Sufixo curto da org pra evitar colisão no servidor compartilhado.
+    const instanceName = `${base}-${organizationId.slice(0, 4)}`;
+
+    const created = (await evoFetch("/instance/create", {
+      method: "POST",
+      body: JSON.stringify({ instanceName, integration: "WHATSAPP-BAILEYS", qrcode: true }),
+    })) as {
+      hash?: string | { apikey?: string };
+      qrcode?: { base64?: string; code?: string };
+    };
+
+    const instanceKey =
+      typeof created.hash === "string"
+        ? created.hash
+        : created.hash?.apikey || EVOLUTION_ADMIN_KEY();
+
     const [row] = await db
       .insert(whatsappInstances)
       .values({
         organizationId,
-        label: data.label,
-        evolutionUrl: data.evolutionUrl,
-        evolutionKey: data.evolutionKey,
-        instanceName: data.instanceName,
+        label: data.label.trim(),
+        evolutionUrl: EVOLUTION_URL(),
+        evolutionKey: instanceKey,
+        instanceName,
         assignedUserId: data.assignedUserId ?? null,
       })
       .returning({ id: whatsappInstances.id });
-    return { id: row.id };
+
+    return { id: row.id, qrBase64: created.qrcode?.base64 ?? null };
   });
 
-export async function upsertWhatsappInstance(data: z.infer<typeof upsertWhatsappInstanceSchema>): Promise<{ id: string }> {
-  return _upsertWhatsappInstance({ data });
+export async function createWhatsappInstance(data: {
+  label: string;
+  instanceName: string;
+  assignedUserId?: string | null;
+}): Promise<{ id: string; qrBase64: string | null }> {
+  return _createWhatsappInstance({ data });
+}
+
+async function loadInstanceInOrg(id: string, organizationId: string) {
+  const row = await db.query.whatsappInstances.findFirst({ where: eq(whatsappInstances.id, id) });
+  if (!row || row.organizationId !== organizationId) throw new Error("Instância não encontrada.");
+  return row;
+}
+
+// (Re)pega o QR code de uma instância que ainda não conectou.
+const _fetchWhatsappInstanceQr = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }): Promise<{ qrBase64: string | null }> => {
+    const { organizationId } = await requireOrgContext();
+    const inst = await loadInstanceInOrg(data.id, organizationId);
+    const r = (await evoFetch(`/instance/connect/${encodeURIComponent(inst.instanceName)}`, {
+      method: "GET",
+      apikey: inst.evolutionKey,
+    })) as { base64?: string; code?: string };
+    return { qrBase64: r.base64 ?? null };
+  });
+
+export async function fetchWhatsappInstanceQr(id: string): Promise<{ qrBase64: string | null }> {
+  return _fetchWhatsappInstanceQr({ data: { id } });
+}
+
+// Status de conexão: 'open' (conectado) | 'connecting' | 'close'.
+const _fetchWhatsappInstanceState = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }): Promise<{ state: "open" | "connecting" | "close" | "unknown" }> => {
+    const { organizationId } = await requireOrgContext();
+    const inst = await loadInstanceInOrg(data.id, organizationId);
+    try {
+      const r = (await evoFetch(`/instance/connectionState/${encodeURIComponent(inst.instanceName)}`, {
+        method: "GET",
+        apikey: inst.evolutionKey,
+      })) as { instance?: { state?: string } };
+      const s = r.instance?.state;
+      return { state: s === "open" || s === "connecting" || s === "close" ? s : "unknown" };
+    } catch {
+      return { state: "unknown" };
+    }
+  });
+
+export async function fetchWhatsappInstanceState(id: string): Promise<{ state: "open" | "connecting" | "close" | "unknown" }> {
+  return _fetchWhatsappInstanceState({ data: { id } });
+}
+
+// Edita só o rótulo e o gestor atribuído (o nome técnico e a chave não mudam).
+const _renameWhatsappInstance = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string(), label: z.string().min(1), assignedUserId: z.string().nullable().optional() }))
+  .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await loadInstanceInOrg(data.id, organizationId);
+    await db
+      .update(whatsappInstances)
+      .set({ label: data.label.trim(), assignedUserId: data.assignedUserId ?? null })
+      .where(eq(whatsappInstances.id, data.id));
+  });
+
+export async function renameWhatsappInstance(id: string, label: string, assignedUserId?: string | null): Promise<void> {
+  await _renameWhatsappInstance({ data: { id, label, assignedUserId } });
 }
 
 const _deleteWhatsappInstance = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext("admin");
-    const existing = await db.query.whatsappInstances.findFirst({ where: eq(whatsappInstances.id, data.id) });
-    if (!existing || existing.organizationId !== organizationId) throw new Error("Instância não encontrada.");
+    const { organizationId } = await requireOrgContext();
+    const inst = await loadInstanceInOrg(data.id, organizationId);
+    // Best-effort: desconecta e apaga na Evolution antes de remover a linha.
+    await evoFetch(`/instance/logout/${encodeURIComponent(inst.instanceName)}`, { method: "DELETE", apikey: inst.evolutionKey }).catch(() => {});
+    await evoFetch(`/instance/delete/${encodeURIComponent(inst.instanceName)}`, { method: "DELETE", apikey: inst.evolutionKey }).catch(() => {});
     await db.delete(whatsappInstances).where(eq(whatsappInstances.id, data.id));
   });
 

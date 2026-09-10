@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -52,7 +52,14 @@ import {
   deleteMetaToken,
   type SendDestination,
 } from "@/lib/meta";
-import { fetchWhatsappInstances, upsertWhatsappInstance, deleteWhatsappInstance } from "@/lib/whatsapp-messages";
+import {
+  fetchWhatsappInstances,
+  createWhatsappInstance,
+  renameWhatsappInstance,
+  deleteWhatsappInstance,
+  fetchWhatsappInstanceQr,
+  fetchWhatsappInstanceState,
+} from "@/lib/whatsapp-messages";
 import { getN8nWebhookUrl, saveN8nWebhookUrl } from "@/lib/n8n";
 import { fetchOrgMembers, createOrgMember, updateOrgMemberRole, setOrgMemberActive } from "@/server/team";
 import { getCurrentUser } from "@/server/session";
@@ -95,7 +102,7 @@ function SettingsPage() {
           </TabsContent>
 
           <TabsContent value="whatsapp" className="mt-0">
-            <WhatsappInstancesSection isAdmin={isAdmin} />
+            <WhatsappInstancesSection />
             <SendDestinationsSection />
           </TabsContent>
 
@@ -355,38 +362,152 @@ function MetaTokensSection({ isAdmin }: { isAdmin: boolean }) {
 
 // ── Instâncias WhatsApp ────────────────────────────────────────────────────
 
-function WhatsappInstancesSection({ isAdmin }: { isAdmin: boolean }) {
+function WaStateDot({ id }: { id: string }) {
+  const { data } = useQuery({
+    queryKey: ["wa-state", id],
+    queryFn: () => fetchWhatsappInstanceState(id),
+    refetchInterval: 15000,
+    staleTime: 10000,
+  });
+  const s = data?.state;
+  const map: Record<string, { c: string; t: string }> = {
+    open: { c: "bg-status-on-target", t: "Conectado" },
+    connecting: { c: "bg-status-attention", t: "Conectando" },
+    close: { c: "bg-muted-foreground/40", t: "Desconectado" },
+    unknown: { c: "bg-muted-foreground/40", t: "—" },
+  };
+  const v = map[s ?? "unknown"] ?? map.unknown;
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <span className={`h-2 w-2 rounded-full ${v.c}`} />
+      {v.t}
+    </span>
+  );
+}
+
+function QrDialog({
+  instanceId,
+  initialQr,
+  onClose,
+  onConnected,
+}: {
+  instanceId: string | null;
+  initialQr: string | null;
+  onClose: () => void;
+  onConnected: () => void;
+}) {
+  const [qr, setQr] = useState<string | null>(initialQr);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const { data: state } = useQuery({
+    queryKey: ["wa-state-poll", instanceId],
+    queryFn: () => fetchWhatsappInstanceState(instanceId!),
+    enabled: !!instanceId,
+    refetchInterval: 3000,
+  });
+  const connected = state?.state === "open";
+
+  useEffect(() => {
+    setQr(initialQr);
+  }, [initialQr, instanceId]);
+
+  useEffect(() => {
+    if (connected) {
+      const t = setTimeout(onConnected, 1200);
+      return () => clearTimeout(t);
+    }
+  }, [connected, onConnected]);
+
+  // QR da Evolution expira rápido — busca de novo a cada 30s enquanto não conectar.
+  useEffect(() => {
+    if (!instanceId || connected) return;
+    const t = setInterval(async () => {
+      try {
+        const r = await fetchWhatsappInstanceQr(instanceId);
+        if (r.qrBase64) setQr(r.qrBase64);
+      } catch { /* ignora */ }
+    }, 30000);
+    return () => clearInterval(t);
+  }, [instanceId, connected]);
+
+  const manualRefresh = async () => {
+    if (!instanceId) return;
+    setRefreshing(true);
+    try {
+      const r = await fetchWhatsappInstanceQr(instanceId);
+      setQr(r.qrBase64);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao atualizar QR");
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  return (
+    <Dialog open={!!instanceId} onOpenChange={(v) => { if (!v) onClose(); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Conectar WhatsApp</DialogTitle>
+        </DialogHeader>
+        <div className="flex flex-col items-center gap-3 py-2">
+          {connected ? (
+            <div className="py-8 text-center">
+              <Check className="h-10 w-10 mx-auto text-status-on-target mb-2" />
+              <p className="text-sm font-medium text-status-on-target">Conectado!</p>
+            </div>
+          ) : qr ? (
+            <>
+              <img src={qr} alt="QR code" className="w-56 h-56 rounded-lg border border-border bg-white" />
+              <p className="text-xs text-muted-foreground text-center leading-relaxed">
+                No celular: WhatsApp → <strong>Aparelhos conectados</strong> → <strong>Conectar aparelho</strong> e escaneie.
+              </p>
+              <Button variant="outline" size="sm" onClick={manualRefresh} disabled={refreshing} className="gap-2">
+                {refreshing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                Atualizar QR
+              </Button>
+            </>
+          ) : (
+            <div className="py-10 flex flex-col items-center gap-2 text-muted-foreground">
+              <RefreshCw className="h-5 w-5 animate-spin" />
+              <p className="text-xs">Gerando QR...</p>
+              <Button variant="outline" size="sm" onClick={manualRefresh} disabled={refreshing}>Tentar de novo</Button>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WhatsappInstancesSection() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
   const [label, setLabel] = useState("");
-  const [url, setUrl] = useState("");
-  const [apiKey, setApiKey] = useState("");
   const [instanceName, setInstanceName] = useState("");
   const [assignedUserId, setAssignedUserId] = useState<string>("none");
+  const [qrFor, setQrFor] = useState<string | null>(null);
+  const [qrInitial, setQrInitial] = useState<string | null>(null);
 
   const { data: instances = [], isLoading } = useQuery({ queryKey: ["whatsapp-instances"], queryFn: fetchWhatsappInstances });
-  const { data: members = [] } = useQuery({ queryKey: ["org-members"], queryFn: fetchOrgMembers, enabled: isAdmin });
+  const { data: members = [] } = useQuery({ queryKey: ["org-members"], queryFn: fetchOrgMembers });
 
-  const saveMutation = useMutation({
+  const createMutation = useMutation({
     mutationFn: () =>
-      upsertWhatsappInstance({
-        label: label.trim() || "Principal",
-        evolutionUrl: url.trim(),
-        evolutionKey: apiKey.trim(),
+      createWhatsappInstance({
+        label: label.trim() || instanceName.trim(),
         instanceName: instanceName.trim(),
         assignedUserId: assignedUserId === "none" ? null : assignedUserId,
       }),
-    onSuccess: () => {
-      toast.success("Instância salva!");
+    onSuccess: (res) => {
       setOpen(false);
       setLabel("");
-      setUrl("");
-      setApiKey("");
       setInstanceName("");
       setAssignedUserId("none");
       queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
+      setQrInitial(res.qrBase64);
+      setQrFor(res.id);
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar instância"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao criar instância", { duration: 8000 }),
   });
 
   const deleteMutation = useMutation({
@@ -398,6 +519,17 @@ function WhatsappInstancesSection({ isAdmin }: { isAdmin: boolean }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao remover instância"),
   });
 
+  const openConnect = async (id: string) => {
+    setQrInitial(null);
+    setQrFor(id);
+    try {
+      const r = await fetchWhatsappInstanceQr(id);
+      setQrInitial(r.qrBase64);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao gerar QR");
+    }
+  };
+
   return (
     <section className="mb-6">
       <div className="flex items-center justify-between mb-3">
@@ -405,61 +537,57 @@ function WhatsappInstancesSection({ isAdmin }: { isAdmin: boolean }) {
           <MessageCircle className="h-4 w-4 text-muted-foreground" />
           <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Instâncias WhatsApp</h2>
         </div>
-        {isAdmin && (
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" variant="outline" className="gap-1.5">
-                <Plus className="h-3.5 w-3.5" /> Nova instância
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Nova instância WhatsApp (Evolution API)</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-3 py-2">
-                <div className="space-y-1.5">
-                  <Label>Nome (ex: "WhatsApp do João")</Label>
-                  <Input value={label} onChange={(e) => setLabel(e.target.value)} placeholder="Principal" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>URL da Evolution API</Label>
-                  <Input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://evolution.seuservidor.com" className="font-mono text-xs" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Chave de API</Label>
-                  <Input value={apiKey} onChange={(e) => setApiKey(e.target.value)} className="font-mono text-xs" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Nome da instância</Label>
-                  <Input value={instanceName} onChange={(e) => setInstanceName(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Atribuir a um gestor (opcional)</Label>
-                  <Select value={assignedUserId} onValueChange={setAssignedUserId}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Ninguém em específico</SelectItem>
-                      {members.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>{m.fullName}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+        <Dialog open={open} onOpenChange={setOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" variant="outline" className="gap-1.5">
+              <Plus className="h-3.5 w-3.5" /> Nova instância
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Nova instância de WhatsApp</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <div className="space-y-1.5">
+                <Label>Nome</Label>
+                <Input
+                  value={label}
+                  onChange={(e) => {
+                    setLabel(e.target.value);
+                    if (!instanceName || instanceName === slugify(label)) setInstanceName(slugify(e.target.value));
+                  }}
+                  placeholder='Ex: "WhatsApp do João"'
+                />
               </div>
-              <DialogFooter>
-                <Button
-                  onClick={() => saveMutation.mutate()}
-                  disabled={!url.trim() || !apiKey.trim() || !instanceName.trim() || saveMutation.isPending}
-                >
-                  {saveMutation.isPending ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
-                  Salvar
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        )}
+              <div className="space-y-1.5">
+                <Label>Nome da instância (técnico)</Label>
+                <Input
+                  value={instanceName}
+                  onChange={(e) => setInstanceName(e.target.value)}
+                  placeholder="whatsapp-joao"
+                  className="font-mono text-xs"
+                />
+                <p className="text-[11px] text-muted-foreground">Só letras, números e hífen. Um sufixo curto da organização é adicionado automaticamente.</p>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Atribuir a um gestor (opcional)</Label>
+                <Select value={assignedUserId} onValueChange={setAssignedUserId}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Ninguém em específico</SelectItem>
+                    {members.map((m) => <SelectItem key={m.id} value={m.id}>{m.fullName}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={() => createMutation.mutate()} disabled={!instanceName.trim() || createMutation.isPending}>
+                {createMutation.isPending ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
+                Criar e mostrar QR
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       <Card className="divide-y divide-border">
@@ -467,7 +595,7 @@ function WhatsappInstancesSection({ isAdmin }: { isAdmin: boolean }) {
           <div className="px-5 py-4 text-sm text-muted-foreground">Carregando...</div>
         ) : instances.length === 0 ? (
           <div className="px-5 py-4 text-sm text-muted-foreground">
-            Nenhuma instância configurada. {isAdmin ? "Adicione uma acima para agendar mensagens e monitorar grupos." : "Peça a um admin da organização para configurar."}
+            Nenhuma instância. Clique em "Nova instância" pra gerar uma e conectar pelo QR code.
           </div>
         ) : (
           instances.map((i) => {
@@ -476,25 +604,39 @@ function WhatsappInstancesSection({ isAdmin }: { isAdmin: boolean }) {
               <div key={i.id} className="px-5 py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{i.label}</p>
-                  <p className="text-xs text-muted-foreground font-mono">
+                  <p className="text-xs text-muted-foreground font-mono truncate">
                     {i.instanceName}{assigned ? ` · ${assigned.fullName}` : ""}
                   </p>
                 </div>
-                <Badge variant="outline" className={i.active ? "border-status-on-target/40 text-status-on-target" : "border-muted-foreground/30 text-muted-foreground"}>
-                  {i.active ? "Ativa" : "Inativa"}
-                </Badge>
-                {isAdmin && (
-                  <Button size="icon" variant="ghost" onClick={() => deleteMutation.mutate(i.id)} className="text-destructive hover:text-destructive">
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                )}
+                <WaStateDot id={i.id} />
+                <Button size="sm" variant="outline" onClick={() => openConnect(i.id)}>Conectar</Button>
+                <Button size="icon" variant="ghost" onClick={() => { if (confirm(`Excluir a instância "${i.label}"? Isso desconecta e apaga ela na Evolution.`)) deleteMutation.mutate(i.id); }} className="text-destructive hover:text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
               </div>
             );
           })
         )}
       </Card>
+
+      <QrDialog
+        instanceId={qrFor}
+        initialQr={qrInitial}
+        onClose={() => { setQrFor(null); setQrInitial(null); }}
+        onConnected={() => {
+          setQrFor(null);
+          setQrInitial(null);
+          queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
+          queryClient.invalidateQueries({ queryKey: ["wa-state"] });
+          toast.success("WhatsApp conectado!");
+        }}
+      />
     </section>
   );
+}
+
+function slugify(s: string): string {
+  return s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40);
 }
 
 // ── Usuários ─────────────────────────────────────────────────────────────────
