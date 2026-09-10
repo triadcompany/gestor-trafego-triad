@@ -70,7 +70,7 @@ function SettingsPage() {
 
   return (
     <AppShell>
-      <div className="px-4 md:px-8 py-8 max-w-2xl mx-auto">
+      <div className="px-4 md:px-8 py-8 max-w-4xl mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
           <p className="text-sm text-muted-foreground mt-1">
@@ -78,41 +78,42 @@ function SettingsPage() {
           </p>
         </div>
 
-        <Tabs defaultValue="meta">
-          <TabsList className="mb-6 flex-wrap h-auto">
-            <TabsTrigger value="meta">Token Meta Ads</TabsTrigger>
-            <TabsTrigger value="whatsapp">Conectar WhatsApp</TabsTrigger>
-            {isAdmin && <TabsTrigger value="users">Usuários</TabsTrigger>}
-            <TabsTrigger value="agent">Agente de IA</TabsTrigger>
-            <TabsTrigger value="webhook">Webhook</TabsTrigger>
-            <TabsTrigger value="diagnostico">Diagnóstico</TabsTrigger>
-            <TabsTrigger value="sistema">Sistema</TabsTrigger>
+        <Tabs defaultValue="meta" orientation="vertical" className="flex flex-col md:flex-row gap-6 md:gap-8">
+          <TabsList className="flex md:flex-col h-auto w-full md:w-52 shrink-0 bg-transparent p-0 gap-1 overflow-x-auto md:overflow-visible justify-start">
+            <TabsTrigger value="meta" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Token Meta Ads</TabsTrigger>
+            <TabsTrigger value="whatsapp" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Conectar WhatsApp</TabsTrigger>
+            {isAdmin && <TabsTrigger value="users" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Usuários</TabsTrigger>}
+            <TabsTrigger value="agent" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Agente de IA</TabsTrigger>
+            <TabsTrigger value="webhook" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Webhook</TabsTrigger>
+            <TabsTrigger value="diagnostico" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Diagnóstico</TabsTrigger>
+            <TabsTrigger value="sistema" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Sistema</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="meta">
+          <div className="flex-1 min-w-0">
+          <TabsContent value="meta" className="mt-0">
             <MetaTokensSection isAdmin={isAdmin} />
           </TabsContent>
 
-          <TabsContent value="whatsapp">
+          <TabsContent value="whatsapp" className="mt-0">
             <WhatsappInstancesSection isAdmin={isAdmin} />
             <SendDestinationsSection />
           </TabsContent>
 
           {isAdmin && (
-            <TabsContent value="users">
+            <TabsContent value="users" className="mt-0">
               <UsersSection />
             </TabsContent>
           )}
 
-          <TabsContent value="agent">
+          <TabsContent value="agent" className="mt-0">
             <OpenAISection />
           </TabsContent>
 
-          <TabsContent value="webhook">
+          <TabsContent value="webhook" className="mt-0">
             <N8nSection />
           </TabsContent>
 
-          <TabsContent value="diagnostico">
+          <TabsContent value="diagnostico" className="mt-0">
             <section className="mb-6">
               <div className="flex items-center gap-2 mb-3">
                 <Stethoscope className="h-4 w-4 text-muted-foreground" />
@@ -132,7 +133,7 @@ function SettingsPage() {
             </section>
           </TabsContent>
 
-          <TabsContent value="sistema">
+          <TabsContent value="sistema" className="mt-0">
             <section>
               <div className="flex items-center gap-2 mb-3">
                 <div className="h-1 w-1 rounded-full bg-muted-foreground" />
@@ -153,6 +154,7 @@ function SettingsPage() {
               </Card>
             </section>
           </TabsContent>
+          </div>
         </Tabs>
       </div>
     </AppShell>
