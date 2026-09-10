@@ -39,6 +39,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { fetchAllClients, upsertClient, toggleClientActive, deleteClient, setClientTags, upsertConversationTemplate, type ClientRow } from "@/lib/queries";
+import { upsertMessageAutomation } from "@/server/automations";
 import { TagBadge } from "@/components/TagBadge";
 import { brl } from "@/lib/mock-data";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
@@ -81,6 +82,24 @@ function ClientsList() {
             `📲 ${clientData.name}`,
           ].join("\n"),
           pre_message: "Olá, tenho interesse no: [Nome do carro]",
+        });
+
+        // Automação padrão: relatório dos últimos 7 dias toda segunda 08:30 no
+        // grupo do cliente. Se o cliente ainda não tiver grupo, a regra é criada
+        // mesmo assim e passa a enviar sozinha quando o grupo for vinculado.
+        await upsertMessageAutomation({
+          name: `Relatório semanal — ${clientData.name}`,
+          contentType: "report",
+          body: null,
+          clientId: id,
+          reportPeriodDays: 7,
+          recurrenceType: "weekly",
+          recurrenceDays: [1], // segunda-feira (ISO)
+          sendHour: 8,
+          sendMinute: 30,
+          whatsappInstanceId: null,
+          destinations: [{ kind: "client_group", remoteJid: null, name: "Grupo do cliente" }],
+          media: [],
         });
       }
     },
