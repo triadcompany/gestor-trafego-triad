@@ -19,9 +19,16 @@ export type MediaItem = z.infer<typeof mediaItemSchema>;
 // código que toca o Postgres nunca vaze pro bundle do navegador — este módulo é
 // importado por componentes de cliente (ex: ClientFormDialog), então qualquer
 // função solta aqui que use `db` diretamente entraria no bundle do cliente.
+export interface ResolvedWhatsappInstance {
+  instanceId: string;
+  url: string;
+  apiKey: string;
+  instance: string;
+}
+
 const _resolveWhatsappInstance = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().optional() }))
-  .handler(async ({ data }): Promise<{ instanceId: string; url: string; apiKey: string; instance: string }> => {
+  .handler(async ({ data }): Promise<ResolvedWhatsappInstance> => {
     const { organizationId, userId } = await requireOrgContext();
 
     if (data.clientId) {

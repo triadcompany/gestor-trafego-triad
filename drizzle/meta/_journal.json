@@ -64,6 +64,13 @@
       "when": 1788897868348,
       "tag": "0008_multi_tenant_active_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1789073334126,
+      "tag": "0009_message_automations",
+      "breakpoints": true
     }
   ]
 }

@@ -15,8 +15,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil } from "lucide-react";
+import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil, Repeat, Play, Trash2 } from "lucide-react";
 import { toast } from "sonner";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   fetchScheduledMessages,
   fetchScheduledMessageById,
@@ -24,11 +29,22 @@ import {
   updateScheduledMessage,
   cancelScheduledMessage,
   searchEvolutionRecipients,
+  fetchWhatsappInstances,
   type ScheduledMessageRow,
   type ScheduledMessageDetail,
   type EvolutionRecipient,
   type MediaItem,
 } from "@/lib/whatsapp-messages";
+import { fetchAllClients } from "@/lib/queries";
+import {
+  fetchMessageAutomations,
+  fetchMessageAutomationMedia,
+  upsertMessageAutomation,
+  deleteMessageAutomation,
+  toggleMessageAutomation,
+  runMessageAutomationNow,
+  type MessageAutomationRow,
+} from "@/server/automations";
 
 export const Route = createFileRoute("/mensagens")({
   head: () => ({
@@ -105,13 +121,25 @@ function MensagensPage() {
   return (
     <AppShell>
       <div className="px-4 md:px-8 py-6 max-w-4xl mx-auto">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">Mensagens</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Programe mensagens de WhatsApp para pessoas ou grupos específicos.
-            </p>
-          </div>
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold tracking-tight">Mensagens</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Programe mensagens de WhatsApp pontuais ou regras que rodam sozinhas na recorrência que você definir.
+          </p>
+        </div>
+
+        <Tabs defaultValue="agendadas">
+          <TabsList className="mb-4">
+            <TabsTrigger value="agendadas">Agendadas</TabsTrigger>
+            <TabsTrigger value="automacoes">Automações</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="automacoes">
+            <AutomacoesTab />
+          </TabsContent>
+
+          <TabsContent value="agendadas">
+        <div className="flex justify-end mb-4">
           <Button onClick={() => { setEditingMessage(null); setComposerOpen(true); }} className="gap-2 w-full sm:w-auto">
             <Plus className="h-4 w-4" />
             Nova mensagem
@@ -220,6 +248,8 @@ function MensagensPage() {
             </div>
           ))}
         </div>
+          </TabsContent>
+        </Tabs>
       </div>
 
       <ComposerDialog
@@ -514,5 +544,468 @@ function RecipientSearch({
         </div>
       )}
     </div>
+  );
+}
+
+// ── Automações ─────────────────────────────────────────────────
+
+const DOW_LABEL: Record<number, string> = { 1: "seg", 2: "ter", 3: "qua", 4: "qui", 5: "sex", 6: "sáb", 7: "dom" };
+
+function recurrenceSummary(r: MessageAutomationRow): string {
+  const hhmm = `${String(r.send_hour).padStart(2, "0")}:${String(r.send_minute).padStart(2, "0")}`;
+  if (r.recurrence_type === "daily") return `Todo dia às ${hhmm}`;
+  const days = [...r.recurrence_days].sort((a, b) => a - b);
+  if (r.recurrence_type === "weekly") {
+    return `Toda ${days.map((d) => DOW_LABEL[d]).join(" e ")} às ${hhmm}`;
+  }
+  return `Todo mês nos dias ${days.join(", ")} às ${hhmm}`;
+}
+
+function contentLabel(r: MessageAutomationRow): string {
+  if (r.content_type === "report") {
+    return `Relatório ${r.report_period_days} dias${r.client_name ? ` · ${r.client_name}` : ""}`;
+  }
+  return "Texto";
+}
+
+function AutomacoesTab() {
+  const qc = useQueryClient();
+  const [composerOpen, setComposerOpen] = useState(false);
+  const [editing, setEditing] = useState<MessageAutomationRow | null>(null);
+  const [runningId, setRunningId] = useState<string | null>(null);
+
+  const { data: automations = [], isLoading, isError } = useQuery({
+    queryKey: ["message-automations"],
+    queryFn: fetchMessageAutomations,
+  });
+
+  const toggleMut = useMutation({
+    mutationFn: ({ id, active }: { id: string; active: boolean }) => toggleMessageAutomation(id, active),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["message-automations"] }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar"),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => deleteMessageAutomation(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["message-automations"] });
+      toast.success("Automação excluída.");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao excluir"),
+  });
+
+  const runNow = async (id: string) => {
+    setRunningId(id);
+    try {
+      const r = await runMessageAutomationNow(id);
+      if (r.created) {
+        toast.success("Mensagem gerada — veja na aba Agendadas.");
+        qc.invalidateQueries({ queryKey: ["scheduled-messages"] });
+        qc.invalidateQueries({ queryKey: ["message-automations"] });
+      } else {
+        toast.error(r.warnings[0] ?? "Nada foi enviado.", { duration: 8000 });
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao rodar automação");
+    } finally {
+      setRunningId(null);
+    }
+  };
+
+  return (
+    <div>
+      <div className="flex justify-end mb-4">
+        <Button onClick={() => { setEditing(null); setComposerOpen(true); }} className="gap-2 w-full sm:w-auto">
+          <Plus className="h-4 w-4" />
+          Nova automação
+        </Button>
+      </div>
+
+      {isLoading && (
+        <div className="space-y-3">{[1, 2].map((i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}</div>
+      )}
+      {isError && <div className="text-center text-sm text-muted-foreground py-10">Erro ao carregar automações.</div>}
+      {!isLoading && !isError && automations.length === 0 && (
+        <div className="text-center py-16 rounded-xl border border-dashed border-border">
+          <Repeat className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Nenhuma automação ainda.</p>
+          <p className="text-xs text-muted-foreground mt-1">Ex: toda segunda às 8h30 enviar o relatório dos últimos 7 dias.</p>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {automations.map((a) => (
+          <div key={a.id} className="rounded-xl border border-border bg-card p-4">
+            <div className="flex items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap mb-1">
+                  <span className="font-medium text-sm">{a.name}</span>
+                  <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                    {contentLabel(a)}
+                  </span>
+                  {!a.active && (
+                    <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
+                      Pausada
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">{recurrenceSummary(a)}</p>
+                <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground min-w-0">
+                  <Users className="h-3 w-3 shrink-0" />
+                  <span className="truncate">{a.destinations.map((d) => d.name).join(", ") || "sem destino"}</span>
+                </div>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  {a.last_run_at ? `Rodou por último em ${formatDateTime(a.last_run_at)}` : "Nunca rodou"}
+                </p>
+              </div>
+              <div className="flex flex-col items-end gap-2 shrink-0">
+                <Switch
+                  checked={a.active}
+                  onCheckedChange={(v) => toggleMut.mutate({ id: a.id, active: v })}
+                  aria-label="Ativar/pausar"
+                />
+                <div className="flex items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={() => runNow(a.id)}
+                    disabled={runningId === a.id}
+                    aria-label="Rodar agora"
+                  >
+                    {runningId === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditing(a); setComposerOpen(true); }} aria-label="Editar">
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-status-critical hover:text-status-critical"
+                    onClick={() => { if (confirm(`Excluir a automação "${a.name}"?`)) deleteMut.mutate(a.id); }}
+                    aria-label="Excluir"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <AutomationComposerDialog open={composerOpen} onOpenChange={setComposerOpen} editing={editing} />
+    </div>
+  );
+}
+
+const WEEKDAYS: { value: number; label: string }[] = [
+  { value: 1, label: "Seg" }, { value: 2, label: "Ter" }, { value: 3, label: "Qua" },
+  { value: 4, label: "Qui" }, { value: 5, label: "Sex" }, { value: 6, label: "Sáb" }, { value: 7, label: "Dom" },
+];
+
+function AutomationComposerDialog({
+  open,
+  onOpenChange,
+  editing,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  editing: MessageAutomationRow | null;
+}) {
+  const qc = useQueryClient();
+  const [loadedId, setLoadedId] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [contentType, setContentType] = useState<"text" | "report">("text");
+  const [body, setBody] = useState("");
+  const [clientId, setClientId] = useState<string>("none");
+  const [reportPeriodDays, setReportPeriodDays] = useState<number>(7);
+  const [recurrenceType, setRecurrenceType] = useState<"weekly" | "daily" | "monthly">("weekly");
+  const [weekdays, setWeekdays] = useState<number[]>([1]);
+  const [monthdays, setMonthdays] = useState<number[]>([1]);
+  const [sendHour, setSendHour] = useState("10");
+  const [sendMinute, setSendMinute] = useState("00");
+  const [instanceId, setInstanceId] = useState<string>("auto");
+  const [useClientGroup, setUseClientGroup] = useState(false);
+  const [customRecipients, setCustomRecipients] = useState<EvolutionRecipient[]>([]);
+  const [mediaFiles, setMediaFiles] = useState<File[]>([]);
+  const [existingMedia, setExistingMedia] = useState<MediaItem[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: clients = [] } = useQuery({ queryKey: ["clients-all"], queryFn: fetchAllClients });
+  const { data: instances = [] } = useQuery({ queryKey: ["whatsapp-instances"], queryFn: fetchWhatsappInstances });
+
+  const reset = () => {
+    setLoadedId(null);
+    setName(""); setContentType("text"); setBody(""); setClientId("none"); setReportPeriodDays(7);
+    setRecurrenceType("weekly"); setWeekdays([1]); setMonthdays([1]); setSendHour("10"); setSendMinute("00");
+    setInstanceId("auto"); setUseClientGroup(false); setCustomRecipients([]); setMediaFiles([]); setExistingMedia([]);
+  };
+
+  if (open && editing && loadedId !== editing.id) {
+    setLoadedId(editing.id);
+    setName(editing.name);
+    setContentType(editing.content_type);
+    setBody(editing.body ?? "");
+    setClientId(editing.client_id ?? "none");
+    setReportPeriodDays(editing.report_period_days);
+    setRecurrenceType(editing.recurrence_type);
+    if (editing.recurrence_type === "weekly") setWeekdays(editing.recurrence_days.length ? editing.recurrence_days : [1]);
+    if (editing.recurrence_type === "monthly") setMonthdays(editing.recurrence_days.length ? editing.recurrence_days : [1]);
+    setSendHour(String(editing.send_hour).padStart(2, "0"));
+    setSendMinute(String(editing.send_minute).padStart(2, "0"));
+    setInstanceId(editing.whatsapp_instance_id ?? "auto");
+    setUseClientGroup(editing.destinations.some((d) => d.kind === "client_group"));
+    setCustomRecipients(
+      editing.destinations
+        .filter((d) => d.kind === "custom" && d.remote_jid)
+        .map((d) => ({ remoteJid: d.remote_jid!, name: d.name, isGroup: (d.remote_jid ?? "").endsWith("@g.us") }))
+    );
+    setMediaFiles([]);
+    setExistingMedia([]);
+    if (editing.media_count > 0) {
+      fetchMessageAutomationMedia(editing.id).then(setExistingMedia).catch(() => {});
+    }
+  } else if (open && !editing && loadedId !== "new") {
+    reset();
+    setLoadedId("new");
+  }
+
+  const addFiles = (files: FileList | null) => {
+    if (!files) return;
+    const tooBig = Array.from(files).find((f) => f.size > 100 * 1024 * 1024);
+    if (tooBig) { toast.error(`"${tooBig.name}" é maior que 100MB.`); return; }
+    setMediaFiles((prev) => [...prev, ...Array.from(files)]);
+  };
+
+  const toggleDay = (list: number[], setList: (v: number[]) => void, day: number) => {
+    setList(list.includes(day) ? list.filter((d) => d !== day) : [...list, day].sort((a, b) => a - b));
+  };
+
+  const saveMut = useMutation({
+    mutationFn: async () => {
+      const uploaded = await Promise.all(
+        mediaFiles.map(async (f) => ({ base64: await fileToBase64(f), mimetype: f.type, filename: f.name }))
+      );
+      const destinations = [
+        ...(useClientGroup && clientId !== "none"
+          ? [{ kind: "client_group" as const, remoteJid: null, name: "Grupo do cliente" }]
+          : []),
+        ...customRecipients.map((r) => ({ kind: "custom" as const, remoteJid: r.remoteJid, name: r.name })),
+      ];
+      await upsertMessageAutomation({
+        id: editing?.id,
+        name: name.trim(),
+        contentType,
+        body: contentType === "text" ? body : null,
+        clientId: clientId === "none" ? null : clientId,
+        reportPeriodDays,
+        recurrenceType,
+        recurrenceDays: recurrenceType === "weekly" ? weekdays : recurrenceType === "monthly" ? monthdays : [],
+        sendHour: Number(sendHour),
+        sendMinute: Number(sendMinute),
+        whatsappInstanceId: instanceId === "auto" ? null : instanceId,
+        destinations,
+        media: [...existingMedia, ...uploaded],
+      });
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["message-automations"] });
+      toast.success(editing ? "Automação atualizada." : "Automação criada.");
+      reset();
+      onOpenChange(false);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar", { duration: 8000 }),
+  });
+
+  const hasClient = clientId !== "none";
+  const canSubmit =
+    name.trim().length > 0 &&
+    (contentType === "text" ? body.trim().length > 0 || mediaFiles.length > 0 || existingMedia.length > 0 : hasClient) &&
+    (recurrenceType === "daily" ||
+      (recurrenceType === "weekly" && weekdays.length > 0) ||
+      (recurrenceType === "monthly" && monthdays.length > 0)) &&
+    (useClientGroup && hasClient) || customRecipients.length > 0;
+
+  return (
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{editing ? "Editar automação" : "Nova automação"}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Nome</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Relatório semanal Auto Motors" />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Tipo de conteúdo</Label>
+            <RadioGroup value={contentType} onValueChange={(v) => setContentType(v as "text" | "report")} className="flex gap-4">
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <RadioGroupItem value="text" /> Texto
+              </label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <RadioGroupItem value="report" /> Relatório de métricas
+              </label>
+            </RadioGroup>
+          </div>
+
+          {contentType === "text" ? (
+            <>
+              <div className="space-y-1.5">
+                <Label>Mensagem</Label>
+                <Textarea value={body} onChange={(e) => setBody(e.target.value)} placeholder="Digite a mensagem..." className="min-h-[90px] resize-none" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="block">Mídia <span className="text-muted-foreground font-normal text-xs ml-1.5">opcional</span></Label>
+                {(existingMedia.length > 0 || mediaFiles.length > 0) && (
+                  <div className="space-y-1.5">
+                    {existingMedia.map((m, i) => (
+                      <div key={`e${i}`} className="flex items-center justify-between px-3 py-2 border border-border rounded-md text-sm">
+                        <span className="truncate">{m.filename}</span>
+                        <button onClick={() => setExistingMedia((p) => p.filter((_, idx) => idx !== i))}><X className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                      </div>
+                    ))}
+                    {mediaFiles.map((f, i) => (
+                      <div key={`n${i}`} className="flex items-center justify-between px-3 py-2 border border-border rounded-md text-sm">
+                        <span className="truncate">{f.name}</span>
+                        <button onClick={() => setMediaFiles((p) => p.filter((_, idx) => idx !== i))}><X className="h-3.5 w-3.5 text-muted-foreground" /></button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="w-full justify-start gap-2">
+                  <Paperclip className="h-3.5 w-3.5" /> Anexar arquivo
+                </Button>
+                <input ref={fileInputRef} type="file" accept="image/*,video/*,application/pdf" multiple className="hidden"
+                  onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Cliente <span className="text-muted-foreground font-normal text-xs ml-1.5">opcional — habilita "grupo do cliente"</span></Label>
+                <Select value={clientId} onValueChange={setClientId}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum</SelectItem>
+                    {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </>
+          ) : (
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Cliente</Label>
+                <Select value={clientId} onValueChange={setClientId}>
+                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                  <SelectContent>
+                    {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Período</Label>
+                <Select value={String(reportPeriodDays)} onValueChange={(v) => setReportPeriodDays(Number(v))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7">7 dias</SelectItem>
+                    <SelectItem value="15">15 dias</SelectItem>
+                    <SelectItem value="30">30 dias</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          )}
+
+          <div className="space-y-2">
+            <Label>Recorrência</Label>
+            <RadioGroup value={recurrenceType} onValueChange={(v) => setRecurrenceType(v as typeof recurrenceType)} className="flex gap-4">
+              <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="weekly" /> Semanal</label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="daily" /> Diária</label>
+              <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="monthly" /> Mensal</label>
+            </RadioGroup>
+
+            {recurrenceType === "weekly" && (
+              <div className="flex flex-wrap gap-1.5">
+                {WEEKDAYS.map((d) => (
+                  <button
+                    key={d.value}
+                    type="button"
+                    onClick={() => toggleDay(weekdays, setWeekdays, d.value)}
+                    className={`px-2.5 py-1 rounded-md text-xs border transition-colors ${weekdays.includes(d.value) ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground"}`}
+                  >
+                    {d.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            {recurrenceType === "monthly" && (
+              <div className="flex flex-wrap gap-1">
+                {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    onClick={() => toggleDay(monthdays, setMonthdays, d)}
+                    className={`w-7 h-7 rounded text-xs border transition-colors ${monthdays.includes(d) ? "bg-primary text-primary-foreground border-primary" : "border-border text-muted-foreground"}`}
+                  >
+                    {d}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <Label className="text-xs text-muted-foreground">Horário (Brasília)</Label>
+              <Select value={sendHour} onValueChange={setSendHour}>
+                <SelectTrigger className="w-20 h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <span>:</span>
+              <Select value={sendMinute} onValueChange={setSendMinute}>
+                <SelectTrigger className="w-20 h-8"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"].map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Destinos</Label>
+            {hasClient && (
+              <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <Checkbox checked={useClientGroup} onCheckedChange={(v) => setUseClientGroup(v === true)} />
+                Enviar no grupo do WhatsApp do cliente
+              </label>
+            )}
+            <RecipientSearch selected={customRecipients} onChange={setCustomRecipients} />
+          </div>
+
+          {instances.length > 1 && (
+            <div className="space-y-1.5">
+              <Label>Instância WhatsApp</Label>
+              <Select value={instanceId} onValueChange={setInstanceId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="auto">Automática (padrão da organização)</SelectItem>
+                  {instances.map((i) => <SelectItem key={i.id} value={i.id}>{i.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button onClick={() => saveMut.mutate()} disabled={!canSubmit || saveMut.isPending} className="gap-2">
+            {saveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {editing ? "Salvar" : "Criar automação"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

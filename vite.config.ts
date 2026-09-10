@@ -30,7 +30,16 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       tsConfigPaths({ projects: ["./tsconfig.json"] }),
       tanstackStart(),
-      nitro({ compressPublicAssets: { gzip: true, brotli: true } }),
+      nitro({
+        compressPublicAssets: { gzip: true, brotli: true },
+        handlers: [
+          {
+            route: "/api/automations/tick",
+            method: "POST",
+            handler: "./src/server/automations-tick.route.ts",
+          },
+        ],
+      }),
       viteReact(),
     ],
   };

@@ -406,6 +406,50 @@ export const scheduledMessageRecipients = pgTable("scheduled_message_recipients"
   errorMessage: text("error_message"),
 });
 
+// Regra de automação: envia conteúdo recorrente no WhatsApp. Não envia nada
+// direto — um tick (endpoint /api/automations/tick, chamado por cron do n8n)
+// materializa uma linha em scheduled_messages a cada ocorrência que vence.
+export const messageAutomations = pgTable("message_automations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  active: boolean("active").notNull().default(true),
+  contentType: text("content_type").notNull(), // 'text' | 'report'
+  body: text("body"), // texto livre — só quando contentType='text'
+  clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
+  reportPeriodDays: integer("report_period_days").notNull().default(7), // 7 | 15 | 30
+  recurrenceType: text("recurrence_type").notNull(), // 'weekly' | 'daily' | 'monthly'
+  recurrenceDays: integer("recurrence_days").array().notNull().default([]), // weekly: 1..7 (1=segunda); monthly: 1..28
+  sendHour: integer("send_hour").notNull(), // 0..23, fuso America/Sao_Paulo
+  sendMinute: integer("send_minute").notNull(), // 0..59
+  whatsappInstanceId: uuid("whatsapp_instance_id").references(() => whatsappInstances.id, { onDelete: "set null" }),
+  lastRunAt: timestamp("last_run_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const messageAutomationDestinations = pgTable("message_automation_destinations", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  automationId: uuid("automation_id")
+    .notNull()
+    .references(() => messageAutomations.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(), // 'client_group' | 'custom'
+  remoteJid: text("remote_jid"), // null p/ 'client_group' — resolve em runtime via clients.whatsappGroupId
+  name: text("name").notNull(),
+});
+
+export const messageAutomationMedia = pgTable("message_automation_media", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  automationId: uuid("automation_id")
+    .notNull()
+    .references(() => messageAutomations.id, { onDelete: "cascade" }),
+  base64: text("base64").notNull(),
+  mimetype: text("mimetype").notNull(),
+  filename: text("filename").notNull(),
+  sortOrder: integer("sort_order").notNull().default(0),
+});
+
 // --- relations (usadas pelos joins via db.query.*) ---
 
 export const organizationsRelations = relations(organizations, ({ many }) => ({
@@ -559,4 +603,29 @@ export const scheduledMessagesRelations = relations(scheduledMessages, ({ one, m
 
 export const scheduledMessageRecipientsRelations = relations(scheduledMessageRecipients, ({ one }) => ({
   message: one(scheduledMessages, { fields: [scheduledMessageRecipients.messageId], references: [scheduledMessages.id] }),
+}));
+
+export const messageAutomationsRelations = relations(messageAutomations, ({ one, many }) => ({
+  organization: one(organizations, { fields: [messageAutomations.organizationId], references: [organizations.id] }),
+  client: one(clients, { fields: [messageAutomations.clientId], references: [clients.id] }),
+  whatsappInstance: one(whatsappInstances, {
+    fields: [messageAutomations.whatsappInstanceId],
+    references: [whatsappInstances.id],
+  }),
+  destinations: many(messageAutomationDestinations),
+  media: many(messageAutomationMedia),
+}));
+
+export const messageAutomationDestinationsRelations = relations(messageAutomationDestinations, ({ one }) => ({
+  automation: one(messageAutomations, {
+    fields: [messageAutomationDestinations.automationId],
+    references: [messageAutomations.id],
+  }),
+}));
+
+export const messageAutomationMediaRelations = relations(messageAutomationMedia, ({ one }) => ({
+  automation: one(messageAutomations, {
+    fields: [messageAutomationMedia.automationId],
+    references: [messageAutomations.id],
+  }),
 }));

@@ -461,6 +461,32 @@ export async function fetchAccountInsightsForRange(
   return { spend, leads, forms, impressions };
 }
 
+// Monta o texto do relatório de métricas. Recebe o token JÁ resolvido pelo
+// chamador — pra funcionar tanto no caminho com sessão (botão manual) quanto no
+// tick de automação (sem sessão, token resolvido direto do banco).
+export async function buildMetricsReportText(
+  client: { metaAdAccountId: string },
+  periodDays: number,
+  token: string
+): Promise<string> {
+  const until = new Date().toISOString().slice(0, 10);
+  const since = new Date(Date.now() - periodDays * 86400000).toISOString().slice(0, 10);
+
+  const { spend, leads, impressions } = await fetchAccountInsightsForRange(client.metaAdAccountId, token, since, until);
+  const custoPorMensagem = leads > 0 ? spend / leads : 0;
+  const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+
+  return `🎯Olá pessoal, segue Relatório das Métricas dos últimos ${periodDays} dias dos anúncios:
+
+▪️Impressões: ${impressions.toLocaleString("pt-BR")}
+▪️Número de mensagens: ${leads}
+▪️Custo por mensagem: ${brl(custoPorMensagem)}
+▪️Investimento: ${brl(spend)}
+
+Dos carros que estamos anunciando, quais estão tendo mais dificuldade nas negociações e quais objeções?
+Vou usar esse feedback para melhorar o tráfego!`;
+}
+
 const _sendWeeklyMetricsReport = createServerFn({ method: "POST" })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async ({ data }) => {
@@ -472,24 +498,7 @@ const _sendWeeklyMetricsReport = createServerFn({ method: "POST" })
     if (!client || client.organizationId !== organizationId) throw new Error("Cliente não encontrado.");
 
     const token = await requireMetaToken(data.clientId);
-
-    const until = new Date().toISOString().slice(0, 10);
-    const since = new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10);
-
-    const { spend, leads, impressions } = await fetchAccountInsightsForRange(client.metaAdAccountId, token, since, until);
-    const custoPorMensagem = leads > 0 ? spend / leads : 0;
-
-    const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
-    const text = `🎯Olá pessoal, segue Relatório semanal das Métricas dos últimos 7 dias dos anúncios:
-
-▪️Impressões: ${impressions.toLocaleString("pt-BR")}
-▪️Número de mensagens: ${leads}
-▪️Custo por mensagem: ${brl(custoPorMensagem)}
-▪️Investimento: ${brl(spend)}
-
-Dos carros que estamos anunciando, quais estão tendo mais dificuldade nas negociações e quais objeções?
-Vou usar esse feedback para melhorar o tráfego!`;
+    const text = await buildMetricsReportText(client, 7, token);
 
     const { resolveWhatsappInstance } = await import("./whatsapp-messages");
     const { url, apiKey, instance } = await resolveWhatsappInstance(data.clientId);
