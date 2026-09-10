@@ -3,9 +3,20 @@ import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, Send, Bot, User, AlertTriangle, Check, X, MessageSquare } from "lucide-react";
+import {
+  Plus,
+  Send,
+  Bot,
+  AlertTriangle,
+  Check,
+  X,
+  MessageSquare,
+  Sparkles,
+  TrendingUp,
+  ListChecks,
+  Search,
+} from "lucide-react";
 import { toast } from "sonner";
 import {
   agentSendMessage,
@@ -33,6 +44,24 @@ interface DisplayMessage {
   status?: "waiting" | "confirmed" | "cancelled";
 }
 
+const SUGGESTIONS = [
+  { icon: Search, label: "Quais clientes estão críticos hoje?", prompt: "Quais clientes estão críticos hoje e por quê?" },
+  { icon: TrendingUp, label: "Resumo de performance da semana", prompt: "Me dá um resumo da performance de todos os clientes nos últimos 7 dias." },
+  { icon: ListChecks, label: "Sugira otimizações", prompt: "Analise as campanhas ativas e sugira otimizações concretas." },
+  { icon: Sparkles, label: "Criar uma tarefa", prompt: "Quero criar uma tarefa para um cliente." },
+];
+
+function formatDay(value: string): string {
+  const d = new Date(value);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const yest = new Date(now);
+  yest.setDate(now.getDate() - 1);
+  if (sameDay) return "Hoje";
+  if (d.toDateString() === yest.toDateString()) return "Ontem";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
 function AgentePage() {
   const qc = useQueryClient();
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -40,12 +69,15 @@ function AgentePage() {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const taRef = useRef<HTMLTextAreaElement>(null);
 
   const { data: conversations = [] } = useQuery({
     queryKey: ["agent-conversations"],
     queryFn: () => agentListConversations(),
     refetchInterval: 30_000,
   });
+
+  const activeConversation = conversations.find((c) => c.id === conversationId);
 
   const loadMessagesMutation = useMutation({
     mutationFn: (cId: string) => agentLoadMessages({ data: { conversation_id: cId } }),
@@ -144,12 +176,23 @@ function AgentePage() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isThinking]);
 
-  const handleSend = () => {
-    const msg = input.trim();
-    if (!msg || sendMutation.isPending || isThinking) return;
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+  }, [input]);
+
+  const busy = isThinking || sendMutation.isPending;
+
+  const runPrompt = (msg: string) => {
+    const trimmed = msg.trim();
+    if (!trimmed || busy) return;
     setInput("");
-    sendMutation.mutate(msg);
+    sendMutation.mutate(trimmed);
   };
+
+  const handleSend = () => runPrompt(input);
 
   const startNewConversation = () => {
     setConversationId(null);
@@ -164,194 +207,269 @@ function AgentePage() {
 
   return (
     <AppShell>
-      <div className="flex h-[calc(100vh-0px)] md:h-screen overflow-hidden">
+      <div className="flex h-[100dvh] md:h-screen overflow-hidden bg-background">
 
         {/* Sidebar de conversas */}
-        <aside className="hidden md:flex w-56 flex-col border-r border-border bg-card/30 shrink-0">
-          <div className="p-3 border-b border-border">
-            <Button size="sm" variant="outline" className="w-full gap-2 text-xs" onClick={startNewConversation}>
-              <Plus className="h-3.5 w-3.5" />
+        <aside className="hidden md:flex w-64 flex-col border-r border-border bg-card/40 shrink-0">
+          <div className="p-3">
+            <Button
+              size="sm"
+              className="w-full gap-2 justify-start font-medium"
+              onClick={startNewConversation}
+            >
+              <Plus className="h-4 w-4" />
               Nova conversa
             </Button>
           </div>
+          <div className="px-4 pb-1.5 pt-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              Histórico
+            </span>
+          </div>
           <ScrollArea className="flex-1">
-            <div className="p-2 space-y-1">
+            <div className="p-2 pt-1 space-y-0.5">
               {conversations.length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-4">Nenhuma conversa ainda.</p>
+                <p className="text-xs text-muted-foreground/70 text-center py-8 px-4">
+                  Suas conversas com o agente aparecem aqui.
+                </p>
               )}
-              {conversations.map((c) => (
-                <button
-                  key={c.id}
-                  onClick={() => selectConversation(c.id)}
-                  className={cn(
-                    "w-full text-left px-3 py-2 rounded-md text-xs transition-colors",
-                    conversationId === c.id
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <MessageSquare className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{c.title ?? "Conversa"}</span>
-                  </div>
-                  <div className="text-[10px] text-muted-foreground/60 mt-0.5 pl-5">
-                    {new Date(c.last_msg_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" })}
-                  </div>
-                </button>
-              ))}
+              {conversations.map((c) => {
+                const active = conversationId === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => selectConversation(c.id)}
+                    className={cn(
+                      "group relative w-full overflow-hidden rounded-lg px-3 py-2 text-left transition-colors",
+                      active
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                    )}
+                  >
+                    {active && (
+                      <span className="absolute left-0 top-1/2 h-5 w-0.5 -translate-y-1/2 rounded-full bg-primary" />
+                    )}
+                    <div className="flex min-w-0 items-center gap-2">
+                      <MessageSquare className="h-3.5 w-3.5 shrink-0 opacity-70" />
+                      <span className="min-w-0 flex-1 truncate text-[13px] font-medium">
+                        {c.title ?? "Conversa"}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 pl-[22px] text-[10px] text-muted-foreground/60">
+                      {formatDay(c.last_msg_at)}
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </ScrollArea>
         </aside>
 
         {/* Área principal de chat */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex flex-1 flex-col min-w-0">
           {/* Header */}
-          <div className="px-4 py-3 border-b border-border flex items-center gap-2 shrink-0">
-            <div className="h-7 w-7 rounded-md bg-primary/20 flex items-center justify-center">
-              <Bot className="h-4 w-4 text-primary" />
+          <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-3 md:px-6">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-primary to-primary/60 shadow-sm">
+              <Bot className="h-[18px] w-[18px] text-primary-foreground" />
             </div>
-            <div>
-              <div className="text-sm font-semibold">Agente IA</div>
-              <div className="text-[10px] text-muted-foreground">Gestor de tráfego secundário · GPT-4o</div>
+            <div className="min-w-0">
+              <div className="truncate text-sm font-semibold leading-tight">
+                {activeConversation?.title ?? "Agente IA"}
+              </div>
+              <div className="text-[11px] text-muted-foreground">
+                Gestor de tráfego secundário · GPT-4o
+              </div>
             </div>
-            <Button size="sm" variant="ghost" className="ml-auto md:hidden gap-1.5 text-xs" onClick={startNewConversation}>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="ml-auto gap-1.5 text-xs md:hidden"
+              onClick={startNewConversation}
+            >
               <Plus className="h-3.5 w-3.5" />
               Nova
             </Button>
-          </div>
+          </header>
 
           {/* Mensagens */}
           <ScrollArea className="flex-1">
-            <div className="max-w-2xl mx-auto px-4 py-6 space-y-4">
-              {messages.length === 0 && !isThinking && (
-                <div className="text-center py-16">
-                  <Bot className="h-10 w-10 text-muted-foreground/30 mx-auto mb-3" />
-                  <p className="text-sm text-muted-foreground">Olá! Estou analisando as campanhas.</p>
-                  <p className="text-xs text-muted-foreground/60 mt-1">Pergunte sobre um cliente, sugira otimizações ou peça para criar uma tarefa.</p>
+            <div className="mx-auto max-w-3xl px-4 py-6 md:px-6 md:py-8">
+              {messages.length === 0 && !isThinking ? (
+                <div className="flex flex-col items-center pt-10 text-center md:pt-16">
+                  <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/60 shadow-md">
+                    <Bot className="h-7 w-7 text-primary-foreground" />
+                  </div>
+                  <h2 className="text-lg font-semibold">Como posso ajudar hoje?</h2>
+                  <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+                    Pergunte sobre um cliente, peça uma análise das campanhas ou crie uma tarefa.
+                  </p>
+                  <div className="mt-6 grid w-full max-w-lg gap-2 sm:grid-cols-2">
+                    {SUGGESTIONS.map((s) => (
+                      <button
+                        key={s.label}
+                        onClick={() => runPrompt(s.prompt)}
+                        className="group flex items-start gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent"
+                      >
+                        <s.icon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                        <span className="leading-snug text-foreground/90">{s.label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              )}
-
-              {messages.map((msg) => {
-                if (msg.role === "user") {
-                  return (
-                    <div key={msg.id} className="flex justify-end">
-                      <div className="flex items-start gap-2 max-w-[80%]">
-                        <div className="bg-primary text-primary-foreground rounded-2xl rounded-tr-sm px-4 py-2.5 text-sm leading-relaxed">
-                          {msg.content}
-                        </div>
-                        <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0 mt-0.5">
-                          <User className="h-3.5 w-3.5 text-muted-foreground" />
-                        </div>
-                      </div>
-                    </div>
-                  );
-                }
-
-                if (msg.role === "assistant") {
-                  return (
-                    <div key={msg.id} className="flex items-start gap-2 max-w-[85%]">
-                      <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0 mt-0.5">
-                        <Bot className="h-3.5 w-3.5 text-primary" />
-                      </div>
-                      <div className="bg-card border border-border rounded-2xl rounded-tl-sm px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap">
-                        {msg.content}
-                      </div>
-                    </div>
-                  );
-                }
-
-                if (msg.role === "confirmation" && msg.pending_action) {
-                  const isDone = msg.status === "confirmed" || msg.status === "cancelled";
-                  return (
-                    <div key={msg.id} className="flex items-start gap-2 max-w-[85%]">
-                      <div className="h-7 w-7 rounded-full bg-status-attention/20 flex items-center justify-center shrink-0 mt-0.5">
-                        <AlertTriangle className="h-3.5 w-3.5 text-status-attention" />
-                      </div>
-                      <div className={cn(
-                        "border rounded-2xl rounded-tl-sm px-4 py-3 text-sm",
-                        msg.status === "confirmed" ? "bg-status-on-target/10 border-status-on-target/30" :
-                        msg.status === "cancelled" ? "bg-muted border-border opacity-60" :
-                        "bg-status-attention/10 border-status-attention/30"
-                      )}>
-                        <p className={cn(
-                          "text-xs font-semibold mb-1.5",
-                          msg.status === "confirmed" ? "text-status-on-target" :
-                          msg.status === "cancelled" ? "text-muted-foreground" :
-                          "text-status-attention"
-                        )}>
-                          {msg.status === "confirmed" ? "✓ Ação executada" :
-                           msg.status === "cancelled" ? "✗ Cancelado" :
-                           "⚠ Confirmação necessária"}
-                        </p>
-                        <p className="text-foreground/90 leading-snug">{msg.pending_action.description}</p>
-                        {!isDone && (
-                          <div className="flex gap-2 mt-3">
-                            <Button
-                              size="sm"
-                              className="h-7 text-xs bg-status-on-target hover:opacity-90 text-white"
-                              onClick={() => confirmMutation.mutate({ action: msg.pending_action!, confirmMsgId: msg.id })}
-                              disabled={confirmMutation.isPending}
-                            >
-                              <Check className="h-3.5 w-3.5 mr-1" />
-                              Confirmar
-                            </Button>
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              className="h-7 text-xs"
-                              onClick={() => cancelAction(msg.id)}
-                            >
-                              <X className="h-3.5 w-3.5 mr-1" />
-                              Cancelar
-                            </Button>
+              ) : (
+                <div className="space-y-5">
+                  {messages.map((msg) => {
+                    if (msg.role === "user") {
+                      return (
+                        <div key={msg.id} className="flex justify-end">
+                          <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-primary px-4 py-2.5 text-sm leading-relaxed text-primary-foreground shadow-sm">
+                            {msg.content}
                           </div>
-                        )}
+                        </div>
+                      );
+                    }
+
+                    if (msg.role === "assistant") {
+                      return (
+                        <div key={msg.id} className="flex items-start gap-3">
+                          <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/15">
+                            <Bot className="h-4 w-4 text-primary" />
+                          </div>
+                          <div className="min-w-0 flex-1 whitespace-pre-wrap pt-0.5 text-sm leading-relaxed text-foreground/90">
+                            {msg.content}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (msg.role === "confirmation" && msg.pending_action) {
+                      const isDone = msg.status === "confirmed" || msg.status === "cancelled";
+                      return (
+                        <div key={msg.id} className="flex items-start gap-3">
+                          <div
+                            className={cn(
+                              "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                              msg.status === "confirmed"
+                                ? "bg-status-on-target/20"
+                                : msg.status === "cancelled"
+                                  ? "bg-muted"
+                                  : "bg-status-attention/20"
+                            )}
+                          >
+                            {msg.status === "confirmed" ? (
+                              <Check className="h-4 w-4 text-status-on-target" />
+                            ) : msg.status === "cancelled" ? (
+                              <X className="h-4 w-4 text-muted-foreground" />
+                            ) : (
+                              <AlertTriangle className="h-4 w-4 text-status-attention" />
+                            )}
+                          </div>
+                          <div
+                            className={cn(
+                              "min-w-0 flex-1 rounded-xl border px-4 py-3 text-sm",
+                              msg.status === "confirmed"
+                                ? "border-status-on-target/30 bg-status-on-target/10"
+                                : msg.status === "cancelled"
+                                  ? "border-border bg-muted opacity-60"
+                                  : "border-status-attention/30 bg-status-attention/10"
+                            )}
+                          >
+                            <p
+                              className={cn(
+                                "mb-1.5 text-xs font-semibold",
+                                msg.status === "confirmed"
+                                  ? "text-status-on-target"
+                                  : msg.status === "cancelled"
+                                    ? "text-muted-foreground"
+                                    : "text-status-attention"
+                              )}
+                            >
+                              {msg.status === "confirmed"
+                                ? "Ação executada"
+                                : msg.status === "cancelled"
+                                  ? "Cancelado"
+                                  : "Confirmação necessária"}
+                            </p>
+                            <p className="leading-snug text-foreground/90">{msg.pending_action.description}</p>
+                            {!isDone && (
+                              <div className="mt-3 flex gap-2">
+                                <Button
+                                  size="sm"
+                                  className="h-7 bg-status-on-target text-xs text-white hover:opacity-90"
+                                  onClick={() => confirmMutation.mutate({ action: msg.pending_action!, confirmMsgId: msg.id })}
+                                  disabled={confirmMutation.isPending}
+                                >
+                                  <Check className="mr-1 h-3.5 w-3.5" />
+                                  Confirmar
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-7 text-xs"
+                                  onClick={() => cancelAction(msg.id)}
+                                >
+                                  <X className="mr-1 h-3.5 w-3.5" />
+                                  Cancelar
+                                </Button>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return null;
+                  })}
+
+                  {isThinking && (
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/15">
+                        <Bot className="h-4 w-4 text-primary" />
+                      </div>
+                      <div className="flex items-center gap-1 pt-2">
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:0ms]" />
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:150ms]" />
+                        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-muted-foreground/50 [animation-delay:300ms]" />
                       </div>
                     </div>
-                  );
-                }
+                  )}
 
-                return null;
-              })}
-
-              {isThinking && (
-                <div className="flex items-start gap-2">
-                  <div className="h-7 w-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
-                    <Bot className="h-3.5 w-3.5 text-primary" />
-                  </div>
-                  <div className="bg-card border border-border rounded-2xl rounded-tl-sm px-4 py-3">
-                    <div className="flex gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:0ms]" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:150ms]" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/50 animate-bounce [animation-delay:300ms]" />
-                    </div>
-                  </div>
+                  <div ref={bottomRef} />
                 </div>
               )}
-
-              <div ref={bottomRef} />
             </div>
           </ScrollArea>
 
           {/* Input */}
-          <div className="px-4 py-3 border-t border-border shrink-0">
-            <div className="max-w-2xl mx-auto flex gap-2">
-              <Input
+          <div className="shrink-0 border-t border-border bg-background px-4 py-3 md:px-6 md:py-4">
+            <div className="mx-auto flex max-w-3xl items-end gap-2 rounded-2xl border border-border bg-card px-3 py-2 shadow-sm focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20">
+              <textarea
+                ref={taRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                rows={1}
                 placeholder="Pergunte algo ou peça uma ação..."
-                disabled={isThinking || sendMutation.isPending}
-                className="text-sm"
+                disabled={busy}
+                className="max-h-40 flex-1 resize-none bg-transparent py-1.5 text-sm leading-relaxed outline-none placeholder:text-muted-foreground/70 disabled:opacity-60"
               />
               <Button
                 size="icon"
+                className="h-8 w-8 shrink-0 rounded-xl"
                 onClick={handleSend}
-                disabled={!input.trim() || isThinking || sendMutation.isPending}
+                disabled={!input.trim() || busy}
               >
                 <Send className="h-4 w-4" />
               </Button>
             </div>
+            <p className="mx-auto mt-1.5 max-w-3xl px-1 text-[10px] text-muted-foreground/60">
+              Enter envia · Shift+Enter quebra linha
+            </p>
           </div>
         </div>
       </div>
