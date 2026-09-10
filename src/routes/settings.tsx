@@ -303,6 +303,52 @@ function MetaTokensSection({ isAdmin }: { isAdmin: boolean }) {
           })
         )}
       </Card>
+
+      <details className="mt-3 rounded-lg border border-border bg-muted/20 group">
+        <summary className="cursor-pointer list-none px-4 py-3 flex items-center justify-between text-sm font-medium select-none">
+          <span className="flex items-center gap-2">
+            <KeyRound className="h-4 w-4 text-muted-foreground" />
+            Como pegar o token da Meta
+          </span>
+          <ExternalLink className="h-3.5 w-3.5 text-muted-foreground opacity-0" />
+        </summary>
+        <div className="px-4 pb-4 pt-1 space-y-4 text-sm text-muted-foreground">
+          <div>
+            <p className="font-medium text-foreground mb-1.5">Jeito rápido — token de 60 dias</p>
+            <ol className="list-decimal ml-5 space-y-1.5">
+              <li>
+                Abra o{" "}
+                <a href="https://developers.facebook.com/tools/explorer/" target="_blank" rel="noopener noreferrer"
+                   className="text-primary underline underline-offset-2 inline-flex items-center gap-1">
+                  Graph API Explorer <ExternalLink className="h-3 w-3" />
+                </a>{" "}
+                e selecione o app da Business Manager no seletor de cima.
+              </li>
+              <li>Em <strong className="text-foreground">Permissions</strong>, adicione <code className="bg-muted px-1 rounded text-[11px]">ads_read</code> e <code className="bg-muted px-1 rounded text-[11px]">ads_management</code>.</li>
+              <li>Clique em <strong className="text-foreground">Generate Access Token</strong> e autorize.</li>
+              <li>Copie o token e cole aqui em <strong className="text-foreground">Novo token</strong> — o sistema valida e guarda com validade de 60 dias.</li>
+            </ol>
+          </div>
+          <div>
+            <p className="font-medium text-foreground mb-1.5">Jeito recomendado — System User (não expira toda hora)</p>
+            <ol className="list-decimal ml-5 space-y-1.5">
+              <li>
+                <a href="https://business.facebook.com/settings/system-users" target="_blank" rel="noopener noreferrer"
+                   className="text-primary underline underline-offset-2 inline-flex items-center gap-1">
+                  Configurações do Negócio → Usuários → Usuários do sistema <ExternalLink className="h-3 w-3" />
+                </a>{" "}
+                → <strong className="text-foreground">Adicionar</strong>, função <strong className="text-foreground">Admin</strong>.
+              </li>
+              <li>No usuário criado: <strong className="text-foreground">Atribuir ativos</strong> → contas de anúncio dos clientes → acesso total.</li>
+              <li><strong className="text-foreground">Gerar novo token</strong> → escolha o app da BM → marque <code className="bg-muted px-1 rounded text-[11px]">ads_read</code> e <code className="bg-muted px-1 rounded text-[11px]">ads_management</code> → gerar.</li>
+              <li>Copie o token e cole aqui em <strong className="text-foreground">Novo token</strong>.</li>
+            </ol>
+          </div>
+          <p className="text-[11px]">
+            Dica: crie um token por gestor (campo "Atribuir a um gestor") e, no cadastro de cada cliente, escolha qual token aquele cliente usa.
+          </p>
+        </div>
+      </details>
     </section>
   );
 }
