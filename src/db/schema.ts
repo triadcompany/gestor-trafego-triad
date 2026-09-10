@@ -121,6 +121,9 @@ export const clients = pgTable("clients", {
   whatsappGroupId: text("whatsapp_group_id"),
   whatsappGroupName: text("whatsapp_group_name"),
   whatsappInstanceId: uuid("whatsapp_instance_id").references(() => whatsappInstances.id, { onDelete: "set null" }),
+  // Gestor responsável — membro (role 'member') só vê clientes de que é dono;
+  // admin da organização vê todos. Nulo = "sem responsável" (só admin vê).
+  ownerUserId: uuid("owner_user_id").references(() => profiles.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
@@ -496,6 +499,7 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
   organization: one(organizations, { fields: [clients.organizationId], references: [organizations.id] }),
   metaToken: one(metaTokens, { fields: [clients.metaTokenId], references: [metaTokens.id] }),
   whatsappInstance: one(whatsappInstances, { fields: [clients.whatsappInstanceId], references: [whatsappInstances.id] }),
+  owner: one(profiles, { fields: [clients.ownerUserId], references: [profiles.id] }),
   notes: many(clientNotes),
   metrics: many(metricsDaily),
   campaignSnapshots: many(campaignSnapshots),

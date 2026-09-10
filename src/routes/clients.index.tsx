@@ -39,6 +39,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { fetchAllClients, upsertClient, toggleClientActive, deleteClient, setClientTags, upsertConversationTemplate, type ClientRow } from "@/lib/queries";
+import { getCurrentUser } from "@/server/session";
+import { fetchOrgMembers } from "@/server/team";
 import { upsertMessageAutomation } from "@/server/automations";
 import { TagBadge } from "@/components/TagBadge";
 import { brl } from "@/lib/mock-data";
@@ -62,6 +64,10 @@ function ClientsList() {
     queryKey: ["clients-all"],
     queryFn: fetchAllClients,
   });
+  const { data: currentUser } = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser, staleTime: 1000 * 60 });
+  const isAdmin = currentUser?.role === "admin";
+  const { data: members = [] } = useQuery({ queryKey: ["org-members"], queryFn: fetchOrgMembers, enabled: isAdmin });
+  const ownerName = (id: string | null) => members.find((m) => m.id === id)?.fullName ?? "—";
 
   const saveMutation = useMutation({
     mutationFn: async ({ clientData, tagIds }: { clientData: Parameters<typeof upsertClient>[0]; tagIds: string[] }) => {
@@ -182,6 +188,7 @@ function ClientsList() {
             <TableHeader>
               <TableRow>
                 <TableHead>Nome</TableHead>
+                {isAdmin && <TableHead className="hidden md:table-cell">Responsável</TableHead>}
                 <TableHead className="hidden lg:table-cell">Conta Meta</TableHead>
                 <TableHead className="hidden md:table-cell">Tags</TableHead>
                 <TableHead>Segmento</TableHead>
@@ -211,6 +218,7 @@ function ClientsList() {
                       onClick={() => navigate({ to: "/clients/$id", params: { id: c.id }, search: { openCampaignId: undefined } })}
                     >
                       <TableCell className="font-medium">{c.name}</TableCell>
+                      {isAdmin && <TableCell className="hidden md:table-cell text-muted-foreground text-sm">{ownerName(c.owner_user_id)}</TableCell>}
                       <TableCell className="hidden lg:table-cell text-muted-foreground text-sm">
                         {c.meta_ad_account_id}
                       </TableCell>

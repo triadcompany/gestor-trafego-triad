@@ -479,14 +479,14 @@ async function ensureConversation(
   return row.id;
 }
 
-async function getConversationMode(conversationId: string, organizationId: string): Promise<AgentMode> {
+async function getConversationMode(conversationId: string, organizationId: string, userId: string): Promise<AgentMode> {
   const rows = await db
-    .select({ mode: agentConversations.mode, organizationId: agentConversations.organizationId })
+    .select({ mode: agentConversations.mode, organizationId: agentConversations.organizationId, createdBy: agentConversations.createdBy })
     .from(agentConversations)
     .where(eq(agentConversations.id, conversationId))
     .limit(1);
   const row = rows[0];
-  if (!row || row.organizationId !== organizationId) throw new Error("Conversa não encontrada.");
+  if (!row || row.organizationId !== organizationId || row.createdBy !== userId) throw new Error("Conversa não encontrada.");
   return (row.mode as AgentMode) ?? "trafego";
 }
 
@@ -541,7 +541,7 @@ export const agentSendMessage = createServerFn({ method: "POST" })
       const { userId, organizationId } = await requireOrgContext();
 
       const mode: AgentMode = data.conversation_id
-        ? await getConversationMode(data.conversation_id, organizationId)
+        ? await getConversationMode(data.conversation_id, organizationId, userId)
         : (data.mode ?? "trafego");
       const convId = await ensureConversation(data.conversation_id, userId, mode, organizationId);
       const history = await loadHistory(convId);
@@ -626,8 +626,8 @@ export const agentExecuteAction = createServerFn({ method: "POST" })
     const openai = new OpenAI({ apiKey: openaiKey });
 
     try {
-      const { organizationId } = await requireOrgContext();
-      await getConversationMode(data.conversation_id, organizationId); // valida posse da conversa
+      const { organizationId, userId } = await requireOrgContext();
+      await getConversationMode(data.conversation_id, organizationId, userId); // valida posse da conversa
 
       const result = await executeConfirmedAction(data.pending_action.tool, data.pending_action.args);
       if (result.type === "error") return { type: "error", message: result.message };
@@ -652,7 +652,7 @@ export const agentExecuteAction = createServerFn({ method: "POST" })
 
 export const agentListConversations = createServerFn({ method: "GET" }).handler(
   async (): Promise<Array<{ id: string; title: string | null; last_msg_at: string; mode: string }>> => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, userId } = await requireOrgContext();
     const rows = await db
       .select({
         id: agentConversations.id,
@@ -661,7 +661,7 @@ export const agentListConversations = createServerFn({ method: "GET" }).handler(
         mode: agentConversations.mode,
       })
       .from(agentConversations)
-      .where(eq(agentConversations.organizationId, organizationId))
+      .where(and(eq(agentConversations.organizationId, organizationId), eq(agentConversations.createdBy, userId)))
       .orderBy(desc(agentConversations.lastMsgAt))
       .limit(30);
     return rows;
@@ -671,8 +671,8 @@ export const agentListConversations = createServerFn({ method: "GET" }).handler(
 export const agentLoadMessages = createServerFn({ method: "GET" })
   .inputValidator(loadMessagesSchema)
   .handler(async ({ data }): Promise<ChatMessage[]> => {
-    const { organizationId } = await requireOrgContext();
-    await getConversationMode(data.conversation_id, organizationId); // valida posse da conversa
+    const { organizationId, userId } = await requireOrgContext();
+    await getConversationMode(data.conversation_id, organizationId, userId); // valida posse da conversa
     const rows = await db
       .select({ role: agentMessages.role, content: agentMessages.content })
       .from(agentMessages)

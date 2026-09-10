@@ -18,6 +18,8 @@ import {
 } from "@/components/ui/select";
 import { Plus, X, Check, Search, Loader2, Users } from "lucide-react";
 import { fetchTags, createTag, upsertClient, type ClientRow, type TagRow } from "@/lib/queries";
+import { getCurrentUser } from "@/server/session";
+import { fetchOrgMembers } from "@/server/team";
 import { TagBadge, TAG_COLORS } from "@/components/TagBadge";
 import { searchEvolutionRecipients, fetchWhatsappInstances, type EvolutionRecipient } from "@/lib/whatsapp-messages";
 import { fetchMetaTokens } from "@/lib/meta";
@@ -54,10 +56,18 @@ export function ClientFormDialog({
   );
   const [metaTokenId, setMetaTokenId] = useState<string | null>(client?.meta_token_id ?? null);
   const [whatsappInstanceId, setWhatsappInstanceId] = useState<string | null>(client?.whatsapp_instance_id ?? null);
+  const [ownerUserId, setOwnerUserId] = useState<string>(client?.owner_user_id ?? "");
 
   const queryClient = useQueryClient();
   const { data: metaTokens = [] } = useQuery({ queryKey: ["meta-tokens"], queryFn: fetchMetaTokens });
   const { data: whatsappInstances = [] } = useQuery({ queryKey: ["whatsapp-instances"], queryFn: fetchWhatsappInstances });
+  const { data: currentUser } = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser, staleTime: 1000 * 60 });
+  const isAdmin = currentUser?.role === "admin";
+  const { data: orgMembers = [] } = useQuery({ queryKey: ["org-members"], queryFn: fetchOrgMembers, enabled: isAdmin });
+
+  useEffect(() => {
+    if (!ownerUserId && currentUser?.id) setOwnerUserId(currentUser.id);
+  }, [currentUser, ownerUserId]);
 
   // Se a organização só tem 1 token/instância, usa ele automaticamente sem pedir escolha.
   useEffect(() => {
@@ -103,6 +113,7 @@ export function ClientFormDialog({
         whatsapp_group_name: whatsappGroup?.name ?? null,
         meta_token_id: metaTokenId,
         whatsapp_instance_id: whatsappInstanceId,
+        ...(isAdmin && ownerUserId ? { owner_user_id: ownerUserId } : {}),
       },
       selectedTagIds,
     );
@@ -196,6 +207,27 @@ export function ClientFormDialog({
             />
           </div>
         </div>
+
+        <div className="space-y-1">
+          <Label>Gestor responsável</Label>
+          {isAdmin ? (
+            <Select value={ownerUserId} onValueChange={setOwnerUserId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecionar gestor" />
+              </SelectTrigger>
+              <SelectContent>
+                {orgMembers.map((m) => (
+                  <SelectItem key={m.id} value={m.id}>{m.fullName}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <p className="text-sm text-muted-foreground px-3 py-2 border border-input rounded-md bg-muted/40">
+              {currentUser?.fullName ?? "Você"} <span className="text-xs">(só admin pode transferir)</span>
+            </p>
+          )}
+        </div>
+
         {(metaTokens.length > 1 || whatsappInstances.length > 1) && (
           <div className="grid grid-cols-2 gap-3">
             {metaTokens.length > 1 && (

@@ -78,6 +78,13 @@
       "when": 1789081107082,
       "tag": "0010_group_summary_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1789082299666,
+      "tag": "0011_client_owner",
+      "breakpoints": true
     }
   ]
 }

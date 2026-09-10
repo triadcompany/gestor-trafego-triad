@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { appConfig, campaignSnapshots, clients as clientsTable, metaTokens, metricsDaily, syncLog } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
+import { clientAccessCondition, canAccessClient } from "@/lib/client-access";
 
 async function getConfigValues(keys: string[]): Promise<Record<string, string>> {
   const { organizationId } = await requireOrgContext();
@@ -124,14 +125,14 @@ export async function deleteMetaToken(id: string): Promise<void> {
 const _resolveMetaToken = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().optional() }))
   .handler(async ({ data }): Promise<{ accessToken: string; expiresAt: string | null } | null> => {
-    const { organizationId, userId } = await requireOrgContext();
+    const { organizationId, userId, role } = await requireOrgContext();
 
     if (data.clientId) {
       const client = await db.query.clients.findFirst({
         where: eq(clientsTable.id, data.clientId),
-        columns: { organizationId: true, metaTokenId: true },
+        columns: { organizationId: true, ownerUserId: true, metaTokenId: true },
       });
-      if (!client || client.organizationId !== organizationId) throw new Error("Cliente não encontrado.");
+      if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
       if (client.metaTokenId) {
         const row = await db.query.metaTokens.findFirst({ where: eq(metaTokens.id, client.metaTokenId) });
         if (row?.active) return row;
@@ -490,12 +491,12 @@ Vou usar esse feedback para melhorar o tráfego!`;
 const _sendWeeklyMetricsReport = createServerFn({ method: "POST" })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, role, userId } = await requireOrgContext();
     const [client] = await db
-      .select({ organizationId: clientsTable.organizationId, metaAdAccountId: clientsTable.metaAdAccountId, whatsappGroupId: clientsTable.whatsappGroupId })
+      .select({ organizationId: clientsTable.organizationId, ownerUserId: clientsTable.ownerUserId, metaAdAccountId: clientsTable.metaAdAccountId, whatsappGroupId: clientsTable.whatsappGroupId })
       .from(clientsTable)
       .where(eq(clientsTable.id, data.clientId));
-    if (!client || client.organizationId !== organizationId) throw new Error("Cliente não encontrado.");
+    if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
 
     const token = await requireMetaToken(data.clientId);
     const text = await buildMetricsReportText(client, 7, token);
@@ -532,11 +533,11 @@ export async function sendWeeklyMetricsReport(clientId: string): Promise<void> {
 // vários. Sempre chamada de dentro de uma sessão logada (browser), nunca por um
 // cron global — por isso resolve a organização via requireOrgContext.
 export const syncAllClients = createServerOnlyFn(async function syncAllClients(): Promise<MetaSyncResult> {
-  const { organizationId } = await requireOrgContext();
+  const { organizationId, role, userId } = await requireOrgContext();
   const activeClients = await db
     .select({ id: clientsTable.id, metaAdAccountId: clientsTable.metaAdAccountId })
     .from(clientsTable)
-    .where(and(eq(clientsTable.active, true), eq(clientsTable.organizationId, organizationId)));
+    .where(and(eq(clientsTable.active, true), eq(clientsTable.organizationId, organizationId), clientAccessCondition({ role, userId })));
 
   if (activeClients.length === 0) {
     return { synced: 0, errors: [], syncedAt: new Date().toISOString() };

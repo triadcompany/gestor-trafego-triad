@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, gte, inArray, lte } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import {
@@ -17,22 +17,22 @@ import {
   tasks,
 } from "@/db/schema";
 import { getSessionUserId, requireOrgContext } from "@/server/session";
+import { clientAccessCondition, canAccessClient } from "@/lib/client-access";
 import type { ClientStatus, PeriodType, ReportStatus, TaskStatus } from "./database.types";
 import { getMetaToken, fetchAccountInsightsForRange } from "./meta";
 
 export type { ClientStatus, PeriodType, ReportStatus };
 
-// Confere que um client_id recebido do cliente pertence à organização de quem
-// está chamando — evita alguém de uma organização adivinhar o UUID de um cliente
-// de outra (nota, venda, relatório, etc. sempre penduram só de client_id).
-async function assertClientInOrg(clientId: string, organizationId: string): Promise<void> {
+type AccessCtx = { organizationId: string; role: "admin" | "member"; userId: string };
+
+// Confere que quem chamou pode acessar o cliente: precisa ser da mesma
+// organização E (admin OU dono do cliente). Membro nunca vê cliente de outro.
+async function assertClientAccessible(clientId: string, ctx: AccessCtx): Promise<void> {
   const row = await db.query.clients.findFirst({
     where: eq(clients.id, clientId),
-    columns: { organizationId: true },
+    columns: { organizationId: true, ownerUserId: true },
   });
-  if (!row || row.organizationId !== organizationId) {
-    throw new Error("Cliente não encontrado.");
-  }
+  if (!canAccessClient(ctx, row)) throw new Error("Cliente não encontrado.");
 }
 
 export interface TagRow {
@@ -62,6 +62,7 @@ export interface ClientRow {
   whatsapp_group_name: string | null;
   meta_token_id: string | null;
   whatsapp_instance_id: string | null;
+  owner_user_id: string | null;
   tags?: TagRow[];
 }
 
@@ -112,6 +113,7 @@ function toClientRow(c: typeof clients.$inferSelect): ClientRow {
     whatsapp_group_name: c.whatsappGroupName,
     meta_token_id: c.metaTokenId,
     whatsapp_instance_id: c.whatsappInstanceId,
+    owner_user_id: c.ownerUserId,
   };
 }
 
@@ -167,11 +169,11 @@ function periodDateRange(
 }
 
 const _fetchActiveClients = createServerFn({ method: "GET" }).handler(async () => {
-  const { organizationId } = await requireOrgContext();
+  const { organizationId, role, userId } = await requireOrgContext();
   const rows = await db
     .select()
     .from(clients)
-    .where(and(eq(clients.active, true), eq(clients.organizationId, organizationId)))
+    .where(and(eq(clients.active, true), eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })))
     .orderBy(clients.name);
   return rows.map(toClientRow);
 });
@@ -179,11 +181,11 @@ const _fetchActiveClients = createServerFn({ method: "GET" }).handler(async () =
 const _fetchClientsForDate = createServerFn({ method: "GET" })
   .inputValidator(z.object({ date: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, role, userId } = await requireOrgContext();
     const clientRows = await db
       .select()
       .from(clients)
-      .where(and(eq(clients.active, true), eq(clients.organizationId, organizationId)))
+      .where(and(eq(clients.active, true), eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })))
       .orderBy(clients.name);
     const clientIds = clientRows.map((c) => c.id);
     const metricRows = clientIds.length
@@ -251,9 +253,9 @@ export async function fetchClients(
 }
 
 const _fetchAllClients = createServerFn({ method: "GET" }).handler(async () => {
-  const { organizationId } = await requireOrgContext();
+  const { organizationId, role, userId } = await requireOrgContext();
   const rows = await db.query.clients.findMany({
-    where: eq(clients.organizationId, organizationId),
+    where: and(eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })),
     orderBy: clients.name,
     with: { clientTags: { with: { tag: true } } },
   });
@@ -270,7 +272,7 @@ export async function fetchAllClients(): Promise<ClientRow[]> {
 const _fetchClientDetail = createServerFn({ method: "GET" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, role, userId } = await requireOrgContext();
     const today = new Date().toISOString().slice(0, 10);
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
 
@@ -279,7 +281,7 @@ const _fetchClientDetail = createServerFn({ method: "GET" })
       with: { clientTags: { with: { tag: true } } },
     });
 
-    if (!client || client.organizationId !== organizationId) throw new Error("Cliente não encontrado");
+    if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado");
 
     const history = await db
       .select({
@@ -333,17 +335,38 @@ const upsertClientSchema = z.object({
   whatsapp_group_name: z.string().nullable().optional(),
   meta_token_id: z.string().nullable().optional(),
   whatsapp_instance_id: z.string().nullable().optional(),
+  owner_user_id: z.string().nullable().optional(),
 });
 
 const _upsertClient = createServerFn({ method: "POST" })
   .inputValidator(upsertClientSchema)
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    if (data.id) await assertClientInOrg(data.id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    if (data.id) await assertClientAccessible(data.id, { organizationId, role, userId });
+
+    // Gestor responsável: membro sempre fica como dono (não pode transferir).
+    // Admin escolhe; se não escolher num cliente novo, assume ele mesmo.
+    let ownerUserId: string;
+    if (role !== "admin") {
+      ownerUserId = userId;
+    } else if (data.owner_user_id) {
+      const prof = await db.query.profiles.findFirst({
+        where: eq(profiles.id, data.owner_user_id),
+        columns: { organizationId: true },
+      });
+      if (!prof || prof.organizationId !== organizationId) throw new Error("Gestor responsável inválido.");
+      ownerUserId = data.owner_user_id;
+    } else if (data.id) {
+      const existing = await db.query.clients.findFirst({ where: eq(clients.id, data.id), columns: { ownerUserId: true } });
+      ownerUserId = existing?.ownerUserId ?? userId;
+    } else {
+      ownerUserId = userId;
+    }
 
     const values = {
       ...(data.id ? { id: data.id } : {}),
       organizationId,
+      ownerUserId,
       name: data.name,
       metaAdAccountId: data.meta_ad_account_id,
       metaPageId: data.meta_page_id ?? null,
@@ -388,6 +411,7 @@ export async function upsertClient(data: {
   whatsapp_group_name?: string | null;
   meta_token_id?: string | null;
   whatsapp_instance_id?: string | null;
+  owner_user_id?: string | null;
 }): Promise<{ id: string }> {
   return _upsertClient({ data });
 }
@@ -395,7 +419,7 @@ export async function upsertClient(data: {
 // ── Tags ──────────────────────────────────────────────────────────────────────
 
 const _fetchTags = createServerFn({ method: "GET" }).handler(async () => {
-  const { organizationId } = await requireOrgContext();
+  const { organizationId, role, userId } = await requireOrgContext();
   return db
     .select({ id: tags.id, name: tags.name, color: tags.color })
     .from(tags)
@@ -410,7 +434,7 @@ export async function fetchTags(): Promise<TagRow[]> {
 const _createTag = createServerFn({ method: "POST" })
   .inputValidator(z.object({ name: z.string(), color: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, role, userId } = await requireOrgContext();
     const [row] = await db
       .insert(tags)
       .values({ organizationId, name: data.name, color: data.color })
@@ -425,8 +449,8 @@ export async function createTag(name: string, color: string): Promise<TagRow> {
 const _setClientTags = createServerFn({ method: "POST" })
   .inputValidator(z.object({ clientId: z.string(), tagIds: z.array(z.string()) }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertClientInOrg(data.clientId, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.clientId, { organizationId, role, userId });
     await db.transaction(async (tx) => {
       await tx.delete(clientTags).where(eq(clientTags.clientId, data.clientId));
       if (data.tagIds.length > 0) {
@@ -442,8 +466,8 @@ export async function setClientTags(clientId: string, tagIds: string[]): Promise
 const _toggleClientActive = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string(), active: z.boolean() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertClientInOrg(data.id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.id, { organizationId, role, userId });
     await db.update(clients).set({ active: data.active }).where(eq(clients.id, data.id));
   });
 
@@ -454,8 +478,8 @@ export async function toggleClientActive(id: string, active: boolean) {
 const _deleteClient = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertClientInOrg(data.id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.id, { organizationId, role, userId });
     await db.delete(clients).where(eq(clients.id, data.id));
   });
 
@@ -466,8 +490,8 @@ export async function deleteClient(id: string): Promise<void> {
 const _updateClientGoal = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string(), cpl_min: z.number(), cpl_max: z.number() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertClientInOrg(data.id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.id, { organizationId, role, userId });
     await db.update(clients).set({ cplMin: data.cpl_min, cplMax: data.cpl_max }).where(eq(clients.id, data.id));
   });
 
@@ -485,7 +509,7 @@ export interface ClientBalance {
 }
 
 const _fetchClientBalances = createServerFn({ method: "GET" }).handler(async () => {
-  const { organizationId } = await requireOrgContext();
+  const { organizationId, role, userId } = await requireOrgContext();
   const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
 
   const clientRows = await db
@@ -497,7 +521,7 @@ const _fetchClientBalances = createServerFn({ method: "GET" }).handler(async () 
       metaBalance: clients.metaBalance,
     })
     .from(clients)
-    .where(and(eq(clients.active, true), eq(clients.organizationId, organizationId)))
+    .where(and(eq(clients.active, true), eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })))
     .orderBy(clients.name);
 
   const clientIds = clientRows.map((c) => c.id);
@@ -541,7 +565,7 @@ const brl = (reais: number) =>
   reais.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
 const _fetchAttentionItems = createServerFn({ method: "GET" }).handler(async (): Promise<AttentionItem[]> => {
-  const { organizationId } = await requireOrgContext();
+  const { organizationId, role, userId } = await requireOrgContext();
   const items: AttentionItem[] = [];
 
   const campaignRows = await db
@@ -556,7 +580,7 @@ const _fetchAttentionItems = createServerFn({ method: "GET" }).handler(async ():
     })
     .from(campaignSnapshots)
     .innerJoin(clients, eq(campaignSnapshots.clientId, clients.id))
-    .where(and(eq(campaignSnapshots.status, "ACTIVE"), eq(clients.active, true), eq(clients.organizationId, organizationId)));
+    .where(and(eq(campaignSnapshots.status, "ACTIVE"), eq(clients.active, true), eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })));
 
   for (const row of campaignRows) {
     if (row.cpl !== null && row.cpl > row.cplMax) {
@@ -623,15 +647,15 @@ export interface NoteWithClient {
 const _fetchNotes = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().optional() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    if (data.clientId) await assertClientInOrg(data.clientId, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    if (data.clientId) await assertClientAccessible(data.clientId, { organizationId, role, userId });
     const rows = await db.query.clientNotes.findMany({
       where: data.clientId ? eq(clientNotes.clientId, data.clientId) : undefined,
       orderBy: desc(clientNotes.createdAt),
-      with: { client: { columns: { name: true, organizationId: true } } },
+      with: { client: { columns: { name: true, organizationId: true, ownerUserId: true } } },
     });
     return rows
-      .filter((row) => row.client?.organizationId === organizationId)
+      .filter((row) => canAccessClient({ organizationId, role, userId }, row.client))
       .map((row) => ({
         id: row.id,
         client_id: row.clientId,
@@ -649,8 +673,8 @@ export async function fetchNotes(clientId?: string): Promise<NoteWithClient[]> {
 const _createNote = createServerFn({ method: "POST" })
   .inputValidator(z.object({ client_id: z.string(), content: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertClientInOrg(data.client_id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.client_id, { organizationId, role, userId });
     const [row] = await db
       .insert(clientNotes)
       .values({ clientId: data.client_id, content: data.content })
@@ -673,9 +697,9 @@ export async function createNote(payload: { client_id: string; content: string }
 const _updateNote = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string(), content: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    const note = await db.query.clientNotes.findFirst({ where: eq(clientNotes.id, data.id), with: { client: { columns: { organizationId: true } } } });
-    if (!note || note.client?.organizationId !== organizationId) throw new Error("Nota não encontrada.");
+    const { organizationId, role, userId } = await requireOrgContext();
+    const note = await db.query.clientNotes.findFirst({ where: eq(clientNotes.id, data.id), with: { client: { columns: { organizationId: true, ownerUserId: true } } } });
+    if (!canAccessClient({ organizationId, role, userId }, note?.client)) throw new Error("Nota não encontrada.");
     await db
       .update(clientNotes)
       .set({ content: data.content, updatedAt: new Date().toISOString() })
@@ -689,9 +713,9 @@ export async function updateNote(id: string, content: string): Promise<void> {
 const _deleteNote = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    const note = await db.query.clientNotes.findFirst({ where: eq(clientNotes.id, data.id), with: { client: { columns: { organizationId: true } } } });
-    if (!note || note.client?.organizationId !== organizationId) throw new Error("Nota não encontrada.");
+    const { organizationId, role, userId } = await requireOrgContext();
+    const note = await db.query.clientNotes.findFirst({ where: eq(clientNotes.id, data.id), with: { client: { columns: { organizationId: true, ownerUserId: true } } } });
+    if (!canAccessClient({ organizationId, role, userId }, note?.client)) throw new Error("Nota não encontrada.");
     await db.delete(clientNotes).where(eq(clientNotes.id, data.id));
   });
 
@@ -713,13 +737,13 @@ export interface ReportWithClient {
 }
 
 const _fetchReports = createServerFn({ method: "GET" }).handler(async () => {
-  const { organizationId } = await requireOrgContext();
+  const { organizationId, role, userId } = await requireOrgContext();
   const rows = await db.query.reportLog.findMany({
     orderBy: desc(reportLog.createdAt),
-    with: { client: { columns: { name: true, organizationId: true } } },
+    with: { client: { columns: { name: true, organizationId: true, ownerUserId: true } } },
   });
   return rows
-    .filter((row) => row.client?.organizationId === organizationId)
+    .filter((row) => canAccessClient({ organizationId, role, userId }, row.client))
     .map((row) => ({
       id: row.id,
       client_id: row.clientId,
@@ -739,8 +763,8 @@ export async function fetchReports(): Promise<ReportWithClient[]> {
 const _createReport = createServerFn({ method: "POST" })
   .inputValidator(z.object({ client_id: z.string(), period_type: z.enum(["semanal", "mensal"]), period_start: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertClientInOrg(data.client_id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.client_id, { organizationId, role, userId });
     await db.insert(reportLog).values({
       clientId: data.client_id,
       periodType: data.period_type,
@@ -753,16 +777,16 @@ export async function createReport(payload: { client_id: string; period_type: Pe
   await _createReport({ data: payload });
 }
 
-async function assertReportInOrg(reportId: string, organizationId: string): Promise<void> {
-  const row = await db.query.reportLog.findFirst({ where: eq(reportLog.id, reportId), with: { client: { columns: { organizationId: true } } } });
-  if (!row || row.client?.organizationId !== organizationId) throw new Error("Relatório não encontrado.");
+async function assertReportInOrg(reportId: string, ctx: AccessCtx): Promise<void> {
+  const row = await db.query.reportLog.findFirst({ where: eq(reportLog.id, reportId), with: { client: { columns: { organizationId: true, ownerUserId: true } } } });
+  if (!canAccessClient(ctx, row?.client)) throw new Error("Relatório não encontrado.");
 }
 
 const _markReportSent = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertReportInOrg(data.id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertReportInOrg(data.id, { organizationId, role, userId });
     await db.update(reportLog).set({ status: "enviado", sentAt: new Date().toISOString() }).where(eq(reportLog.id, data.id));
   });
 
@@ -773,8 +797,8 @@ export async function markReportSent(id: string): Promise<void> {
 const _markReportPending = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertReportInOrg(data.id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertReportInOrg(data.id, { organizationId, role, userId });
     await db.update(reportLog).set({ status: "pendente", sentAt: null }).where(eq(reportLog.id, data.id));
   });
 
@@ -792,8 +816,8 @@ const _updateReport = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertReportInOrg(data.id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertReportInOrg(data.id, { organizationId, role, userId });
     const { id, ...fields } = data;
     await db
       .update(reportLog)
@@ -815,8 +839,8 @@ export async function updateReport(
 const _deleteReport = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertReportInOrg(data.id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertReportInOrg(data.id, { organizationId, role, userId });
     await db.delete(reportLog).where(eq(reportLog.id, data.id));
   });
 
@@ -849,8 +873,8 @@ function toTemplate(row: typeof conversationTemplates.$inferSelect): Conversatio
 const _fetchConversationTemplates = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertClientInOrg(data.clientId, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.clientId, { organizationId, role, userId });
     const rows = await db
       .select()
       .from(conversationTemplates)
@@ -874,8 +898,8 @@ const _upsertConversationTemplate = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertClientInOrg(data.clientId, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.clientId, { organizationId, role, userId });
     const values = {
       ...(data.id ? { id: data.id } : {}),
       clientId: data.clientId,
@@ -904,12 +928,12 @@ export async function upsertConversationTemplate(template: {
 const _deleteConversationTemplate = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, role, userId } = await requireOrgContext();
     const row = await db.query.conversationTemplates.findFirst({
       where: eq(conversationTemplates.id, data.id),
-      with: { client: { columns: { organizationId: true } } },
+      with: { client: { columns: { organizationId: true, ownerUserId: true } } },
     });
-    if (!row || row.client?.organizationId !== organizationId) throw new Error("Modelo não encontrado.");
+    if (!canAccessClient({ organizationId, role, userId }, row?.client)) throw new Error("Modelo não encontrado.");
     await db.delete(conversationTemplates).where(eq(conversationTemplates.id, data.id));
   });
 
@@ -929,7 +953,7 @@ export interface PixClient {
 }
 
 const _fetchPixClients = createServerFn({ method: "GET" }).handler(async () => {
-  const { organizationId } = await requireOrgContext();
+  const { organizationId, role, userId } = await requireOrgContext();
   const rows = await db
     .select({
       id: clients.id,
@@ -940,7 +964,7 @@ const _fetchPixClients = createServerFn({ method: "GET" }).handler(async () => {
       metaAdAccountId: clients.metaAdAccountId,
     })
     .from(clients)
-    .where(and(eq(clients.pixActive, true), eq(clients.active, true), eq(clients.organizationId, organizationId)))
+    .where(and(eq(clients.pixActive, true), eq(clients.active, true), eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })))
     .orderBy(clients.name);
 
   return rows
@@ -970,8 +994,8 @@ const _updateClientPix = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertClientInOrg(data.id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.id, { organizationId, role, userId });
     await db
       .update(clients)
       .set({
@@ -1010,7 +1034,7 @@ export async function fetchCurrentProfile(): Promise<Profile | null> {
 }
 
 const _fetchProfiles = createServerFn({ method: "GET" }).handler(async () => {
-  const { organizationId } = await requireOrgContext();
+  const { organizationId, role, userId } = await requireOrgContext();
   const rows = await db
     .select({ id: profiles.id, fullName: profiles.fullName })
     .from(profiles)
@@ -1067,11 +1091,15 @@ function mapTask(r: {
 const _fetchTasks = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().optional() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, role, userId } = await requireOrgContext();
+    // Membro só vê tarefa que ele criou ou que está atribuída a ele.
+    const mineOnly = role === "admin" ? undefined : or(eq(tasks.createdBy, userId), eq(tasks.assignedTo, userId));
     const rows = await db.query.tasks.findMany({
-      where: data.clientId
-        ? and(eq(tasks.organizationId, organizationId), eq(tasks.clientId, data.clientId))
-        : eq(tasks.organizationId, organizationId),
+      where: and(
+        eq(tasks.organizationId, organizationId),
+        data.clientId ? eq(tasks.clientId, data.clientId) : undefined,
+        mineOnly
+      ),
       orderBy: desc(tasks.createdAt),
       with: {
         client: { columns: { name: true } },
@@ -1100,9 +1128,8 @@ const _createTask = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    if (data.client_id) await assertClientInOrg(data.client_id, organizationId);
-    const userId = await getSessionUserId();
+    const { organizationId, role, userId } = await requireOrgContext();
+    if (data.client_id) await assertClientAccessible(data.client_id, { organizationId, role, userId });
     await db.insert(tasks).values({
       organizationId,
       title: data.title,
@@ -1124,9 +1151,15 @@ export async function createTask(fields: {
   await _createTask({ data: fields });
 }
 
-async function assertTaskInOrg(taskId: string, organizationId: string): Promise<void> {
-  const row = await db.query.tasks.findFirst({ where: eq(tasks.id, taskId), columns: { organizationId: true } });
-  if (!row || row.organizationId !== organizationId) throw new Error("Tarefa não encontrada.");
+async function assertTaskInOrg(taskId: string, ctx: AccessCtx): Promise<void> {
+  const row = await db.query.tasks.findFirst({
+    where: eq(tasks.id, taskId),
+    columns: { organizationId: true, createdBy: true, assignedTo: true },
+  });
+  if (!row || row.organizationId !== ctx.organizationId) throw new Error("Tarefa não encontrada.");
+  if (ctx.role !== "admin" && row.createdBy !== ctx.userId && row.assignedTo !== ctx.userId) {
+    throw new Error("Tarefa não encontrada.");
+  }
 }
 
 const _updateTask = createServerFn({ method: "POST" })
@@ -1141,9 +1174,9 @@ const _updateTask = createServerFn({ method: "POST" })
     })
   )
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertTaskInOrg(data.id, organizationId);
-    if (data.client_id) await assertClientInOrg(data.client_id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertTaskInOrg(data.id, { organizationId, role, userId });
+    if (data.client_id) await assertClientAccessible(data.client_id, { organizationId, role, userId });
     const { id, ...fields } = data;
     await db
       .update(tasks)
@@ -1173,8 +1206,8 @@ export async function updateTask(
 const _deleteTask = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertTaskInOrg(data.id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertTaskInOrg(data.id, { organizationId, role, userId });
     await db.delete(tasks).where(eq(tasks.id, data.id));
   });
 
@@ -1207,9 +1240,9 @@ function toSaleRow(r: typeof sales.$inferSelect): SaleRow {
 const _fetchSales = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().optional(), since: z.string(), until: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, role, userId } = await requireOrgContext();
     if (data.clientId) {
-      await assertClientInOrg(data.clientId, organizationId);
+      await assertClientAccessible(data.clientId, { organizationId, role, userId });
       const rows = await db
         .select()
         .from(sales)
@@ -1217,7 +1250,7 @@ const _fetchSales = createServerFn({ method: "GET" })
         .orderBy(desc(sales.date));
       return rows.map(toSaleRow);
     }
-    const orgClientIds = await db.select({ id: clients.id }).from(clients).where(eq(clients.organizationId, organizationId));
+    const orgClientIds = await db.select({ id: clients.id }).from(clients).where(and(eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })));
     const ids = orgClientIds.map((c) => c.id);
     if (ids.length === 0) return [];
     const rows = await db
@@ -1239,8 +1272,8 @@ export async function fetchSalesByClient(clientId: string, since: string, until:
 const _createSale = createServerFn({ method: "POST" })
   .inputValidator(z.object({ client_id: z.string(), date: z.string(), value: z.number().nullable().optional(), obs: z.string().nullable().optional() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertClientInOrg(data.client_id, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.client_id, { organizationId, role, userId });
     await db.insert(sales).values({ clientId: data.client_id, date: data.date, value: data.value ?? null, obs: data.obs ?? null });
   });
 
@@ -1251,9 +1284,9 @@ export async function createSale(payload: { client_id: string; date: string; val
 const _deleteSale = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    const row = await db.query.sales.findFirst({ where: eq(sales.id, data.id), with: { client: { columns: { organizationId: true } } } });
-    if (!row || row.client?.organizationId !== organizationId) throw new Error("Venda não encontrada.");
+    const { organizationId, role, userId } = await requireOrgContext();
+    const row = await db.query.sales.findFirst({ where: eq(sales.id, data.id), with: { client: { columns: { organizationId: true, ownerUserId: true } } } });
+    if (!canAccessClient({ organizationId, role, userId }, row?.client)) throw new Error("Venda não encontrada.");
     await db.delete(sales).where(eq(sales.id, data.id));
   });
 
@@ -1264,12 +1297,12 @@ export async function deleteSale(id: string): Promise<void> {
 const _fetchSalesGoals = createServerFn({ method: "GET" })
   .inputValidator(z.object({ month: z.string() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, role, userId } = await requireOrgContext();
     const rows = await db
       .select({ id: salesGoals.id, clientId: salesGoals.clientId, month: salesGoals.month, goal: salesGoals.goal })
       .from(salesGoals)
       .innerJoin(clients, eq(clients.id, salesGoals.clientId))
-      .where(and(eq(salesGoals.month, data.month), eq(clients.organizationId, organizationId)));
+      .where(and(eq(salesGoals.month, data.month), eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })));
     return rows.map((r) => ({ id: r.id, client_id: r.clientId, month: r.month, goal: r.goal }));
   });
 
@@ -1280,8 +1313,8 @@ export async function fetchSalesGoals(month: string): Promise<SalesGoalRow[]> {
 const _upsertSalesGoal = createServerFn({ method: "POST" })
   .inputValidator(z.object({ clientId: z.string(), month: z.string(), goal: z.number() }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
-    await assertClientInOrg(data.clientId, organizationId);
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.clientId, { organizationId, role, userId });
     await db
       .insert(salesGoals)
       .values({ clientId: data.clientId, month: data.month, goal: data.goal })

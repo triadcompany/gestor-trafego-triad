@@ -10,6 +10,7 @@ import {
   whatsappInstances,
 } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
+import { clientAccessCondition, canAccessClient } from "@/lib/client-access";
 
 // ── Tipos expostos pra UI ────────────────────────────────────────────────────
 
@@ -132,7 +133,7 @@ export type UpsertAutomationInput = z.input<typeof upsertSchema>;
 const _upsertMessageAutomation = createServerFn({ method: "POST" })
   .inputValidator(upsertSchema)
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, role, userId } = await requireOrgContext();
 
     if (data.contentType === "report") {
       if (!data.clientId) throw new Error("Relatório exige um cliente.");
@@ -140,12 +141,12 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
     } else if (data.contentType === "group_summary") {
       if (!data.summaryTurno) throw new Error("Escolha o turno (manhã ou tarde).");
       if (data.summaryClientIds.length === 0) throw new Error("Selecione ao menos um cliente pro resumo.");
-      const orgClients = await db
+      const acessiveis = await db
         .select({ id: clients.id })
         .from(clients)
-        .where(eq(clients.organizationId, organizationId));
-      const orgIds = new Set(orgClients.map((c) => c.id));
-      if (data.summaryClientIds.some((id) => !orgIds.has(id))) throw new Error("Cliente do resumo não encontrado.");
+        .where(and(eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })));
+      const okIds = new Set(acessiveis.map((c) => c.id));
+      if (data.summaryClientIds.some((id) => !okIds.has(id))) throw new Error("Cliente do resumo não encontrado ou sem acesso.");
     } else if (!data.body?.trim() && data.media.length === 0) {
       throw new Error("Mensagem de texto precisa de um texto ou pelo menos uma mídia.");
     }
@@ -160,8 +161,8 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
     }
 
     if (data.clientId) {
-      const c = await db.query.clients.findFirst({ where: eq(clients.id, data.clientId), columns: { organizationId: true } });
-      if (!c || c.organizationId !== organizationId) throw new Error("Cliente não encontrado.");
+      const c = await db.query.clients.findFirst({ where: eq(clients.id, data.clientId), columns: { organizationId: true, ownerUserId: true } });
+      if (!canAccessClient({ organizationId, role, userId }, c)) throw new Error("Cliente não encontrado.");
     }
     if (data.whatsappInstanceId) {
       const inst = await db.query.whatsappInstances.findFirst({

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { appConfig, clients, scheduledMessageMedia, scheduledMessageRecipients, scheduledMessages, whatsappInstances } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
+import { canAccessClient } from "@/lib/client-access";
 
 const mediaItemSchema = z.object({
   base64: z.string(),
@@ -29,14 +30,14 @@ export interface ResolvedWhatsappInstance {
 const _resolveWhatsappInstance = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string().optional() }))
   .handler(async ({ data }): Promise<ResolvedWhatsappInstance> => {
-    const { organizationId, userId } = await requireOrgContext();
+    const { organizationId, userId, role } = await requireOrgContext();
 
     if (data.clientId) {
       const client = await db.query.clients.findFirst({
         where: eq(clients.id, data.clientId),
-        columns: { organizationId: true, whatsappInstanceId: true },
+        columns: { organizationId: true, ownerUserId: true, whatsappInstanceId: true },
       });
-      if (!client || client.organizationId !== organizationId) throw new Error("Cliente não encontrado.");
+      if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
       if (client.whatsappInstanceId) {
         const row = await db.query.whatsappInstances.findFirst({ where: eq(whatsappInstances.id, client.whatsappInstanceId) });
         if (row?.active) return { instanceId: row.id, url: row.evolutionUrl, apiKey: row.evolutionKey, instance: row.instanceName };
@@ -592,12 +593,12 @@ export async function searchEvolutionRecipients(query: string, groupsOnly?: bool
 const _sendActiveCampaignsList = createServerFn({ method: "POST" })
   .inputValidator(z.object({ clientId: z.string(), clientName: z.string(), campaignNames: z.array(z.string()) }))
   .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, role, userId } = await requireOrgContext();
     const client = await db.query.clients.findFirst({
       where: eq(clients.id, data.clientId),
-      columns: { organizationId: true, whatsappGroupId: true },
+      columns: { organizationId: true, ownerUserId: true, whatsappGroupId: true },
     });
-    if (!client || client.organizationId !== organizationId) throw new Error("Cliente não encontrado.");
+    if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
 
     const { url, apiKey, instance } = await resolveWhatsappInstance(data.clientId);
     const rows = await db
