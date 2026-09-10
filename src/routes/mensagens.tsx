@@ -573,10 +573,28 @@ function AutomacoesTab() {
   const [composerOpen, setComposerOpen] = useState(false);
   const [editing, setEditing] = useState<MessageAutomationRow | null>(null);
   const [runningId, setRunningId] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [filterClient, setFilterClient] = useState("all");
+  const [filterType, setFilterType] = useState("all");
 
   const { data: automations = [], isLoading, isError } = useQuery({
     queryKey: ["message-automations"],
     queryFn: fetchMessageAutomations,
+  });
+
+  // Opções de cliente derivadas das próprias automações (sem query extra).
+  const clientOptions = Array.from(
+    new Map(automations.filter((a) => a.client_id).map((a) => [a.client_id!, a.client_name ?? a.client_id!])).entries()
+  ).sort((a, b) => a[1].localeCompare(b[1]));
+  const hasNoClientRules = automations.some((a) => !a.client_id);
+
+  const q = search.trim().toLowerCase();
+  const filtered = automations.filter((a) => {
+    if (q && !a.name.toLowerCase().includes(q)) return false;
+    if (filterClient === "none" && a.client_id) return false;
+    if (filterClient !== "all" && filterClient !== "none" && a.client_id !== filterClient) return false;
+    if (filterType !== "all" && a.content_type !== filterType) return false;
+    return true;
   });
 
   const toggleMut = useMutation({
@@ -621,6 +639,41 @@ function AutomacoesTab() {
         </Button>
       </div>
 
+      {!isLoading && !isError && automations.length > 0 && (
+        <div className="flex flex-col sm:flex-row gap-2 mb-3">
+          <div className="flex items-center gap-1.5 px-3 py-2 border border-border rounded-md bg-background flex-1 min-w-0">
+            <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Buscar por nome..."
+              className="flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground min-w-0"
+            />
+          </div>
+          <Select value={filterClient} onValueChange={setFilterClient}>
+            <SelectTrigger className="w-full sm:w-48 h-9"><SelectValue placeholder="Cliente" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os clientes</SelectItem>
+              {hasNoClientRules && <SelectItem value="none">Sem cliente</SelectItem>}
+              {clientOptions.map(([id, name]) => <SelectItem key={id} value={id}>{name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filterType} onValueChange={setFilterType}>
+            <SelectTrigger className="w-full sm:w-40 h-9"><SelectValue placeholder="Tipo" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os tipos</SelectItem>
+              <SelectItem value="report">Relatório</SelectItem>
+              <SelectItem value="text">Mensagem</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      )}
+      {!isLoading && !isError && automations.length > 0 && (
+        <p className="text-xs text-muted-foreground mb-3">
+          {filtered.length} de {automations.length}
+        </p>
+      )}
+
       {isLoading && (
         <div className="space-y-3">{[1, 2].map((i) => <Skeleton key={i} className="h-24 w-full rounded-xl" />)}</div>
       )}
@@ -632,9 +685,12 @@ function AutomacoesTab() {
           <p className="text-xs text-muted-foreground mt-1">Ex: toda segunda às 8h30 enviar o relatório dos últimos 7 dias.</p>
         </div>
       )}
+      {!isLoading && !isError && automations.length > 0 && filtered.length === 0 && (
+        <div className="text-center py-12 text-sm text-muted-foreground">Nenhuma automação com esses filtros.</div>
+      )}
 
       <div className="space-y-3">
-        {automations.map((a) => (
+        {filtered.map((a) => (
           <div key={a.id} className="rounded-xl border border-border bg-card p-4">
             <div className="flex items-start gap-3">
               <div className="flex-1 min-w-0">
