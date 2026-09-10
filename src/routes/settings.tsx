@@ -8,6 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Dialog,
   DialogContent,
@@ -70,47 +71,89 @@ function SettingsPage() {
   return (
     <AppShell>
       <div className="px-4 md:px-8 py-8 max-w-2xl mx-auto">
-        <div className="mb-8 flex items-start justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {currentUser?.organizationName ? `Organização: ${currentUser.organizationName}` : "Integrações e preferências do sistema."}
-            </p>
-          </div>
-          <Button variant="outline" asChild>
-            <Link to="/diagnostico-meta" className="gap-2">
-              <Stethoscope className="h-4 w-4" />
-              Ver diagnóstico Meta
-            </Link>
-          </Button>
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold tracking-tight">Configurações</h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            {currentUser?.organizationName ? `Organização: ${currentUser.organizationName}` : "Integrações e preferências do sistema."}
+          </p>
         </div>
 
-        <MetaTokensSection isAdmin={isAdmin} />
-        <WhatsappInstancesSection isAdmin={isAdmin} />
-        {isAdmin && <UsersSection />}
-        <OpenAISection />
-        <N8nSection />
-        <SendDestinationsSection />
+        <Tabs defaultValue="meta">
+          <TabsList className="mb-6 flex-wrap h-auto">
+            <TabsTrigger value="meta">Token Meta Ads</TabsTrigger>
+            <TabsTrigger value="whatsapp">Conectar WhatsApp</TabsTrigger>
+            {isAdmin && <TabsTrigger value="users">Usuários</TabsTrigger>}
+            <TabsTrigger value="agent">Agente de IA</TabsTrigger>
+            <TabsTrigger value="webhook">Webhook</TabsTrigger>
+            <TabsTrigger value="diagnostico">Diagnóstico</TabsTrigger>
+            <TabsTrigger value="sistema">Sistema</TabsTrigger>
+          </TabsList>
 
-        <section>
-          <div className="flex items-center gap-2 mb-3">
-            <div className="h-1 w-1 rounded-full bg-muted-foreground" />
-            <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Sistema</h2>
-          </div>
-          <Card className="divide-y divide-border">
-            {[
-              { label: "Versão", value: "0.2.0" },
-              { label: "API Meta", value: "Graph API v21.0" },
-              { label: "Sync automático", value: "A cada hora" },
-              { label: "Dados armazenados", value: "PostgreSQL (VPS própria)" },
-            ].map(({ label, value }) => (
-              <div key={label} className="flex items-center justify-between px-5 py-3">
-                <span className="text-sm text-muted-foreground">{label}</span>
-                <span className="text-sm font-medium">{value}</span>
+          <TabsContent value="meta">
+            <MetaTokensSection isAdmin={isAdmin} />
+          </TabsContent>
+
+          <TabsContent value="whatsapp">
+            <WhatsappInstancesSection isAdmin={isAdmin} />
+            <SendDestinationsSection />
+          </TabsContent>
+
+          {isAdmin && (
+            <TabsContent value="users">
+              <UsersSection />
+            </TabsContent>
+          )}
+
+          <TabsContent value="agent">
+            <OpenAISection />
+          </TabsContent>
+
+          <TabsContent value="webhook">
+            <N8nSection />
+          </TabsContent>
+
+          <TabsContent value="diagnostico">
+            <section className="mb-6">
+              <div className="flex items-center gap-2 mb-3">
+                <Stethoscope className="h-4 w-4 text-muted-foreground" />
+                <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Diagnóstico Meta</h2>
               </div>
-            ))}
-          </Card>
-        </section>
+              <Card className="p-5 space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Checagem de permissões do token, validade, conta conectada e teste de leitura de saldo por cliente.
+                </p>
+                <Button asChild>
+                  <Link to="/diagnostico-meta" className="gap-2">
+                    <Stethoscope className="h-4 w-4" />
+                    Abrir diagnóstico
+                  </Link>
+                </Button>
+              </Card>
+            </section>
+          </TabsContent>
+
+          <TabsContent value="sistema">
+            <section>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="h-1 w-1 rounded-full bg-muted-foreground" />
+                <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Sistema</h2>
+              </div>
+              <Card className="divide-y divide-border">
+                {[
+                  { label: "Versão", value: "0.2.0" },
+                  { label: "API Meta", value: "Graph API v21.0" },
+                  { label: "Sync automático", value: "A cada hora" },
+                  { label: "Dados armazenados", value: "PostgreSQL (VPS própria)" },
+                ].map(({ label, value }) => (
+                  <div key={label} className="flex items-center justify-between px-5 py-3">
+                    <span className="text-sm text-muted-foreground">{label}</span>
+                    <span className="text-sm font-medium">{value}</span>
+                  </div>
+                ))}
+              </Card>
+            </section>
+          </TabsContent>
+        </Tabs>
       </div>
     </AppShell>
   );
