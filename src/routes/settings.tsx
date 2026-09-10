@@ -835,6 +835,36 @@ function OpenAISection() {
           </Button>
         </div>
       </Card>
+
+      <details className="mt-3 rounded-lg border border-border bg-muted/20">
+        <summary className="cursor-pointer list-none px-4 py-3 flex items-center gap-2 text-sm font-medium select-none">
+          <KeyRound className="h-4 w-4 text-muted-foreground" />
+          Como pegar a API key da OpenAI
+        </summary>
+        <div className="px-4 pb-4 pt-1 space-y-2 text-sm text-muted-foreground">
+          <ol className="list-decimal ml-5 space-y-1.5">
+            <li>
+              Acesse{" "}
+              <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer"
+                 className="text-primary underline underline-offset-2 inline-flex items-center gap-1">
+                platform.openai.com/api-keys <ExternalLink className="h-3 w-3" />
+              </a>{" "}
+              e faça login (ou crie uma conta).
+            </li>
+            <li>Clique em <strong className="text-foreground">Create new secret key</strong>, dê um nome e confirme.</li>
+            <li>Copie a chave (começa com <code className="bg-muted px-1 rounded text-[11px]">sk-</code>) — ela só aparece <strong className="text-foreground">uma vez</strong> — e cole aqui em cima.</li>
+            <li>
+              Garanta que a conta tem crédito: em{" "}
+              <a href="https://platform.openai.com/settings/organization/billing" target="_blank" rel="noopener noreferrer"
+                 className="text-primary underline underline-offset-2 inline-flex items-center gap-1">
+                Billing <ExternalLink className="h-3 w-3" />
+              </a>{" "}
+              adicione um cartão / saldo. Sem crédito, o agente responde com erro de cota.
+            </li>
+          </ol>
+          <p className="text-[11px]">A chave fica só nesta organização e nunca aparece de volta na tela — só os primeiros e últimos caracteres.</p>
+        </div>
+      </details>
     </section>
   );
 }
