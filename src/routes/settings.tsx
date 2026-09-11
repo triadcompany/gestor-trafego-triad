@@ -32,6 +32,7 @@ import {
   Trash2,
   Users as UsersIcon,
   MessageCircle,
+  Star,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -61,6 +62,7 @@ import {
   fetchWhatsappInstanceState,
 } from "@/lib/whatsapp-messages";
 import { getN8nWebhookUrl, saveN8nWebhookUrl } from "@/lib/n8n";
+import { agentListConversations, agentSetConversationPinned } from "@/lib/agent-chat";
 import { fetchOrgMembers, createOrgMember, updateOrgMemberRole, setOrgMemberActive } from "@/server/team";
 import { getCurrentUser } from "@/server/session";
 
@@ -114,6 +116,7 @@ function SettingsPage() {
 
           <TabsContent value="agent" className="mt-0">
             <OpenAISection />
+            <AgentPinnedSection />
           </TabsContent>
 
           <TabsContent value="webhook" className="mt-0">
@@ -865,6 +868,86 @@ function OpenAISection() {
           <p className="text-[11px]">A chave fica só nesta organização e nunca aparece de volta na tela — só os primeiros e últimos caracteres.</p>
         </div>
       </details>
+    </section>
+  );
+}
+
+const AGENT_MODE_LABEL: Record<string, string> = {
+  trafego: "Tráfego",
+  copy_automotivo: "Copy",
+  roteiro_automotivo: "Roteiro",
+};
+
+function AgentPinnedSection() {
+  const queryClient = useQueryClient();
+
+  const { data: conversations = [], isLoading } = useQuery({
+    queryKey: ["agent-conversations"],
+    queryFn: () => agentListConversations(),
+    staleTime: 1000 * 30,
+  });
+
+  const pinMutation = useMutation({
+    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
+      agentSetConversationPinned({ data: { conversation_id: id, pinned } }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["agent-conversations"] }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao fixar conversa"),
+  });
+
+  const pinnedCount = conversations.filter((c) => c.pinned).length;
+
+  return (
+    <section className="mb-6">
+      <div className="flex items-center gap-2 mb-3">
+        <Star className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Chats fixos do botão flutuante</h2>
+      </div>
+
+      <Card className="overflow-hidden">
+        <div className="px-5 py-3 border-b border-border bg-muted/10 flex items-center justify-between gap-3">
+          <p className="text-xs text-muted-foreground">
+            Escolha até 3 conversas pra ficarem como abas de acesso rápido no botão flutuante do agente.
+            Ao fixar uma 4ª, a fixada mais antiga sai automaticamente.
+          </p>
+          <Badge variant="outline" className="shrink-0 tabular-nums">{pinnedCount} de 3</Badge>
+        </div>
+
+        <div className="divide-y divide-border">
+          {isLoading ? (
+            <p className="px-5 py-4 text-sm text-muted-foreground">Carregando conversas...</p>
+          ) : conversations.length === 0 ? (
+            <p className="px-5 py-4 text-sm text-muted-foreground">
+              Você ainda não tem conversas com o agente. Abra o agente, converse, e volte aqui pra fixar.
+            </p>
+          ) : (
+            conversations.map((c) => {
+              const willReplace = !c.pinned && pinnedCount >= 3;
+              return (
+                <div key={c.id} className="px-5 py-3 flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{c.title ?? "Conversa"}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {AGENT_MODE_LABEL[c.mode] ?? c.mode} ·{" "}
+                      {new Date(c.last_msg_at).toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit", year: "2-digit" })}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant={c.pinned ? "default" : "outline"}
+                    className="shrink-0 gap-1.5"
+                    onClick={() => pinMutation.mutate({ id: c.id, pinned: !c.pinned })}
+                    disabled={pinMutation.isPending}
+                    title={willReplace ? "Vai desafixar a conversa fixada mais antiga" : undefined}
+                  >
+                    <Star className={`h-3.5 w-3.5 ${c.pinned ? "fill-current" : ""}`} />
+                    {c.pinned ? "Fixado" : "Fixar"}
+                  </Button>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </Card>
     </section>
   );
 }
