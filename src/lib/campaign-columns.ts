@@ -11,7 +11,9 @@ export type ColumnKey =
   | "impressions"
   | "link_clicks"
   | "ctr"
-  | "cpm";
+  | "cpm"
+  | "cpc"
+  | "instagram_followers";
 
 export const COLUMN_LABELS: Record<ColumnKey, string> = {
   status: "Status",
@@ -23,6 +25,8 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
   link_clicks: "Cliques",
   ctr: "CTR",
   cpm: "CPM",
+  cpc: "CPC",
+  instagram_followers: "Seguidores Instagram",
 };
 
 const CAMPAIGN_ADSET_COLUMNS: ColumnKey[] = [
@@ -35,6 +39,8 @@ const CAMPAIGN_ADSET_COLUMNS: ColumnKey[] = [
   "link_clicks",
   "ctr",
   "cpm",
+  "cpc",
+  "instagram_followers",
 ];
 
 const AD_COLUMNS: ColumnKey[] = [
@@ -46,6 +52,8 @@ const AD_COLUMNS: ColumnKey[] = [
   "link_clicks",
   "ctr",
   "cpm",
+  "cpc",
+  "instagram_followers",
 ];
 
 export const AVAILABLE_COLUMNS: Record<ExplorerLevel, ColumnKey[]> = {

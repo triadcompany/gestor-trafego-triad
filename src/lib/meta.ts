@@ -1494,6 +1494,34 @@ export async function fetchAllAdSets(
     });
 }
 
+// Seguidores da conta do Instagram vinculada aos anúncios — não é uma métrica
+// de período (não varia por data), é da conta do Instagram ligada aos ad sets.
+// Pega o instagram_actor_id do primeiro ad set que tiver um configurado e
+// consulta o followers_count dele. Retorna null (silencioso) se não achar
+// nenhum ad set vinculado ao Instagram, ou se o token não tiver permissão
+// (instagram_basic) — a coluna cai pra "—" nesses casos.
+export async function fetchInstagramFollowers(adAccountId: string, token: string): Promise<number | null> {
+  try {
+    const res = await fetch(
+      `${BASE_URL}/${adAccountId}/adsets?fields=instagram_actor_id&limit=25&access_token=${encodeURIComponent(token)}`
+    );
+    const json = (await res.json()) as {
+      data?: Array<{ instagram_actor_id?: string }>;
+      error?: { message: string };
+    };
+    if (json.error) return null;
+    const actorId = json.data?.find((a) => a.instagram_actor_id)?.instagram_actor_id;
+    if (!actorId) return null;
+
+    const igRes = await fetch(`${BASE_URL}/${actorId}?fields=followers_count&access_token=${encodeURIComponent(token)}`);
+    const igJson = (await igRes.json()) as { followers_count?: number; error?: { message: string } };
+    if (igJson.error || igJson.followers_count === undefined) return null;
+    return igJson.followers_count;
+  } catch {
+    return null;
+  }
+}
+
 export async function fetchAllAds(
   adAccountId: string,
   token: string,
