@@ -27,6 +27,7 @@ import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp,
 import { toast } from "sonner";
 import { sendActiveCampaignsList } from "@/lib/whatsapp-messages";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
+import { ClientReportDialog } from "@/components/ClientReportDialog";
 import {
   Tooltip as UITooltip,
   TooltipContent,
@@ -766,6 +767,14 @@ function ClientDetail() {
               </TooltipTrigger>
               <TooltipContent>Enviar relatório semanal de métricas no WhatsApp</TooltipContent>
             </UITooltip>
+            <ClientReportDialog
+              client={{
+                id: client.id,
+                name: client.name,
+                meta_ad_account_id: client.meta_ad_account_id,
+                cpl_max: client.cpl_max,
+              }}
+            />
             <Button asChild size="sm" className="gap-2">
               <Link to="/campaigns/new" search={{ client: client.id }}>
                 <Plus className="h-4 w-4" />
