@@ -44,6 +44,12 @@ function slug(s: string): string {
  * campanhas do cliente. Roda 100% no navegador.
  */
 export function generateClientReportPdf(input: ClientReportInput): void {
+  const doc = buildClientReportDoc(input);
+  doc.save(`relatorio-${slug(input.clientName)}-${input.since}_a_${input.until}.pdf`);
+}
+
+/** Monta o documento (sem salvar) — usado pelo browser e por scripts/preview. */
+export function buildClientReportDoc(input: ClientReportInput): jsPDF {
   const { clientName, since, until, cplMax, campaigns } = input;
 
   const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
@@ -236,5 +242,5 @@ export function generateClientReportPdf(input: ClientReportInput): void {
   }
 
   footer();
-  doc.save(`relatorio-${slug(clientName)}-${since}_a_${until}.pdf`);
+  return doc;
 }
