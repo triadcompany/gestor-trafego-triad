@@ -927,8 +927,8 @@ function AssistantPromptDialog({ assistant }: { assistant: AssistantConfig }) {
           )}
           <p className="text-[11px] text-muted-foreground">
             {assistant.isCustom
-              ? "Este assistente está usando um prompt personalizado desta organização."
-              : "Este assistente está usando o prompt padrão."}
+              ? "Você está usando um prompt personalizado — vale só pra você, não afeta os outros gestores."
+              : "Você está usando o prompt padrão. Se editar, muda só pra você."}
           </p>
         </div>
 

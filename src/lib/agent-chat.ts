@@ -462,21 +462,23 @@ export const DEFAULT_ASSISTANT_PROMPTS: Record<AgentMode, string> = {
   roteiro_automotivo: ROTEIRO_AUTOMOTIVO_PROMPT,
 };
 
-const promptConfigKey = (mode: AgentMode) => `assistant_prompt_${mode}`;
+// Prompt editável é POR GESTOR — a chave carrega o userId, então cada usuário
+// tem o seu (o app_config é por organização, mas a chave isola por pessoa).
+const promptConfigKey = (mode: AgentMode, userId: string) => `assistant_prompt_${mode}_u_${userId}`;
 
-// Prompt editável do assistente para a organização (null = usa o default embutido).
-async function loadCustomPrompt(organizationId: string, mode: AgentMode): Promise<string | null> {
+// Prompt editável do assistente para o gestor logado (null = usa o default embutido).
+async function loadCustomPrompt(organizationId: string, mode: AgentMode, userId: string): Promise<string | null> {
   const [row] = await db
     .select({ value: appConfig.value })
     .from(appConfig)
-    .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, promptConfigKey(mode))))
+    .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, promptConfigKey(mode, userId))))
     .limit(1);
   const v = row?.value?.trim();
   return v ? v : null;
 }
 
-async function buildSystemPrompt(mode: AgentMode, organizationId: string): Promise<string> {
-  const custom = await loadCustomPrompt(organizationId, mode);
+async function buildSystemPrompt(mode: AgentMode, organizationId: string, userId: string): Promise<string> {
+  const custom = await loadCustomPrompt(organizationId, mode, userId);
 
   if (mode === "copy_automotivo") return custom ?? COPY_AUTOMOTIVO_PROMPT;
   if (mode === "roteiro_automotivo") return custom ?? ROTEIRO_AUTOMOTIVO_PROMPT;
@@ -590,7 +592,7 @@ export const agentSendMessage = createServerFn({ method: "POST" })
         : (data.mode ?? "trafego");
       const convId = await ensureConversation(data.conversation_id, userId, mode, organizationId);
       const history = await loadHistory(convId);
-      const systemPrompt = await buildSystemPrompt(mode, organizationId);
+      const systemPrompt = await buildSystemPrompt(mode, organizationId, userId);
 
       const messages: ChatCompletionMessageParam[] = [
         { role: "system", content: systemPrompt },
@@ -782,19 +784,19 @@ export interface AssistantConfig {
 
 export const agentGetAssistants = createServerFn({ method: "GET" }).handler(
   async (): Promise<AssistantConfig[]> => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, userId } = await requireOrgContext();
     const rows = await db
       .select({ key: appConfig.key, value: appConfig.value })
       .from(appConfig)
       .where(
         and(
           eq(appConfig.organizationId, organizationId),
-          inArray(appConfig.key, AGENT_MODES.map((m) => promptConfigKey(m))),
+          inArray(appConfig.key, AGENT_MODES.map((m) => promptConfigKey(m, userId))),
         ),
       );
     const byKey = new Map(rows.map((r) => [r.key, r.value]));
     return AGENT_MODES.map((mode) => {
-      const custom = byKey.get(promptConfigKey(mode))?.trim() || null;
+      const custom = byKey.get(promptConfigKey(mode, userId))?.trim() || null;
       const defaultPrompt = DEFAULT_ASSISTANT_PROMPTS[mode];
       return {
         mode,
@@ -816,8 +818,8 @@ const saveAssistantPromptSchema = z.object({
 export const agentSaveAssistantPrompt = createServerFn({ method: "POST" })
   .inputValidator(saveAssistantPromptSchema)
   .handler(async ({ data }): Promise<void> => {
-    const { organizationId } = await requireOrgContext();
-    const key = promptConfigKey(data.mode);
+    const { organizationId, userId } = await requireOrgContext();
+    const key = promptConfigKey(data.mode, userId);
     const value = data.prompt.trim();
 
     if (!value || value === DEFAULT_ASSISTANT_PROMPTS[data.mode].trim()) {
