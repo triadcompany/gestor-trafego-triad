@@ -18,6 +18,8 @@ import {
   Search,
   Pencil,
   Trash2,
+  PenLine,
+  Clapperboard,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -29,6 +31,7 @@ import {
   agentDeleteConversation,
   type ChatMessage,
   type PendingAction,
+  type AgentMode,
 } from "@/lib/agent-chat";
 import { cn } from "@/lib/utils";
 
@@ -48,12 +51,26 @@ interface DisplayMessage {
   status?: "waiting" | "confirmed" | "cancelled";
 }
 
-const SUGGESTIONS = [
-  { icon: Search, label: "Quais clientes estão críticos hoje?", prompt: "Quais clientes estão críticos hoje e por quê?" },
-  { icon: TrendingUp, label: "Resumo de performance da semana", prompt: "Me dá um resumo da performance de todos os clientes nos últimos 7 dias." },
-  { icon: ListChecks, label: "Sugira otimizações", prompt: "Analise as campanhas ativas e sugira otimizações concretas." },
-  { icon: Sparkles, label: "Criar uma tarefa", prompt: "Quero criar uma tarefa para um cliente." },
+const ASSISTANTS: Array<{ mode: AgentMode; label: string; icon: typeof Bot; blurb: string }> = [
+  { mode: "trafego", label: "Tráfego", icon: TrendingUp, blurb: "Analiso campanhas, sugiro otimizações e crio tarefas." },
+  { mode: "copy_automotivo", label: "Copy", icon: PenLine, blurb: "Mande os dados do veículo que eu escrevo a copy do anúncio." },
+  { mode: "roteiro_automotivo", label: "Roteiro", icon: Clapperboard, blurb: "Mande os dados do veículo que eu escrevo o roteiro do vídeo." },
 ];
+
+const SUGGESTIONS_BY_MODE: Record<AgentMode, Array<{ icon: typeof Bot; label: string; prompt: string }>> = {
+  trafego: [
+    { icon: Search, label: "Quais clientes estão críticos hoje?", prompt: "Quais clientes estão críticos hoje e por quê?" },
+    { icon: TrendingUp, label: "Resumo de performance da semana", prompt: "Me dá um resumo da performance de todos os clientes nos últimos 7 dias." },
+    { icon: ListChecks, label: "Sugira otimizações", prompt: "Analise as campanhas ativas e sugira otimizações concretas." },
+    { icon: Sparkles, label: "Criar uma tarefa", prompt: "Quero criar uma tarefa para um cliente." },
+  ],
+  copy_automotivo: [],
+  roteiro_automotivo: [],
+};
+
+function assistantOf(mode: string): (typeof ASSISTANTS)[number] {
+  return ASSISTANTS.find((a) => a.mode === mode) ?? ASSISTANTS[0];
+}
 
 function formatDay(value: string): string {
   const d = new Date(value);
@@ -69,6 +86,7 @@ function formatDay(value: string): string {
 function AgentePage() {
   const qc = useQueryClient();
   const [conversationId, setConversationId] = useState<string | null>(null);
+  const [mode, setMode] = useState<AgentMode>("trafego");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
@@ -119,7 +137,7 @@ function AgentePage() {
 
   const sendMutation = useMutation({
     mutationFn: async (message: string) => {
-      return agentSendMessage({ data: { message, conversation_id: conversationId } });
+      return agentSendMessage({ data: { message, conversation_id: conversationId, mode } });
     },
     onMutate: (message) => {
       setMessages((prev) => [
@@ -231,9 +249,26 @@ function AgentePage() {
   };
 
   const selectConversation = (cId: string) => {
+    const conv = conversations.find((c) => c.id === cId);
+    if (conv) setMode(conv.mode as AgentMode);
     setConversationId(cId);
     setMessages([]);
     loadMessagesMutation.mutate(cId);
+  };
+
+  // Atalho de assistente: continua a conversa mais recente daquele modo,
+  // ou abre um compositor em branco já no modo certo se ainda não houver.
+  const selectAssistant = (m: AgentMode) => {
+    setMode(m);
+    const latest = conversations.find((c) => c.mode === m);
+    if (latest) {
+      setConversationId(latest.id);
+      setMessages([]);
+      loadMessagesMutation.mutate(latest.id);
+    } else {
+      setConversationId(null);
+      setMessages([]);
+    }
   };
 
   return (
@@ -252,7 +287,36 @@ function AgentePage() {
               Nova conversa
             </Button>
           </div>
+
+          {/* Assistentes fixos — presentes em qualquer organização */}
           <div className="px-4 pb-1.5 pt-1">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+              Assistentes
+            </span>
+          </div>
+          <div className="px-2 space-y-0.5">
+            {ASSISTANTS.map((a) => {
+              const active = mode === a.mode;
+              return (
+                <button
+                  key={a.mode}
+                  onClick={() => selectAssistant(a.mode)}
+                  className={cn(
+                    "relative flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-[13px] font-medium transition-colors",
+                    active
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                  )}
+                >
+                  {active && <span className="absolute left-0 top-2 h-5 w-0.5 rounded-full bg-primary" />}
+                  <a.icon className="h-3.5 w-3.5 shrink-0 opacity-80" />
+                  {a.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="px-4 pb-1.5 pt-4">
             <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
               Histórico
             </span>
@@ -363,10 +427,10 @@ function AgentePage() {
             </div>
             <div className="min-w-0">
               <div className="truncate text-sm font-semibold leading-tight">
-                {activeConversation?.title ?? "Agente IA"}
+                {activeConversation?.title ?? `Assistente · ${assistantOf(mode).label}`}
               </div>
               <div className="text-[11px] text-muted-foreground">
-                Gestor de tráfego secundário · GPT-4o
+                {assistantOf(mode).blurb} · GPT-4o
               </div>
             </div>
             <Button
@@ -388,22 +452,24 @@ function AgentePage() {
                   <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-primary to-primary/60 shadow-md">
                     <Bot className="h-7 w-7 text-primary-foreground" />
                   </div>
-                  <h2 className="text-lg font-semibold">Como posso ajudar hoje?</h2>
+                  <h2 className="text-lg font-semibold">Assistente de {assistantOf(mode).label}</h2>
                   <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-                    Pergunte sobre um cliente, peça uma análise das campanhas ou crie uma tarefa.
+                    {assistantOf(mode).blurb}
                   </p>
-                  <div className="mt-6 grid w-full max-w-lg gap-2 sm:grid-cols-2">
-                    {SUGGESTIONS.map((s) => (
-                      <button
-                        key={s.label}
-                        onClick={() => runPrompt(s.prompt)}
-                        className="group flex items-start gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent"
-                      >
-                        <s.icon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
-                        <span className="leading-snug text-foreground/90">{s.label}</span>
-                      </button>
-                    ))}
-                  </div>
+                  {SUGGESTIONS_BY_MODE[mode].length > 0 && (
+                    <div className="mt-6 grid w-full max-w-lg gap-2 sm:grid-cols-2">
+                      {SUGGESTIONS_BY_MODE[mode].map((s) => (
+                        <button
+                          key={s.label}
+                          onClick={() => runPrompt(s.prompt)}
+                          className="group flex items-start gap-2.5 rounded-xl border border-border bg-card px-3.5 py-3 text-left text-sm transition-colors hover:border-primary/40 hover:bg-accent"
+                        >
+                          <s.icon className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                          <span className="leading-snug text-foreground/90">{s.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-5">

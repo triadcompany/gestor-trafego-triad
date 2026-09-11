@@ -60,6 +60,13 @@ const renameConversationSchema = z.object({
   title: z.string().trim().min(1).max(120),
 });
 
+const pinConversationSchema = z.object({
+  conversation_id: z.string(),
+  pinned: z.boolean(),
+});
+
+const MAX_PINNED = 3;
+
 // ── System prompt builder ─────────────────────────────────────────────────────
 
 const COPY_AUTOMOTIVO_PROMPT = `Você é um especialista em copywriting para anúncios de veículos (Meta Ads/Instagram), focado em campanhas que levam o cliente para o WhatsApp.
@@ -656,7 +663,7 @@ export const agentExecuteAction = createServerFn({ method: "POST" })
   });
 
 export const agentListConversations = createServerFn({ method: "GET" }).handler(
-  async (): Promise<Array<{ id: string; title: string | null; last_msg_at: string; mode: string }>> => {
+  async (): Promise<Array<{ id: string; title: string | null; last_msg_at: string; mode: string; pinned: boolean }>> => {
     const { organizationId, userId } = await requireOrgContext();
     const rows = await db
       .select({
@@ -664,14 +671,51 @@ export const agentListConversations = createServerFn({ method: "GET" }).handler(
         title: agentConversations.title,
         last_msg_at: agentConversations.lastMsgAt,
         mode: agentConversations.mode,
+        pinned: agentConversations.pinned,
       })
       .from(agentConversations)
       .where(and(eq(agentConversations.organizationId, organizationId), eq(agentConversations.createdBy, userId)))
       .orderBy(desc(agentConversations.lastMsgAt))
-      .limit(30);
+      .limit(50);
     return rows;
   }
 );
+
+// Fixa/desafixa uma conversa nos atalhos rápidos do gestor. Ao fixar uma 4ª,
+// as fixadas mais antigas (por atividade) são desafixadas até sobrarem 3.
+export const agentSetConversationPinned = createServerFn({ method: "POST" })
+  .inputValidator(pinConversationSchema)
+  .handler(async ({ data }): Promise<void> => {
+    const { organizationId, userId } = await requireOrgContext();
+    await getConversationMode(data.conversation_id, organizationId, userId); // valida posse
+
+    if (data.pinned) {
+      const pinnedRows = await db
+        .select({ id: agentConversations.id })
+        .from(agentConversations)
+        .where(
+          and(
+            eq(agentConversations.organizationId, organizationId),
+            eq(agentConversations.createdBy, userId),
+            eq(agentConversations.pinned, true),
+          ),
+        )
+        .orderBy(agentConversations.lastMsgAt); // mais antiga primeiro
+      const others = pinnedRows.filter((r) => r.id !== data.conversation_id).map((r) => r.id);
+      const evict = others.slice(0, Math.max(0, others.length - (MAX_PINNED - 1)));
+      if (evict.length > 0) {
+        await db
+          .update(agentConversations)
+          .set({ pinned: false })
+          .where(inArray(agentConversations.id, evict));
+      }
+    }
+
+    await db
+      .update(agentConversations)
+      .set({ pinned: data.pinned })
+      .where(eq(agentConversations.id, data.conversation_id));
+  });
 
 export const agentRenameConversation = createServerFn({ method: "POST" })
   .inputValidator(renameConversationSchema)

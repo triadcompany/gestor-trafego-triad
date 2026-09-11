@@ -311,6 +311,7 @@ export const agentConversations = pgTable("agent_conversations", {
     .references(() => organizations.id, { onDelete: "cascade" }),
   title: text("title"),
   mode: text("mode").notNull().default("trafego"),
+  pinned: boolean("pinned").notNull().default(false),
   createdBy: uuid("created_by").references(() => profiles.id),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastMsgAt: timestamp("last_msg_at").defaultNow().notNull(),

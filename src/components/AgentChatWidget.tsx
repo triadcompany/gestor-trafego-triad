@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Plus, Send, Bot, User, AlertTriangle, Check, X, Download } from "lucide-react";
+import { Plus, Send, Bot, User, AlertTriangle, Check, X, Download, MessagesSquare, Star, ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
 import { jsPDF } from "jspdf";
 import {
@@ -11,6 +11,7 @@ import {
   agentExecuteAction,
   agentListConversations,
   agentLoadMessages,
+  agentSetConversationPinned,
   type PendingAction,
   type AgentMode,
 } from "@/lib/agent-chat";
@@ -69,6 +70,22 @@ const MODE_TABS: Array<{ mode: AgentMode; label: string }> = [
   { mode: "roteiro_automotivo", label: "Roteiro" },
 ];
 
+const MODE_LABEL: Record<string, string> = {
+  trafego: "Tráfego",
+  copy_automotivo: "Copy",
+  roteiro_automotivo: "Roteiro",
+};
+
+function shortDate(value: string): string {
+  const d = new Date(value);
+  const now = new Date();
+  if (d.toDateString() === now.toDateString()) return "Hoje";
+  const yest = new Date(now);
+  yest.setDate(now.getDate() - 1);
+  if (d.toDateString() === yest.toDateString()) return "Ontem";
+  return d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" });
+}
+
 // ── Janela flutuante: tamanho/posição arrastáveis e redimensionáveis ────────
 const DEFAULT_WIDTH = 380;
 const DEFAULT_HEIGHT = 520;
@@ -119,6 +136,7 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
+  const [showList, setShowList] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -194,6 +212,8 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
     staleTime: 1000 * 10,
   });
 
+  const pinnedConvs = conversations.filter((c) => c.pinned).slice(0, 3);
+
   const loadMessagesMutation = useMutation({
     mutationFn: (cId: string) => agentLoadMessages({ data: { conversation_id: cId } }),
     onSuccess: (msgs) => {
@@ -201,8 +221,16 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
     },
   });
 
+  const pinMutation = useMutation({
+    mutationFn: ({ id, pinned }: { id: string; pinned: boolean }) =>
+      agentSetConversationPinned({ data: { conversation_id: id, pinned } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["agent-conversations"] }),
+    onError: () => toast.error("Não foi possível fixar a conversa."),
+  });
+
   const selectMode = (newMode: AgentMode) => {
     setMode(newMode);
+    setShowList(false);
     const latest = conversations.find((c) => c.mode === newMode);
     if (latest) {
       setConversationId(latest.id);
@@ -212,6 +240,21 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
       setConversationId(null);
       setMessages([]);
     }
+  };
+
+  const openConversation = (c: { id: string; mode: string }) => {
+    setMode((c.mode as AgentMode) ?? "trafego");
+    setConversationId(c.id);
+    setMessages([]);
+    loadMessagesMutation.mutate(c.id);
+    setShowList(false);
+  };
+
+  const startInMode = (m: AgentMode) => {
+    setMode(m);
+    setConversationId(null);
+    setMessages([]);
+    setShowList(false);
   };
 
   const sendMutation = useMutation({
@@ -384,6 +427,7 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
   const startNewConversation = () => {
     setConversationId(null);
     setMessages([]);
+    setShowList(false);
   };
 
   const resizeHandleClass = "absolute z-10";
@@ -419,6 +463,15 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
           <div className="text-[10px] text-muted-foreground">GPT-4o</div>
         </div>
         <div className="ml-auto flex items-center gap-1">
+          <Button
+            size="icon"
+            variant="ghost"
+            className={cn("h-7 w-7", showList && "bg-muted text-foreground")}
+            onClick={() => setShowList((v) => !v)}
+            title="Minhas conversas"
+          >
+            <MessagesSquare className="h-3.5 w-3.5" />
+          </Button>
           <Button size="icon" variant="ghost" className="h-7 w-7" onClick={startNewConversation} title="Nova conversa">
             <Plus className="h-3.5 w-3.5" />
           </Button>
@@ -428,24 +481,122 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      {/* Abas de modo */}
+      {/* Abas: conversas fixadas do gestor, ou os 3 assistentes padrão se não houver nenhuma fixada */}
       <div className="flex border-b border-border shrink-0">
-        {MODE_TABS.map((tab) => (
-          <button
-            key={tab.mode}
-            onClick={() => selectMode(tab.mode)}
-            className={cn(
-              "flex-1 text-xs font-medium py-2 transition-colors border-b-2 -mb-px",
-              mode === tab.mode
-                ? "border-primary text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {tab.label}
-          </button>
-        ))}
+        {pinnedConvs.length > 0
+          ? pinnedConvs.map((c) => (
+              <button
+                key={c.id}
+                onClick={() => openConversation(c)}
+                title={c.title ?? "Conversa"}
+                className={cn(
+                  "min-w-0 flex-1 truncate px-2 py-2 text-xs font-medium transition-colors border-b-2 -mb-px",
+                  conversationId === c.id
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {c.title ?? MODE_LABEL[c.mode] ?? "Conversa"}
+              </button>
+            ))
+          : MODE_TABS.map((tab) => (
+              <button
+                key={tab.mode}
+                onClick={() => selectMode(tab.mode)}
+                className={cn(
+                  "flex-1 text-xs font-medium py-2 transition-colors border-b-2 -mb-px",
+                  mode === tab.mode
+                    ? "border-primary text-foreground"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {tab.label}
+              </button>
+            ))}
       </div>
 
+      {/* Painel de conversas — fixar 3, abrir qualquer outra, começar nova por assistente */}
+      {showList && (
+        <div className="flex flex-1 flex-col bg-card min-h-0">
+          <div className="flex items-center gap-2 border-b border-border px-3 py-2 shrink-0">
+            <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setShowList(false)} title="Voltar">
+              <ArrowLeft className="h-3.5 w-3.5" />
+            </Button>
+            <span className="text-xs font-semibold">Minhas conversas</span>
+          </div>
+
+          <div className="border-b border-border px-3 py-2 shrink-0">
+            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Nova conversa</p>
+            <div className="flex gap-1.5">
+              {MODE_TABS.map((tab) => (
+                <button
+                  key={tab.mode}
+                  onClick={() => startInMode(tab.mode)}
+                  className="flex-1 rounded-md border border-border bg-background px-2 py-1.5 text-[11px] font-medium text-foreground/90 hover:border-primary/40 hover:bg-accent"
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <ScrollArea className="flex-1">
+            <div className="p-2 space-y-0.5">
+              {conversations.length === 0 && (
+                <p className="px-3 py-6 text-center text-[11px] text-muted-foreground/70">Nenhuma conversa ainda.</p>
+              )}
+              {conversations.map((c) => {
+                const isPinned = c.pinned;
+                return (
+                  <div
+                    key={c.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openConversation(c)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        openConversation(c);
+                      }
+                    }}
+                    className={cn(
+                      "group flex w-full cursor-pointer items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors",
+                      conversationId === c.id ? "bg-muted" : "hover:bg-muted/60"
+                    )}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs font-medium">{c.title ?? "Conversa"}</div>
+                      <div className="mt-0.5 flex items-center gap-1.5 text-[10px] text-muted-foreground/70">
+                        <span className="rounded bg-muted px-1 py-px">{MODE_LABEL[c.mode] ?? c.mode}</span>
+                        {shortDate(c.last_msg_at)}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      title={isPinned ? "Desafixar" : "Fixar (máx. 3)"}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        pinMutation.mutate({ id: c.id, pinned: !isPinned });
+                      }}
+                      className={cn(
+                        "shrink-0 rounded p-1 transition-colors",
+                        isPinned
+                          ? "text-primary"
+                          : "text-muted-foreground/40 opacity-0 group-hover:opacity-100 hover:text-foreground"
+                      )}
+                    >
+                      <Star className={cn("h-3.5 w-3.5", isPinned && "fill-current")} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          </ScrollArea>
+        </div>
+      )}
+
+      {!showList && (
+        <>
       {/* Mensagens */}
       <ScrollArea className="flex-1">
         <div className="px-3 py-4 space-y-3">
@@ -611,6 +762,8 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
           </Button>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }
