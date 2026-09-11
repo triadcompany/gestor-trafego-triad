@@ -62,7 +62,13 @@ import {
   fetchWhatsappInstanceState,
 } from "@/lib/whatsapp-messages";
 import { getN8nWebhookUrl, saveN8nWebhookUrl } from "@/lib/n8n";
-import { agentListConversations, agentSetConversationPinned } from "@/lib/agent-chat";
+import {
+  agentListConversations,
+  agentSetConversationPinned,
+  agentGetAssistants,
+  agentSaveAssistantPrompt,
+  type AssistantConfig,
+} from "@/lib/agent-chat";
 import { fetchOrgMembers, createOrgMember, updateOrgMemberRole, setOrgMemberActive } from "@/server/team";
 import { getCurrentUser } from "@/server/session";
 
@@ -878,8 +884,86 @@ const AGENT_MODE_LABEL: Record<string, string> = {
   roteiro_automotivo: "Roteiro",
 };
 
+function AssistantPromptDialog({ assistant }: { assistant: AssistantConfig }) {
+  const queryClient = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState(assistant.prompt);
+
+  useEffect(() => {
+    if (open) setDraft(assistant.prompt);
+  }, [open, assistant.prompt]);
+
+  const saveMutation = useMutation({
+    mutationFn: (prompt: string) => agentSaveAssistantPrompt({ data: { mode: assistant.mode, prompt } }),
+    onSuccess: () => {
+      toast.success("Prompt do assistente salvo.");
+      queryClient.invalidateQueries({ queryKey: ["agent-assistants"] });
+      setOpen(false);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar prompt"),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button size="sm" variant="outline" className="shrink-0">Editar prompt</Button>
+      </DialogTrigger>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Prompt — assistente de {assistant.label}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <Textarea
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            spellCheck={false}
+            className="font-mono text-xs leading-relaxed h-[340px] resize-none"
+          />
+          {assistant.mode === "trafego" && (
+            <p className="text-[11px] text-muted-foreground">
+              O bloco “Estado atual dos clientes” (CPL, gasto, leads, alertas) é anexado automaticamente no fim deste prompt a cada mensagem.
+            </p>
+          )}
+          <p className="text-[11px] text-muted-foreground">
+            {assistant.isCustom
+              ? "Este assistente está usando um prompt personalizado desta organização."
+              : "Este assistente está usando o prompt padrão."}
+          </p>
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-2">
+          <Button
+            variant="ghost"
+            onClick={() => setDraft(assistant.defaultPrompt)}
+            disabled={saveMutation.isPending || draft === assistant.defaultPrompt}
+          >
+            Carregar padrão
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => saveMutation.mutate("")}
+            disabled={saveMutation.isPending || !assistant.isCustom}
+          >
+            Restaurar padrão
+          </Button>
+          <Button onClick={() => saveMutation.mutate(draft)} disabled={saveMutation.isPending || !draft.trim()}>
+            {saveMutation.isPending ? "Salvando..." : "Salvar"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function AgentPinnedSection() {
   const queryClient = useQueryClient();
+
+  const { data: assistants = [], isLoading: loadingAssistants } = useQuery({
+    queryKey: ["agent-assistants"],
+    queryFn: () => agentGetAssistants(),
+    staleTime: 1000 * 60,
+  });
 
   const { data: conversations = [], isLoading } = useQuery({
     queryKey: ["agent-conversations"],
@@ -906,18 +990,40 @@ function AgentPinnedSection() {
       <Card className="overflow-hidden">
         <div className="px-5 py-3 border-b border-border bg-muted/10 flex items-center justify-between gap-3">
           <p className="text-xs text-muted-foreground">
-            Escolha até 3 conversas pra ficarem como abas de acesso rápido no botão flutuante do agente.
-            Ao fixar uma 4ª, a fixada mais antiga sai automaticamente.
+            As abas do botão flutuante são os 3 assistentes abaixo. Fixe conversas pra elas ocuparem a frente
+            (empurram os assistentes pra fora, até 3 no total).
           </p>
-          <Badge variant="outline" className="shrink-0 tabular-nums">{pinnedCount} de 3</Badge>
+          <Badge variant="outline" className="shrink-0 tabular-nums">{pinnedCount} de 3 fixadas</Badge>
         </div>
 
+        {/* Assistentes — padrão do botão flutuante, prompt editável */}
+        <p className="px-5 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Assistentes</p>
+        <div className="divide-y divide-border">
+          {loadingAssistants ? (
+            <p className="px-5 py-3 text-sm text-muted-foreground">Carregando...</p>
+          ) : (
+            assistants.map((a) => (
+              <div key={a.mode} className="px-5 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium">{a.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {a.isCustom ? "Prompt personalizado" : "Prompt padrão"}
+                  </p>
+                </div>
+                <AssistantPromptDialog assistant={a} />
+              </div>
+            ))
+          )}
+        </div>
+
+        {/* Conversas do gestor — fixar pra virar aba */}
+        <p className="px-5 pt-4 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">Conversas</p>
         <div className="divide-y divide-border">
           {isLoading ? (
-            <p className="px-5 py-4 text-sm text-muted-foreground">Carregando conversas...</p>
+            <p className="px-5 py-3 text-sm text-muted-foreground">Carregando conversas...</p>
           ) : conversations.length === 0 ? (
-            <p className="px-5 py-4 text-sm text-muted-foreground">
-              Você ainda não tem conversas com o agente. Abra o agente, converse, e volte aqui pra fixar.
+            <p className="px-5 py-3 text-sm text-muted-foreground">
+              Você ainda não tem conversas com o agente.
             </p>
           ) : (
             conversations.map((c) => {

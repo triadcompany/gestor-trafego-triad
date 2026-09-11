@@ -5,7 +5,7 @@ import { z } from "zod";
 import OpenAI from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { db } from "@/db/client";
-import { agentConversations, agentMessages } from "@/db/schema";
+import { agentConversations, agentMessages, appConfig } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 import { fetchClients } from "./queries";
 import { getOpenAIKey } from "./meta";
@@ -440,9 +440,48 @@ Agora aguarde eu enviar:
 - cidade/região;
 - condições comerciais.`;
 
-async function buildSystemPrompt(mode: AgentMode = "trafego"): Promise<string> {
-  if (mode === "copy_automotivo") return COPY_AUTOMOTIVO_PROMPT;
-  if (mode === "roteiro_automotivo") return ROTEIRO_AUTOMOTIVO_PROMPT;
+// Instruções base do assistente de Tráfego. O bloco "Estado atual dos clientes"
+// é sempre anexado depois em runtime — ele NÃO faz parte do prompt editável.
+const TRAFEGO_BASE_PROMPT = `Você é o assistente de gestão de tráfego pago da Triad Company. Seu papel é analisar campanhas Meta Ads, identificar oportunidades de otimização e executar ações quando solicitado pelo usuário.
+
+Diretrizes:
+- Seja direto e objetivo. Use dados concretos (CPL, orçamento, leads, variações percentuais).
+- Quando sugerir uma ação, explique o raciocínio brevemente.
+- Todas as ações de escrita requerem confirmação explícita do usuário — nunca execute sem confirmar.
+- Responda sempre em português brasileiro.`;
+
+export const ASSISTANT_LABELS: Record<AgentMode, string> = {
+  trafego: "Tráfego",
+  copy_automotivo: "Copy",
+  roteiro_automotivo: "Roteiro",
+};
+
+export const DEFAULT_ASSISTANT_PROMPTS: Record<AgentMode, string> = {
+  trafego: TRAFEGO_BASE_PROMPT,
+  copy_automotivo: COPY_AUTOMOTIVO_PROMPT,
+  roteiro_automotivo: ROTEIRO_AUTOMOTIVO_PROMPT,
+};
+
+const promptConfigKey = (mode: AgentMode) => `assistant_prompt_${mode}`;
+
+// Prompt editável do assistente para a organização (null = usa o default embutido).
+async function loadCustomPrompt(organizationId: string, mode: AgentMode): Promise<string | null> {
+  const [row] = await db
+    .select({ value: appConfig.value })
+    .from(appConfig)
+    .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, promptConfigKey(mode))))
+    .limit(1);
+  const v = row?.value?.trim();
+  return v ? v : null;
+}
+
+async function buildSystemPrompt(mode: AgentMode, organizationId: string): Promise<string> {
+  const custom = await loadCustomPrompt(organizationId, mode);
+
+  if (mode === "copy_automotivo") return custom ?? COPY_AUTOMOTIVO_PROMPT;
+  if (mode === "roteiro_automotivo") return custom ?? ROTEIRO_AUTOMOTIVO_PROMPT;
+
+  const base = custom ?? TRAFEGO_BASE_PROMPT;
   let clientSummary = "";
   try {
     const clients = await fetchClients();
@@ -463,13 +502,7 @@ async function buildSystemPrompt(mode: AgentMode = "trafego"): Promise<string> {
     clientSummary = "Não foi possível carregar dados dos clientes.";
   }
 
-  return `Você é o assistente de gestão de tráfego pago da Triad Company. Seu papel é analisar campanhas Meta Ads, identificar oportunidades de otimização e executar ações quando solicitado pelo usuário.
-
-Diretrizes:
-- Seja direto e objetivo. Use dados concretos (CPL, orçamento, leads, variações percentuais).
-- Quando sugerir uma ação, explique o raciocínio brevemente.
-- Todas as ações de escrita requerem confirmação explícita do usuário — nunca execute sem confirmar.
-- Responda sempre em português brasileiro.
+  return `${base}
 
 Estado atual dos clientes (${new Date().toLocaleDateString("pt-BR")}):
 ${clientSummary}`;
@@ -557,7 +590,7 @@ export const agentSendMessage = createServerFn({ method: "POST" })
         : (data.mode ?? "trafego");
       const convId = await ensureConversation(data.conversation_id, userId, mode, organizationId);
       const history = await loadHistory(convId);
-      const systemPrompt = await buildSystemPrompt(mode);
+      const systemPrompt = await buildSystemPrompt(mode, organizationId);
 
       const messages: ChatCompletionMessageParam[] = [
         { role: "system", content: systemPrompt },
@@ -735,6 +768,69 @@ export const agentDeleteConversation = createServerFn({ method: "POST" })
     await getConversationMode(data.conversation_id, organizationId, userId); // valida posse
     await db.delete(agentMessages).where(eq(agentMessages.conversationId, data.conversation_id));
     await db.delete(agentConversations).where(eq(agentConversations.id, data.conversation_id));
+  });
+
+// ── Assistentes (prompt editável por organização) ─────────────────────────────
+
+export interface AssistantConfig {
+  mode: AgentMode;
+  label: string;
+  prompt: string;        // prompt efetivo (custom se houver, senão o default)
+  defaultPrompt: string; // default embutido, pra referência / "restaurar"
+  isCustom: boolean;
+}
+
+export const agentGetAssistants = createServerFn({ method: "GET" }).handler(
+  async (): Promise<AssistantConfig[]> => {
+    const { organizationId } = await requireOrgContext();
+    const rows = await db
+      .select({ key: appConfig.key, value: appConfig.value })
+      .from(appConfig)
+      .where(
+        and(
+          eq(appConfig.organizationId, organizationId),
+          inArray(appConfig.key, AGENT_MODES.map((m) => promptConfigKey(m))),
+        ),
+      );
+    const byKey = new Map(rows.map((r) => [r.key, r.value]));
+    return AGENT_MODES.map((mode) => {
+      const custom = byKey.get(promptConfigKey(mode))?.trim() || null;
+      const defaultPrompt = DEFAULT_ASSISTANT_PROMPTS[mode];
+      return {
+        mode,
+        label: ASSISTANT_LABELS[mode],
+        prompt: custom ?? defaultPrompt,
+        defaultPrompt,
+        isCustom: custom !== null,
+      };
+    });
+  },
+);
+
+const saveAssistantPromptSchema = z.object({
+  mode: z.enum(AGENT_MODES),
+  // string vazia = restaurar o prompt padrão
+  prompt: z.string().max(20000),
+});
+
+export const agentSaveAssistantPrompt = createServerFn({ method: "POST" })
+  .inputValidator(saveAssistantPromptSchema)
+  .handler(async ({ data }): Promise<void> => {
+    const { organizationId } = await requireOrgContext();
+    const key = promptConfigKey(data.mode);
+    const value = data.prompt.trim();
+
+    if (!value || value === DEFAULT_ASSISTANT_PROMPTS[data.mode].trim()) {
+      await db
+        .delete(appConfig)
+        .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, key)));
+      return;
+    }
+
+    await db
+      .insert(appConfig)
+      .values({ organizationId, key, value })
+      .onConflictDoUpdate({ target: [appConfig.organizationId, appConfig.key], set: { value } });
   });
 
 export const agentLoadMessages = createServerFn({ method: "GET" })

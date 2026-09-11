@@ -481,38 +481,48 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
         </div>
       </div>
 
-      {/* Abas: conversas fixadas do gestor, ou os 3 assistentes padrão se não houver nenhuma fixada */}
+      {/* Abas: conversas fixadas do gestor primeiro; os assistentes preenchem o resto até 3 */}
       <div className="flex border-b border-border shrink-0">
-        {pinnedConvs.length > 0
-          ? pinnedConvs.map((c) => (
+        {(() => {
+          type Slot =
+            | { kind: "conv"; id: string; title: string | null; mode: string }
+            | { kind: "mode"; mode: AgentMode; label: string };
+          const slots: Slot[] = pinnedConvs.map((c) => ({ kind: "conv", id: c.id, title: c.title, mode: c.mode }));
+          for (const t of MODE_TABS) {
+            if (slots.length >= 3) break;
+            slots.push({ kind: "mode", mode: t.mode, label: t.label });
+          }
+          return slots.map((s) =>
+            s.kind === "conv" ? (
               <button
-                key={c.id}
-                onClick={() => openConversation(c)}
-                title={c.title ?? "Conversa"}
+                key={`c-${s.id}`}
+                onClick={() => openConversation({ id: s.id, mode: s.mode })}
+                title={s.title ?? "Conversa"}
                 className={cn(
                   "min-w-0 flex-1 truncate px-2 py-2 text-xs font-medium transition-colors border-b-2 -mb-px",
-                  conversationId === c.id
+                  conversationId === s.id
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
               >
-                {c.title ?? MODE_LABEL[c.mode] ?? "Conversa"}
+                {s.title ?? MODE_LABEL[s.mode] ?? "Conversa"}
               </button>
-            ))
-          : MODE_TABS.map((tab) => (
+            ) : (
               <button
-                key={tab.mode}
-                onClick={() => selectMode(tab.mode)}
+                key={`m-${s.mode}`}
+                onClick={() => selectMode(s.mode)}
                 className={cn(
                   "flex-1 text-xs font-medium py-2 transition-colors border-b-2 -mb-px",
-                  mode === tab.mode
+                  !conversationId && mode === s.mode
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
               >
-                {tab.label}
+                {s.label}
               </button>
-            ))}
+            )
+          );
+        })()}
       </div>
 
       {/* Painel de conversas — fixar 3, abrir qualquer outra, começar nova por assistente */}
