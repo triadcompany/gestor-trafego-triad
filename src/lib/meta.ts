@@ -434,9 +434,9 @@ export async function fetchAccountInsightsForRange(
   token: string,
   since: string,
   until: string,
-): Promise<{ spend: number; leads: number; forms: number; impressions: number }> {
+): Promise<{ spend: number; leads: number; forms: number; impressions: number; link_clicks: number; ctr: number | null; cpm: number | null }> {
   const params = new URLSearchParams({
-    fields: "spend,actions,impressions",
+    fields: "spend,actions,impressions,inline_link_clicks,ctr,cpm",
     time_range: JSON.stringify({ since, until }),
     level: "account",
     access_token: token,
@@ -448,6 +448,9 @@ export async function fetchAccountInsightsForRange(
       spend?: string;
       actions?: Array<{ action_type: string; value: string }>;
       impressions?: string;
+      inline_link_clicks?: string;
+      ctr?: string;
+      cpm?: string;
     }>;
     error?: { message: string };
   };
@@ -458,34 +461,73 @@ export async function fetchAccountInsightsForRange(
   const spend = parseFloat(row?.spend ?? "0");
   const { leads, forms } = extractMetrics(row?.actions);
   const impressions = parseInt(row?.impressions ?? "0", 10);
+  const link_clicks = parseInt(row?.inline_link_clicks ?? "0", 10);
+  const ctr = row?.ctr ? parseFloat(row.ctr) : null;
+  const cpm = row?.cpm ? parseFloat(row.cpm) : null;
 
-  return { spend, leads, forms, impressions };
+  return { spend, leads, forms, impressions, link_clicks, ctr, cpm };
 }
 
-// Monta o texto do relatório de métricas. Recebe o token JÁ resolvido pelo
-// chamador — pra funcionar tanto no caminho com sessão (botão manual) quanto no
-// tick de automação (sem sessão, token resolvido direto do banco).
+// ── Modelo de texto do relatório de métricas ────────────────────────────────
+// Placeholders disponíveis pro corpo (padrão ou personalizado por automação/
+// modelo salvo): {{cliente}}, {{periodo_dias}}, {{investimento}}, {{leads}},
+// {{custo_por_lead}}, {{impressoes}}, {{cliques}}, {{ctr}}, {{cpm}}.
+export const REPORT_TEMPLATE_PLACEHOLDERS = [
+  "cliente",
+  "periodo_dias",
+  "investimento",
+  "leads",
+  "custo_por_lead",
+  "impressoes",
+  "cliques",
+  "ctr",
+  "cpm",
+] as const;
+
+export const DEFAULT_REPORT_TEMPLATE = `🎯Olá pessoal, segue Relatório das Métricas dos últimos {{periodo_dias}} dias dos anúncios:
+
+▪️Impressões: {{impressoes}}
+▪️Número de mensagens: {{leads}}
+▪️Custo por mensagem: {{custo_por_lead}}
+▪️Investimento: {{investimento}}
+
+Dos carros que estamos anunciando, quais estão tendo mais dificuldade nas negociações e quais objeções?
+Vou usar esse feedback para melhorar o tráfego!`;
+
+export function renderReportTemplate(body: string, vars: Record<string, string>): string {
+  return body.replace(/\{\{\s*(\w+)\s*\}\}/g, (_match, key: string) => vars[key] ?? "");
+}
+
+// Monta o texto do relatório de métricas a partir de um template (o padrão,
+// ou um customizado vindo de report_templates / do corpo da automação).
+// Recebe o token JÁ resolvido pelo chamador — pra funcionar tanto no caminho
+// com sessão (botão manual) quanto no tick de automação (sem sessão).
 export async function buildMetricsReportText(
-  client: { metaAdAccountId: string },
+  client: { metaAdAccountId: string; name?: string },
   periodDays: number,
-  token: string
+  token: string,
+  templateBody?: string | null,
 ): Promise<string> {
   const until = new Date().toISOString().slice(0, 10);
   const since = new Date(Date.now() - periodDays * 86400000).toISOString().slice(0, 10);
 
-  const { spend, leads, impressions } = await fetchAccountInsightsForRange(client.metaAdAccountId, token, since, until);
-  const custoPorMensagem = leads > 0 ? spend / leads : 0;
+  const { spend, leads, impressions, link_clicks, ctr, cpm } = await fetchAccountInsightsForRange(client.metaAdAccountId, token, since, until);
+  const custoPorLead = leads > 0 ? spend / leads : 0;
   const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 
-  return `🎯Olá pessoal, segue Relatório das Métricas dos últimos ${periodDays} dias dos anúncios:
+  const vars: Record<string, string> = {
+    cliente: client.name ?? "",
+    periodo_dias: String(periodDays),
+    investimento: brl(spend),
+    leads: String(leads),
+    custo_por_lead: brl(custoPorLead),
+    impressoes: impressions.toLocaleString("pt-BR"),
+    cliques: link_clicks.toLocaleString("pt-BR"),
+    ctr: ctr != null ? `${ctr.toFixed(2)}%` : "—",
+    cpm: cpm != null ? brl(cpm) : "—",
+  };
 
-▪️Impressões: ${impressions.toLocaleString("pt-BR")}
-▪️Número de mensagens: ${leads}
-▪️Custo por mensagem: ${brl(custoPorMensagem)}
-▪️Investimento: ${brl(spend)}
-
-Dos carros que estamos anunciando, quais estão tendo mais dificuldade nas negociações e quais objeções?
-Vou usar esse feedback para melhorar o tráfego!`;
+  return renderReportTemplate(templateBody?.trim() || DEFAULT_REPORT_TEMPLATE, vars);
 }
 
 const _sendWeeklyMetricsReport = createServerFn({ method: "POST" })
@@ -493,7 +535,7 @@ const _sendWeeklyMetricsReport = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { organizationId, role, userId } = await requireOrgContext();
     const [client] = await db
-      .select({ organizationId: clientsTable.organizationId, ownerUserId: clientsTable.ownerUserId, metaAdAccountId: clientsTable.metaAdAccountId, whatsappGroupId: clientsTable.whatsappGroupId })
+      .select({ organizationId: clientsTable.organizationId, ownerUserId: clientsTable.ownerUserId, name: clientsTable.name, metaAdAccountId: clientsTable.metaAdAccountId, whatsappGroupId: clientsTable.whatsappGroupId })
       .from(clientsTable)
       .where(eq(clientsTable.id, data.clientId));
     if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");

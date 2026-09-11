@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -16,6 +16,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil, Repeat, Play, Trash2 } from "lucide-react";
+import { DEFAULT_REPORT_TEMPLATE, REPORT_TEMPLATE_PLACEHOLDERS } from "@/lib/meta";
+import { fetchReportTemplates, upsertReportTemplate, deleteReportTemplate, type ReportTemplateRow } from "@/server/report-templates";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -68,6 +70,18 @@ const STATUS_CLASSES: Record<ScheduledMessageRow["status"], string> = {
   partial: "text-status-attention bg-status-attention/10",
   failed: "text-status-critical bg-status-critical/10",
   canceled: "text-muted-foreground bg-muted",
+};
+
+const PLACEHOLDER_LABELS: Record<string, string> = {
+  cliente: "Cliente",
+  periodo_dias: "Período (dias)",
+  investimento: "Investimento",
+  leads: "Leads",
+  custo_por_lead: "Custo por lead",
+  impressoes: "Impressões",
+  cliques: "Cliques",
+  ctr: "CTR",
+  cpm: "CPM",
 };
 
 function formatDateTime(iso: string): string {
@@ -780,6 +794,11 @@ function AutomationComposerDialog({
   const [body, setBody] = useState("");
   const [clientId, setClientId] = useState<string>("none");
   const [reportPeriodDays, setReportPeriodDays] = useState<number>(7);
+  const [reportTemplateId, setReportTemplateId] = useState<string | null>(null);
+  const [reportBody, setReportBody] = useState<string>(DEFAULT_REPORT_TEMPLATE);
+  const [templateEditorOpen, setTemplateEditorOpen] = useState(false);
+  const [templateEditorMode, setTemplateEditorMode] = useState<"create" | "edit">("create");
+  const reportBodyRef = useRef<HTMLTextAreaElement>(null);
   const [summaryTurno, setSummaryTurno] = useState<"manha" | "tarde">("manha");
   const [summaryClientIds, setSummaryClientIds] = useState<string[]>([]);
   const [recurrenceType, setRecurrenceType] = useState<"weekly" | "daily" | "monthly">("weekly");
@@ -796,10 +815,22 @@ function AutomationComposerDialog({
 
   const { data: clients = [] } = useQuery({ queryKey: ["clients-all"], queryFn: fetchAllClients });
   const { data: instances = [] } = useQuery({ queryKey: ["whatsapp-instances"], queryFn: fetchWhatsappInstances });
+  const { data: templates = [] } = useQuery({ queryKey: ["report-templates"], queryFn: fetchReportTemplates });
+
+  // Mantém o texto do relatório em dia com o modelo vinculado (ex.: depois de
+  // editar o modelo compartilhado). Só age enquanto a automação ainda estiver
+  // apontando pra um modelo — se o gestor editar o texto na mão, ela se
+  // desvincula (vira texto próprio) e este efeito para de mexer nele.
+  useEffect(() => {
+    if (!reportTemplateId) return;
+    const tpl = templates.find((t) => t.id === reportTemplateId);
+    if (tpl) setReportBody(tpl.body);
+  }, [templates, reportTemplateId]);
 
   const reset = () => {
     setLoadedId(null);
     setName(""); setContentType("text"); setBody(""); setClientId("none"); setReportPeriodDays(7);
+    setReportTemplateId(null); setReportBody(DEFAULT_REPORT_TEMPLATE);
     setSummaryTurno("manha"); setSummaryClientIds([]);
     setRecurrenceType("weekly"); setWeekdays([1]); setMonthdays([1]); setSendHour("10"); setSendMinute("00");
     setInstanceId("auto"); setUseClientGroup(false); setCustomRecipients([]); setMediaFiles([]); setExistingMedia([]);
@@ -809,9 +840,17 @@ function AutomationComposerDialog({
     setLoadedId(editing.id);
     setName(editing.name);
     setContentType(editing.content_type);
-    setBody(editing.body ?? "");
+    setBody(editing.content_type === "text" ? (editing.body ?? "") : "");
     setClientId(editing.client_id ?? "none");
     setReportPeriodDays(editing.report_period_days);
+    setReportTemplateId(editing.report_template_id ?? null);
+    setReportBody(
+      editing.content_type === "report"
+        ? editing.report_template_id
+          ? (templates.find((t) => t.id === editing.report_template_id)?.body ?? DEFAULT_REPORT_TEMPLATE)
+          : (editing.body?.trim() || DEFAULT_REPORT_TEMPLATE)
+        : DEFAULT_REPORT_TEMPLATE
+    );
     setSummaryTurno(editing.summary_turno ?? "manha");
     setSummaryClientIds(editing.summary_client_ids ?? []);
     setRecurrenceType(editing.recurrence_type);
@@ -847,6 +886,29 @@ function AutomationComposerDialog({
     setList(list.includes(day) ? list.filter((d) => d !== day) : [...list, day].sort((a, b) => a - b));
   };
 
+  // Editar o texto enquanto um modelo está selecionado desvincula a automação
+  // dele (o modelo compartilhado não é alterado) — vira um texto só desta regra.
+  const onReportBodyChange = (v: string) => {
+    setReportBody(v);
+    if (reportTemplateId) {
+      const tpl = templates.find((t) => t.id === reportTemplateId);
+      if (tpl && v !== tpl.body) setReportTemplateId(null);
+    }
+  };
+
+  const insertReportPlaceholder = (token: string) => {
+    const el = reportBodyRef.current;
+    const snippet = `{{${token}}}`;
+    const start = el?.selectionStart ?? reportBody.length;
+    const end = el?.selectionEnd ?? reportBody.length;
+    const next = reportBody.slice(0, start) + snippet + reportBody.slice(end);
+    onReportBodyChange(next);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(start + snippet.length, start + snippet.length);
+    });
+  };
+
   const saveMut = useMutation({
     mutationFn: async () => {
       const uploaded = await Promise.all(
@@ -862,7 +924,8 @@ function AutomationComposerDialog({
         id: editing?.id,
         name: name.trim(),
         contentType,
-        body: contentType === "text" ? body : null,
+        body: contentType === "text" ? body : contentType === "report" ? (reportTemplateId ? null : reportBody) : null,
+        reportTemplateId: contentType === "report" ? reportTemplateId : null,
         summaryTurno: contentType === "group_summary" ? summaryTurno : null,
         summaryClientIds: contentType === "group_summary" ? summaryClientIds : [],
         clientId: clientId === "none" ? null : clientId,
@@ -891,7 +954,7 @@ function AutomationComposerDialog({
     (contentType === "text"
       ? body.trim().length > 0 || mediaFiles.length > 0 || existingMedia.length > 0
       : contentType === "report"
-        ? hasClient
+        ? hasClient && reportBody.trim().length > 0
         : summaryClientIds.length > 0) &&
     (recurrenceType === "daily" ||
       (recurrenceType === "weekly" && weekdays.length > 0) ||
@@ -899,6 +962,7 @@ function AutomationComposerDialog({
     (useClientGroup && hasClient) || customRecipients.length > 0;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) reset(); }}>
       <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -968,26 +1032,89 @@ function AutomationComposerDialog({
               </div>
             </>
           ) : contentType === "report" ? (
-            <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Cliente</Label>
+                  <Select value={clientId} onValueChange={setClientId}>
+                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>
+                      {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Período</Label>
+                  <Select value={String(reportPeriodDays)} onValueChange={(v) => setReportPeriodDays(Number(v))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="7">7 dias</SelectItem>
+                      <SelectItem value="15">15 dias</SelectItem>
+                      <SelectItem value="30">30 dias</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
               <div className="space-y-1.5">
-                <Label>Cliente</Label>
-                <Select value={clientId} onValueChange={setClientId}>
-                  <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                <div className="flex items-center justify-between">
+                  <Label>Modelo de mensagem</Label>
+                  {reportTemplateId && (
+                    <button
+                      type="button"
+                      onClick={() => { setTemplateEditorMode("edit"); setTemplateEditorOpen(true); }}
+                      className="text-xs text-primary hover:underline"
+                    >
+                      Editar este modelo
+                    </button>
+                  )}
+                </div>
+                <Select
+                  value={reportTemplateId ?? "none"}
+                  onValueChange={(v) => {
+                    if (v === "__new__") { setTemplateEditorMode("create"); setTemplateEditorOpen(true); return; }
+                    if (v === "none") { setReportTemplateId(null); setReportBody(DEFAULT_REPORT_TEMPLATE); return; }
+                    const tpl = templates.find((t) => t.id === v);
+                    setReportTemplateId(v);
+                    setReportBody(tpl?.body ?? DEFAULT_REPORT_TEMPLATE);
+                  }}
+                >
+                  <SelectTrigger><SelectValue placeholder="Padrão do sistema" /></SelectTrigger>
                   <SelectContent>
-                    {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    <SelectItem value="none">Padrão do sistema</SelectItem>
+                    {templates.map((t) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                    <SelectItem value="__new__">+ Criar novo modelo…</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
               <div className="space-y-1.5">
-                <Label>Período</Label>
-                <Select value={String(reportPeriodDays)} onValueChange={(v) => setReportPeriodDays(Number(v))}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="7">7 dias</SelectItem>
-                    <SelectItem value="15">15 dias</SelectItem>
-                    <SelectItem value="30">30 dias</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>Texto da mensagem</Label>
+                <Textarea
+                  ref={reportBodyRef}
+                  value={reportBody}
+                  onChange={(e) => onReportBodyChange(e.target.value)}
+                  rows={8}
+                  className="font-mono text-xs resize-none"
+                />
+                <div className="flex flex-wrap gap-1.5">
+                  {REPORT_TEMPLATE_PLACEHOLDERS.map((p) => (
+                    <button
+                      key={p}
+                      type="button"
+                      onClick={() => insertReportPlaceholder(p)}
+                      title={PLACEHOLDER_LABELS[p]}
+                      className="rounded-md border border-border bg-muted/40 px-2 py-1 text-[11px] font-mono hover:bg-muted"
+                    >
+                      {`{{${p}}}`}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] text-muted-foreground">
+                  {reportTemplateId
+                    ? "Editar aqui vira um texto só desta automação — não muda o modelo salvo."
+                    : "As variáveis acima são preenchidas com os dados reais do cliente na hora do envio."}
+                </p>
               </div>
             </div>
           ) : (
@@ -1111,6 +1238,147 @@ function AutomationComposerDialog({
           <Button onClick={() => saveMut.mutate()} disabled={!canSubmit || saveMut.isPending} className="gap-2">
             {saveMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
             {editing ? "Salvar" : "Criar automação"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <ReportTemplateEditorDialog
+      open={templateEditorOpen}
+      onOpenChange={setTemplateEditorOpen}
+      mode={templateEditorMode}
+      template={templateEditorMode === "edit" ? templates.find((t) => t.id === reportTemplateId) ?? null : null}
+      initialBody={reportBody}
+      onSaved={({ id, body: savedBody }) => { setReportTemplateId(id); setReportBody(savedBody); }}
+    />
+    </>
+  );
+}
+
+function ReportTemplateEditorDialog({
+  open,
+  onOpenChange,
+  mode,
+  template,
+  initialBody,
+  onSaved,
+}: {
+  open: boolean;
+  onOpenChange: (v: boolean) => void;
+  mode: "create" | "edit";
+  template: ReportTemplateRow | null;
+  initialBody?: string;
+  onSaved: (row: { id: string; body: string; name: string }) => void;
+}) {
+  const qc = useQueryClient();
+  const [name, setName] = useState("");
+  const [body, setBody] = useState("");
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    if (mode === "edit" && template) {
+      setName(template.name);
+      setBody(template.body);
+    } else {
+      setName("");
+      setBody(initialBody ?? DEFAULT_REPORT_TEMPLATE);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, mode, template?.id]);
+
+  const saveMut = useMutation({
+    mutationFn: () => upsertReportTemplate({ id: mode === "edit" ? template?.id : undefined, name: name.trim(), body }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["report-templates"] });
+      toast.success(mode === "edit" ? "Modelo atualizado." : "Modelo criado.");
+      onSaved({ id: res.id, body, name: name.trim() });
+      onOpenChange(false);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar modelo", { duration: 8000 }),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: () => deleteReportTemplate(template!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["report-templates"] });
+      toast.success("Modelo excluído.");
+      onOpenChange(false);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao excluir modelo", { duration: 8000 }),
+  });
+
+  const insert = (token: string) => {
+    const el = textareaRef.current;
+    const snippet = `{{${token}}}`;
+    const start = el?.selectionStart ?? body.length;
+    const end = el?.selectionEnd ?? body.length;
+    const next = body.slice(0, start) + snippet + body.slice(end);
+    setBody(next);
+    requestAnimationFrame(() => {
+      el?.focus();
+      el?.setSelectionRange(start + snippet.length, start + snippet.length);
+    });
+  };
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{mode === "edit" ? "Editar modelo de relatório" : "Novo modelo de relatório"}</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label>Nome</Label>
+            <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Ex: Relatório resumido" />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Texto</Label>
+            <Textarea
+              ref={textareaRef}
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              rows={10}
+              className="font-mono text-xs resize-none"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs text-muted-foreground">Inserir variável</Label>
+            <div className="flex flex-wrap gap-1.5">
+              {REPORT_TEMPLATE_PLACEHOLDERS.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => insert(p)}
+                  title={PLACEHOLDER_LABELS[p]}
+                  className="rounded-md border border-border bg-muted/40 px-2 py-1 text-[11px] font-mono hover:bg-muted"
+                >
+                  {`{{${p}}}`}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter className="gap-2 sm:gap-2">
+          {mode === "edit" && (
+            <Button
+              variant="outline"
+              className="mr-auto text-destructive hover:text-destructive"
+              onClick={() => {
+                if (window.confirm(`Excluir o modelo "${template?.name}"? Automações que usam ele passam a usar o texto padrão.`)) {
+                  deleteMut.mutate();
+                }
+              }}
+              disabled={deleteMut.isPending}
+            >
+              Excluir
+            </Button>
+          )}
+          <Button variant="ghost" onClick={() => onOpenChange(false)}>Cancelar</Button>
+          <Button onClick={() => saveMut.mutate()} disabled={!name.trim() || !body.trim() || saveMut.isPending}>
+            {saveMut.isPending ? "Salvando..." : "Salvar modelo"}
           </Button>
         </DialogFooter>
       </DialogContent>

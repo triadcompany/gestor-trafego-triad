@@ -410,6 +410,20 @@ export const scheduledMessageRecipients = pgTable("scheduled_message_recipients"
   errorMessage: text("error_message"),
 });
 
+// Modelo de texto reutilizável pro relatório de métricas — corpo com
+// placeholders {{variavel}} (cliente, periodo_dias, investimento, leads,
+// custo_por_lead, impressoes, cliques, ctr, cpm), compartilhado na organização.
+export const reportTemplates = pgTable("report_templates", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  body: text("body").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
 // Regra de automação: envia conteúdo recorrente no WhatsApp. Não envia nada
 // direto — um tick (endpoint /api/automations/tick, chamado por cron do n8n)
 // materializa uma linha em scheduled_messages a cada ocorrência que vence.
@@ -421,9 +435,10 @@ export const messageAutomations = pgTable("message_automations", {
   name: text("name").notNull(),
   active: boolean("active").notNull().default(true),
   contentType: text("content_type").notNull(), // 'text' | 'report' | 'group_summary'
-  body: text("body"), // texto livre — só quando contentType='text'
+  body: text("body"), // texto livre (contentType='text') OU texto/template customizado do relatório (contentType='report', sobrepõe reportTemplateId quando preenchido)
   clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
   reportPeriodDays: integer("report_period_days").notNull().default(7), // 7 | 15 | 30
+  reportTemplateId: uuid("report_template_id").references(() => reportTemplates.id, { onDelete: "set null" }),
   summaryTurno: text("summary_turno"), // 'manha' | 'tarde' — só p/ group_summary
   summaryClientIds: uuid("summary_client_ids").array().notNull().default([]), // clientes cujos grupos entram no resumo
   recurrenceType: text("recurrence_type").notNull(), // 'weekly' | 'daily' | 'monthly'
@@ -619,8 +634,13 @@ export const messageAutomationsRelations = relations(messageAutomations, ({ one,
     fields: [messageAutomations.whatsappInstanceId],
     references: [whatsappInstances.id],
   }),
+  reportTemplate: one(reportTemplates, { fields: [messageAutomations.reportTemplateId], references: [reportTemplates.id] }),
   destinations: many(messageAutomationDestinations),
   media: many(messageAutomationMedia),
+}));
+
+export const reportTemplatesRelations = relations(reportTemplates, ({ one }) => ({
+  organization: one(organizations, { fields: [reportTemplates.organizationId], references: [organizations.id] }),
 }));
 
 export const messageAutomationDestinationsRelations = relations(messageAutomationDestinations, ({ one }) => ({

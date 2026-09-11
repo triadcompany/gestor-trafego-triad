@@ -7,6 +7,7 @@ import {
   messageAutomationDestinations,
   messageAutomationMedia,
   messageAutomations,
+  reportTemplates,
   whatsappInstances,
 } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
@@ -29,6 +30,7 @@ export interface MessageAutomationRow {
   client_id: string | null;
   client_name: string | null;
   report_period_days: number;
+  report_template_id: string | null;
   summary_turno: "manha" | "tarde" | null;
   summary_client_ids: string[];
   recurrence_type: "weekly" | "daily" | "monthly";
@@ -63,6 +65,7 @@ const _fetchMessageAutomations = createServerFn({ method: "GET" }).handler(async
     client_id: r.clientId,
     client_name: r.client?.name ?? null,
     report_period_days: r.reportPeriodDays,
+    report_template_id: r.reportTemplateId,
     summary_turno: (r.summaryTurno as "manha" | "tarde" | null) ?? null,
     summary_client_ids: r.summaryClientIds,
     recurrence_type: r.recurrenceType as "weekly" | "daily" | "monthly",
@@ -115,6 +118,7 @@ const upsertSchema = z.object({
   body: z.string().nullable().optional(),
   clientId: z.string().nullable().optional(),
   reportPeriodDays: z.number().int(),
+  reportTemplateId: z.string().nullable().optional(),
   summaryTurno: z.enum(["manha", "tarde"]).nullable().optional(),
   summaryClientIds: z.array(z.string()).default([]),
   recurrenceType: z.enum(["weekly", "daily", "monthly"]),
@@ -171,14 +175,22 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
       });
       if (!inst || inst.organizationId !== organizationId) throw new Error("Instância de WhatsApp não encontrada.");
     }
+    if (data.reportTemplateId) {
+      const tpl = await db.query.reportTemplates.findFirst({
+        where: eq(reportTemplates.id, data.reportTemplateId),
+        columns: { organizationId: true },
+      });
+      if (!tpl || tpl.organizationId !== organizationId) throw new Error("Modelo de relatório não encontrado.");
+    }
 
     const values = {
       organizationId,
       name: data.name,
       contentType: data.contentType,
-      body: data.contentType === "text" ? (data.body ?? null) : null,
+      body: data.contentType === "text" || data.contentType === "report" ? (data.body?.trim() || null) : null,
       clientId: data.clientId ?? null,
       reportPeriodDays: data.reportPeriodDays,
+      reportTemplateId: data.contentType === "report" ? (data.reportTemplateId ?? null) : null,
       summaryTurno: data.contentType === "group_summary" ? (data.summaryTurno ?? null) : null,
       summaryClientIds: data.contentType === "group_summary" ? data.summaryClientIds : [],
       recurrenceType: data.recurrenceType,

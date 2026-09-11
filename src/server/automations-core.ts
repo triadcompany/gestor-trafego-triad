@@ -8,6 +8,7 @@ import {
   clients,
   messageAutomations,
   metaTokens,
+  reportTemplates,
   scheduledMessageMedia,
   scheduledMessageRecipients,
   scheduledMessages,
@@ -277,7 +278,17 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
       return { created: false, warnings: [`Regra "${rule.name}": token Meta expirado.`] };
     }
     try {
-      text = await buildMetricsReportText({ metaAdAccountId: client.metaAdAccountId }, rule.reportPeriodDays, tokenRow.accessToken);
+      let templateBody: string | null = null;
+      if (rule.reportTemplateId) {
+        const tpl = await db.query.reportTemplates.findFirst({
+          where: eq(reportTemplates.id, rule.reportTemplateId),
+          columns: { body: true },
+        });
+        templateBody = tpl?.body ?? null;
+      } else if (rule.body) {
+        templateBody = rule.body;
+      }
+      text = await buildMetricsReportText({ metaAdAccountId: client.metaAdAccountId, name: client.name }, rule.reportPeriodDays, tokenRow.accessToken, templateBody);
     } catch (e) {
       return { created: false, warnings: [`Regra "${rule.name}": falha ao gerar relatório — ${e instanceof Error ? e.message : String(e)}`] };
     }

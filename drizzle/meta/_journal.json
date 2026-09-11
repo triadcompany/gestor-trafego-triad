@@ -92,6 +92,13 @@
       "when": 1789085112328,
       "tag": "0012_agent_pinned",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1789090903283,
+      "tag": "0013_report_templates",
+      "breakpoints": true
     }
   ]
 }
