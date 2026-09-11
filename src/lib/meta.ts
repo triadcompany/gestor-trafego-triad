@@ -1496,16 +1496,32 @@ export async function fetchAllAdSets(
 // (instagram_basic) — a coluna cai pra "—" nesses casos.
 export async function fetchInstagramFollowers(adAccountId: string, token: string): Promise<number | null> {
   try {
-    const json = await fetchMetaJson<{ data?: Array<{ instagram_actor_id?: string }> }>(
-      `${BASE_URL}/${adAccountId}/adsets?fields=instagram_actor_id&limit=25&access_token=${encodeURIComponent(token)}`
+    const json = await fetchMetaJson<{
+      data?: Array<{ instagram_actor_id?: string; promoted_object?: { page_id?: string } }>;
+    }>(
+      `${BASE_URL}/${adAccountId}/adsets?fields=instagram_actor_id,promoted_object{page_id}&limit=25&access_token=${encodeURIComponent(token)}`
     );
-    const actorId = json.data?.find((a) => a.instagram_actor_id)?.instagram_actor_id;
-    if (!actorId) return null;
+    const rows = json.data ?? [];
 
-    const igJson = await fetchMetaJson<{ followers_count?: number }>(
-      `${BASE_URL}/${actorId}?fields=followers_count&access_token=${encodeURIComponent(token)}`
+    // Caminho 1: ad set com instagram_actor_id explícito (raro — a maioria dos
+    // anúncios usa "Instagram da Page" automático, sem setar isso).
+    const actorId = rows.find((a) => a.instagram_actor_id)?.instagram_actor_id;
+    if (actorId) {
+      const igJson = await fetchMetaJson<{ followers_count?: number }>(
+        `${BASE_URL}/${actorId}?fields=followers_count&access_token=${encodeURIComponent(token)}`
+      );
+      if (igJson.followers_count !== undefined) return igJson.followers_count;
+    }
+
+    // Caminho 2 (o comum): Instagram vinculado à Page usada no anúncio
+    // (promoted_object.page_id) — a mesma Page que aparece nos anúncios de
+    // WhatsApp/engajamento.
+    const pageId = rows.find((a) => a.promoted_object?.page_id)?.promoted_object?.page_id;
+    if (!pageId) return null;
+    const pageJson = await fetchMetaJson<{ instagram_business_account?: { followers_count?: number } }>(
+      `${BASE_URL}/${pageId}?fields=instagram_business_account{followers_count}&access_token=${encodeURIComponent(token)}`
     );
-    return igJson.followers_count ?? null;
+    return pageJson.instagram_business_account?.followers_count ?? null;
   } catch {
     return null;
   }
