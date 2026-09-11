@@ -15,7 +15,6 @@ import { toast } from "sonner";
 import {
   fetchAllAdSets,
   fetchAllAds,
-  fetchInstagramFollowers,
   getMetaToken,
   updateMetaObject,
   duplicateAdSet,
@@ -53,6 +52,7 @@ interface Row {
   ctr: number | null;
   cpm: number | null;
   cpc: number | null;
+  instagram_follows: number;
 }
 
 const METRIC_DIRECTION: Partial<Record<ColumnKey, "higher" | "lower">> = {
@@ -61,6 +61,7 @@ const METRIC_DIRECTION: Partial<Record<ColumnKey, "higher" | "lower">> = {
   cpc: "lower",
   leads: "higher",
   ctr: "higher",
+  instagram_followers: "higher",
 };
 
 // CPC calculado localmente (gasto ÷ cliques no link) pra bater com a coluna
@@ -86,6 +87,7 @@ function campaignToRow(c: MetaCampaign): Row {
     ctr: c.ctr,
     cpm: c.cpm,
     cpc: computeCpc(c.spend, c.link_clicks),
+    instagram_follows: c.instagram_follows,
   };
 }
 
@@ -105,6 +107,7 @@ function adSetToRow(a: MetaAdSet): Row {
     ctr: a.ctr ?? null,
     cpm: a.cpm ?? null,
     cpc: computeCpc(a.spend ?? 0, a.link_clicks ?? 0),
+    instagram_follows: a.instagram_follows ?? 0,
   };
 }
 
@@ -125,6 +128,7 @@ function adToRow(a: MetaAd): Row {
     ctr: a.ctr ?? null,
     cpm: a.cpm ?? null,
     cpc: computeCpc(a.spend ?? 0, a.link_clicks ?? 0),
+    instagram_follows: a.instagram_follows ?? 0,
   };
 }
 
@@ -222,19 +226,6 @@ export function CampaignsExplorer({
   const isLoading = level === "campaign" ? campaignsLoading : level === "adset" ? adSetsLoading : adsLoading;
 
   const { columns, toggleColumn, moveColumn } = useColumnPrefs(level);
-
-  // Seguidores do Instagram: valor da conta, não varia por linha — só busca
-  // quando a coluna está visível (evita chamada extra e erro de permissão à toa).
-  const { data: igFollowers = null } = useQuery({
-    queryKey: ["explorer-ig-followers", adAccountId],
-    queryFn: async () => {
-      const token = await getMetaToken();
-      if (!token) return null;
-      return fetchInstagramFollowers(adAccountId, token);
-    },
-    enabled: columns.includes("instagram_followers"),
-    staleTime: 1000 * 60 * 30,
-  });
 
   const statusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: "ACTIVE" | "PAUSED" }) => {
@@ -495,7 +486,6 @@ export function CampaignsExplorer({
                     level={level}
                     columns={orderedColumns}
                     cplMax={cplMax}
-                    igFollowers={igFollowers}
                     selected={level === "campaign" && selectedCampaignIds.has(row.id)}
                     onToggleSelected={level === "campaign" ? () => toggleCampaignSelected(row.id) : undefined}
                     onClick={() => handleRowClick(row)}
@@ -532,7 +522,7 @@ export function CampaignsExplorer({
                 <TableRow>
                   <TableHead>Campanha</TableHead>
                   {orderedColumns
-                    .filter((col) => col !== "status" && col !== "instagram_followers")
+                    .filter((col) => col !== "status")
                     .map((col) => (
                       <TableHead key={col} className="text-right">
                         {COLUMN_LABELS[col]}
@@ -545,7 +535,7 @@ export function CampaignsExplorer({
                   <TableRow key={row.id}>
                     <TableCell className="font-medium max-w-[200px] truncate">{row.name}</TableCell>
                     {orderedColumns
-                      .filter((col) => col !== "status" && col !== "instagram_followers")
+                      .filter((col) => col !== "status")
                       .map((col) => {
                         const bw = compareBestWorst[col];
                         const isBest = bw?.best === row.id;
@@ -601,6 +591,8 @@ function formatMetricValue(col: ColumnKey, row: Row): string {
       return row.cpm !== null ? brl(row.cpm) : "—";
     case "cpc":
       return row.cpc !== null ? brl(row.cpc) : "—";
+    case "instagram_followers":
+      return row.instagram_follows > 0 ? row.instagram_follows.toLocaleString("pt-BR") : "—";
     default:
       return "—";
   }
@@ -678,7 +670,6 @@ function ExplorerRow({
   level,
   columns,
   cplMax,
-  igFollowers,
   selected,
   onToggleSelected,
   onClick,
@@ -696,7 +687,6 @@ function ExplorerRow({
   level: ExplorerLevel;
   columns: ColumnKey[];
   cplMax: number;
-  igFollowers: number | null;
   selected: boolean;
   onToggleSelected?: () => void;
   onClick: () => void;
@@ -791,7 +781,7 @@ function ExplorerRow({
       case "cpc":
         return row.cpc !== null ? brl(row.cpc) : "—";
       case "instagram_followers":
-        return igFollowers !== null ? igFollowers.toLocaleString("pt-BR") : "—";
+        return row.instagram_follows > 0 ? row.instagram_follows.toLocaleString("pt-BR") : "—";
     }
   };
 

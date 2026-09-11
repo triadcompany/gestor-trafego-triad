@@ -347,6 +347,19 @@ function extractMetrics(actions?: Array<{ action_type: string; value: string }>)
   };
 }
 
+// "Seguidores no Instagram" (métrica introduzida pela Meta em 2025 — a mesma
+// coluna que o Gerenciador de Anúncios mostra por campanha/conjunto/anúncio):
+// contagem de seguidores ganhos atribuídos ao anúncio. Não há ainda um único
+// action_type documentado de forma estável pra ela, então casa por
+// substring "follow" no action_type em vez de um valor exato — cobre as
+// variações que a Meta já usou/usa (ex.: "follow", "onsite_conversion.follow").
+function extractInstagramFollows(actions?: Array<{ action_type: string; value: string }>): number {
+  if (!actions) return 0;
+  return actions
+    .filter((a) => a.action_type.toLowerCase().includes("follow"))
+    .reduce((sum, a) => sum + (parseInt(a.value, 10) || 0), 0);
+}
+
 export const syncClientMetrics = createServerOnlyFn(async function syncClientMetrics(
   clientId: string,
   adAccountId: string,
@@ -700,6 +713,7 @@ export interface MetaCampaign {
   link_clicks: number;
   ctr: number | null;
   cpm: number | null;
+  instagram_follows: number;
 }
 
 export async function fetchCampaignById(
@@ -732,6 +746,7 @@ export async function fetchCampaignById(
     link_clicks: 0,
     ctr: null,
     cpm: null,
+    instagram_follows: 0,
   };
 }
 
@@ -826,6 +841,7 @@ export async function fetchCampaigns(
         link_clicks: linkClicks,
         ctr,
         cpm,
+        instagram_follows: extractInstagramFollows(ins?.actions),
       };
     });
 
@@ -1336,6 +1352,7 @@ export interface MetaAdSet {
   link_clicks?: number;
   ctr?: number | null;
   cpm?: number | null;
+  instagram_follows?: number;
 }
 
 export interface MetaAd {
@@ -1353,6 +1370,7 @@ export interface MetaAd {
   link_clicks?: number;
   ctr?: number | null;
   cpm?: number | null;
+  instagram_follows?: number;
 }
 
 export async function fetchAdSets(campaignId: string, token: string): Promise<MetaAdSet[]> {
@@ -1479,6 +1497,7 @@ export async function fetchAllAdSets(
         link_clicks: linkClicks,
         ctr,
         cpm,
+        instagram_follows: extractInstagramFollows(ins?.actions),
       };
     })
     .sort((a, b) => {
@@ -1486,45 +1505,6 @@ export async function fetchAllAdSets(
       if (a.status !== "ACTIVE" && b.status === "ACTIVE") return 1;
       return (b.spend ?? 0) - (a.spend ?? 0);
     });
-}
-
-// Seguidores da conta do Instagram vinculada aos anúncios — não é uma métrica
-// de período (não varia por data), é da conta do Instagram ligada aos ad sets.
-// Pega o instagram_actor_id do primeiro ad set que tiver um configurado e
-// consulta o followers_count dele. Retorna null (silencioso) se não achar
-// nenhum ad set vinculado ao Instagram, ou se o token não tiver permissão
-// (instagram_basic) — a coluna cai pra "—" nesses casos.
-export async function fetchInstagramFollowers(adAccountId: string, token: string): Promise<number | null> {
-  try {
-    const json = await fetchMetaJson<{
-      data?: Array<{ instagram_actor_id?: string; promoted_object?: { page_id?: string } }>;
-    }>(
-      `${BASE_URL}/${adAccountId}/adsets?fields=instagram_actor_id,promoted_object{page_id}&limit=25&access_token=${encodeURIComponent(token)}`
-    );
-    const rows = json.data ?? [];
-
-    // Caminho 1: ad set com instagram_actor_id explícito (raro — a maioria dos
-    // anúncios usa "Instagram da Page" automático, sem setar isso).
-    const actorId = rows.find((a) => a.instagram_actor_id)?.instagram_actor_id;
-    if (actorId) {
-      const igJson = await fetchMetaJson<{ followers_count?: number }>(
-        `${BASE_URL}/${actorId}?fields=followers_count&access_token=${encodeURIComponent(token)}`
-      );
-      if (igJson.followers_count !== undefined) return igJson.followers_count;
-    }
-
-    // Caminho 2 (o comum): Instagram vinculado à Page usada no anúncio
-    // (promoted_object.page_id) — a mesma Page que aparece nos anúncios de
-    // WhatsApp/engajamento.
-    const pageId = rows.find((a) => a.promoted_object?.page_id)?.promoted_object?.page_id;
-    if (!pageId) return null;
-    const pageJson = await fetchMetaJson<{ instagram_business_account?: { followers_count?: number } }>(
-      `${BASE_URL}/${pageId}?fields=instagram_business_account{followers_count}&access_token=${encodeURIComponent(token)}`
-    );
-    return pageJson.instagram_business_account?.followers_count ?? null;
-  } catch {
-    return null;
-  }
 }
 
 export async function fetchAllAds(
@@ -1603,6 +1583,7 @@ export async function fetchAllAds(
         link_clicks: linkClicks,
         ctr,
         cpm,
+        instagram_follows: extractInstagramFollows(ins?.actions),
       };
     })
     .sort((a, b) => {
