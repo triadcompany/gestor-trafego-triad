@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +16,7 @@ import { FileText, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { getMetaToken, fetchCampaigns } from "@/lib/meta";
 import { generateClientReportPdf } from "@/lib/client-report-pdf";
+import { getCurrentUser } from "@/server/session";
 import { cn } from "@/lib/utils";
 
 type Preset = "7" | "15" | "30" | "mes" | "mes_passado" | "custom";
@@ -62,6 +64,8 @@ export function ClientReportDialog({
   const [customUntil, setCustomUntil] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const { data: currentUser } = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser, staleTime: 1000 * 60 });
+
   const range = useMemo(
     () => rangeForPreset(preset, customSince, customUntil),
     [preset, customSince, customUntil],
@@ -79,6 +83,7 @@ export function ClientReportDialog({
       const campaigns = await fetchCampaigns(client.meta_ad_account_id, token, "today", range);
       generateClientReportPdf({
         clientName: client.name,
+        organizationName: currentUser?.organizationName ?? "Gestão de Tráfego",
         since: range.since,
         until: range.until,
         cplMax: client.cpl_max,
