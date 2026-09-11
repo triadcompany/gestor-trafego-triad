@@ -361,16 +361,12 @@ export const syncClientMetrics = createServerOnlyFn(async function syncClientMet
     access_token: token,
   });
 
-  const res = await fetch(`${BASE_URL}/${adAccountId}/insights?${params}`);
-  const json = await res.json() as {
+  const json = await fetchMetaJson<{
     data?: Array<{
       spend?: string;
       actions?: Array<{ action_type: string; value: string }>;
     }>;
-    error?: { message: string };
-  };
-
-  if (json.error) throw new Error(json.error.message);
+  }>(`${BASE_URL}/${adAccountId}/insights?${params}`);
 
   const row = json.data?.[0];
   const spend = parseFloat(row?.spend ?? "0");
@@ -442,8 +438,7 @@ export async function fetchAccountInsightsForRange(
     access_token: token,
   });
 
-  const res = await fetch(`${BASE_URL}/${adAccountId}/insights?${params}`);
-  const json = await res.json() as {
+  const json = await fetchMetaJson<{
     data?: Array<{
       spend?: string;
       actions?: Array<{ action_type: string; value: string }>;
@@ -452,10 +447,7 @@ export async function fetchAccountInsightsForRange(
       ctr?: string;
       cpm?: string;
     }>;
-    error?: { message: string };
-  };
-
-  if (json.error) throw new Error(`Meta API: ${json.error.message}`);
+  }>(`${BASE_URL}/${adAccountId}/insights?${params}`);
 
   const row = json.data?.[0];
   const spend = parseFloat(row?.spend ?? "0");
@@ -585,13 +577,15 @@ export const syncAllClients = createServerOnlyFn(async function syncAllClients()
     return { synced: 0, errors: [], syncedAt: new Date().toISOString() };
   }
 
-  const results = await Promise.allSettled(
-    activeClients.map(async (c) => {
-      const token = await getMetaToken(c.id);
-      if (!token) throw new Error("Sem token Meta configurado para este cliente");
-      return syncClientMetrics(c.id, c.metaAdAccountId, token);
-    })
-  );
+  // Concorrência limitada em vez de disparar tudo de uma vez: com várias
+  // contas sincronizando ao mesmo tempo, uma rajada sem limite é o que mais
+  // faz bater no rate limit da Meta por conta/app. 3 por vez + retry com
+  // backoff em cada chamada (fetchMetaJson) reduz bastante isso.
+  const results = await mapWithConcurrency(activeClients, 3, async (c) => {
+    const token = await getMetaToken(c.id);
+    if (!token) throw new Error("Sem token Meta configurado para este cliente");
+    return syncClientMetrics(c.id, c.metaAdAccountId, token);
+  });
 
   const errors: string[] = [];
   let synced = 0;
@@ -1502,21 +1496,16 @@ export async function fetchAllAdSets(
 // (instagram_basic) — a coluna cai pra "—" nesses casos.
 export async function fetchInstagramFollowers(adAccountId: string, token: string): Promise<number | null> {
   try {
-    const res = await fetch(
+    const json = await fetchMetaJson<{ data?: Array<{ instagram_actor_id?: string }> }>(
       `${BASE_URL}/${adAccountId}/adsets?fields=instagram_actor_id&limit=25&access_token=${encodeURIComponent(token)}`
     );
-    const json = (await res.json()) as {
-      data?: Array<{ instagram_actor_id?: string }>;
-      error?: { message: string };
-    };
-    if (json.error) return null;
     const actorId = json.data?.find((a) => a.instagram_actor_id)?.instagram_actor_id;
     if (!actorId) return null;
 
-    const igRes = await fetch(`${BASE_URL}/${actorId}?fields=followers_count&access_token=${encodeURIComponent(token)}`);
-    const igJson = (await igRes.json()) as { followers_count?: number; error?: { message: string } };
-    if (igJson.error || igJson.followers_count === undefined) return null;
-    return igJson.followers_count;
+    const igJson = await fetchMetaJson<{ followers_count?: number }>(
+      `${BASE_URL}/${actorId}?fields=followers_count&access_token=${encodeURIComponent(token)}`
+    );
+    return igJson.followers_count ?? null;
   } catch {
     return null;
   }
@@ -1735,6 +1724,44 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
     }
   }
   throw lastError;
+}
+
+// GET com retry/backoff — usado nas leituras mais frequentes (sync automático,
+// dashboard) pra absorver hits transitórios no rate limit da Meta (codes
+// 4/17/341) em vez de estourar erro na hora. Não resolve o limite em si (isso
+// é definido pela Meta por app+conta, não dá pra "aumentar" via código), mas
+// evita que uma rajada momentânea vire falha visível pro usuário.
+async function fetchMetaJson<T>(url: string): Promise<T> {
+  return withRetry(async () => {
+    const res = await fetch(url);
+    const json = (await res.json()) as T & { error?: MetaApiError };
+    if (json && typeof json === "object" && "error" in json && json.error) {
+      await recordMetaApiError(url, res.status, json.error);
+      throw new MetaApiCallError(formatMetaError(json.error), json.error.code);
+    }
+    return json;
+  });
+}
+
+// Roda `fn` sobre `items` com no máximo `limit` chamadas simultâneas — em vez
+// de disparar tudo de uma vez (Promise.all/allSettled sem limite), que é
+// exatamente o padrão que estoura o rate limit por conta quando a organização
+// tem várias contas de anúncio sincronizando ao mesmo tempo.
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      try {
+        results[i] = { status: "fulfilled", value: await fn(items[i], i) };
+      } catch (err) {
+        results[i] = { status: "rejected", reason: err };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
 }
 
 async function postMetaJson(endpoint: string, params: Record<string, unknown>): Promise<unknown> {
