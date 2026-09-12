@@ -85,6 +85,33 @@ const PLACEHOLDER_LABELS: Record<string, string> = {
   cpm: "CPM",
 };
 
+// Erros de validação (.inputValidator zod) chegam do servidor como o JSON
+// bruto dos issues do zod — sem isso, o usuário vê algo tipo
+// '[{"code":"too_small",...,"path":["name"]}]' em vez de "Nome: obrigatório".
+const FIELD_LABELS: Record<string, string> = {
+  name: "Nome",
+  body: "Mensagem",
+  clientId: "Cliente",
+  reportPeriodDays: "Período",
+  destinations: "Destinos",
+};
+
+function humanizeError(e: unknown): string {
+  const raw = e instanceof Error ? e.message : String(e);
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.length > 0 && parsed[0]?.path) {
+      const first = parsed[0];
+      const field = Array.isArray(first.path) ? first.path.join(".") : String(first.path);
+      const label = FIELD_LABELS[field] ?? field;
+      return `${label}: preencha esse campo corretamente.`;
+    }
+  } catch {
+    // não é JSON de validação — segue com a mensagem original
+  }
+  return raw;
+}
+
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("pt-BR", {
     day: "2-digit",
@@ -371,7 +398,7 @@ function ComposerDialog({
       reset();
       onOpenChange(false);
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar mensagem", { duration: 8000 }),
+    onError: (e) => toast.error(humanizeError(e), { duration: 8000 }),
   });
 
   const isPast = scheduledAt !== "" && new Date(scheduledAt) <= new Date();
@@ -964,23 +991,28 @@ function AutomationComposerDialog({
       reset();
       onOpenChange(false);
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar", { duration: 8000 }),
+    onError: (e) => toast.error(humanizeError(e), { duration: 8000 }),
   });
 
   const hasClient = clientId !== "none";
-  const canSubmit =
-    name.trim().length > 0 &&
-    (contentType === "text"
+  const hasValidContent =
+    contentType === "text"
       ? body.trim().length > 0 || mediaFiles.length > 0 || existingMedia.length > 0
       : contentType === "report"
         ? hasClient && reportBody.trim().length > 0
         : contentType === "report_pdf"
           ? hasClient
-          : summaryClientIds.length > 0) &&
-    (recurrenceType === "daily" ||
-      (recurrenceType === "weekly" && weekdays.length > 0) ||
-      (recurrenceType === "monthly" && monthdays.length > 0)) &&
-    (useClientGroup && hasClient) || customRecipients.length > 0;
+          : summaryClientIds.length > 0;
+  const hasValidRecurrence =
+    recurrenceType === "daily" ||
+    (recurrenceType === "weekly" && weekdays.length > 0) ||
+    (recurrenceType === "monthly" && monthdays.length > 0);
+  const hasValidDestination = (useClientGroup && hasClient) || customRecipients.length > 0;
+  // Bug antigo aqui: "a && b && c || d" — por precedência, o || de fora fazia
+  // qualquer regra com destino avulso pular nome/conteúdo/recorrência vazios
+  // (o servidor então rejeitava e o zod cru vazava pro toast). Corrigido com
+  // parênteses explícitos em cada condição.
+  const canSubmit = name.trim().length > 0 && hasValidContent && hasValidRecurrence && hasValidDestination;
 
   return (
     <>
@@ -1371,7 +1403,7 @@ function ReportTemplateEditorDialog({
       onSaved({ id: res.id, body, name: name.trim() });
       onOpenChange(false);
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar modelo", { duration: 8000 }),
+    onError: (e) => toast.error(humanizeError(e), { duration: 8000 }),
   });
 
   const deleteMut = useMutation({
