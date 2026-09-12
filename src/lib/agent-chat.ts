@@ -650,51 +650,71 @@ export const agentSendMessage = createServerFn({ method: "POST" })
       const choice = response.choices[0];
       if (!choice) return { type: "error", message: "Sem resposta da OpenAI." };
 
-      const assistantMsg = choice.message;
+      // O modelo pode pedir várias tool_calls numa única resposta (ex.: "resumo
+      // de todos os clientes" -> uma chamada por cliente) e pode encadear mais
+      // de uma rodada de ferramentas antes de responder em texto. A API da
+      // OpenAI exige uma mensagem "tool" pra CADA tool_call_id da rodada
+      // anterior antes de aceitar a próxima — por isso o loop responde todas
+      // de uma vez, não só a primeira.
+      let currentMessages: ChatCompletionMessageParam[] = messages;
+      let assistantMsg = choice.message;
+      const MAX_TOOL_ROUNDS = 5;
 
-      if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
-        const content = assistantMsg.content ?? "";
-        await saveMessages(convId, [{ role: "assistant", content }]);
-        return { type: "message", content, conversation_id: convId };
+      for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        if (!assistantMsg.tool_calls || assistantMsg.tool_calls.length === 0) {
+          const content = assistantMsg.content ?? "";
+          await saveMessages(convId, [{ role: "assistant", content }]);
+          return { type: "message", content, conversation_id: convId };
+        }
+
+        const toolCalls = assistantMsg.tool_calls as Array<{ id: string; type: string; function: { name: string; arguments: string } }>;
+        const writeCall = toolCalls.find((tc) => WRITE_TOOLS.has(tc.function.name));
+        if (writeCall) {
+          const toolArgs = JSON.parse(writeCall.function.arguments) as JsonArgs;
+          return {
+            type: "confirmation_required",
+            pending_action: {
+              tool: writeCall.function.name,
+              args: toolArgs,
+              description: describeAction(writeCall.function.name, toolArgs),
+            },
+            partial_response: assistantMsg.content ?? undefined,
+            conversation_id: convId,
+          };
+        }
+
+        // Todas as chamadas dessa rodada são de leitura — executa todas em
+        // paralelo e responde CADA tool_call_id antes de seguir.
+        const toolResponses = await Promise.all(
+          toolCalls.map(async (tc) => {
+            const toolArgs = JSON.parse(tc.function.arguments) as JsonArgs;
+            const result = await executeTool(tc.function.name, toolArgs);
+            const content = JSON.stringify(result.type === "result" ? result.data : { error: result.message });
+            return { role: "tool" as const, tool_call_id: tc.id, content };
+          })
+        );
+
+        currentMessages = [
+          ...currentMessages,
+          { role: "assistant", content: assistantMsg.content, tool_calls: assistantMsg.tool_calls },
+          ...toolResponses,
+        ];
+
+        const next = await openai.chat.completions.create({
+          model: "gpt-4o",
+          messages: currentMessages,
+          ...(mode === "trafego" ? { tools: TOOL_DEFINITIONS, tool_choice: "auto" as const } : {}),
+          max_tokens: 2048,
+        });
+        const nextChoice = next.choices[0];
+        if (!nextChoice) return { type: "error", message: "Sem resposta da OpenAI." };
+        assistantMsg = nextChoice.message;
       }
 
-      const toolCall = assistantMsg.tool_calls[0] as { id: string; type: string; function: { name: string; arguments: string } };
-      const toolName = toolCall.function.name;
-      const toolArgs = JSON.parse(toolCall.function.arguments) as JsonArgs;
-
-      if (WRITE_TOOLS.has(toolName)) {
-        return {
-          type: "confirmation_required",
-          pending_action: {
-            tool: toolName,
-            args: toolArgs,
-            description: describeAction(toolName, toolArgs),
-          },
-          partial_response: assistantMsg.content ?? undefined,
-          conversation_id: convId,
-        };
-      }
-
-      const toolResult = await executeTool(toolName, toolArgs);
-      const toolResultContent = JSON.stringify(
-        toolResult.type === "result" ? toolResult.data : { error: toolResult.message }
-      );
-
-      const followUpMessages: ChatCompletionMessageParam[] = [
-        ...messages,
-        { role: "assistant", content: assistantMsg.content, tool_calls: assistantMsg.tool_calls },
-        { role: "tool", tool_call_id: toolCall.id, content: toolResultContent },
-      ];
-
-      const followUp = await openai.chat.completions.create({
-        model: "gpt-4o",
-        messages: followUpMessages,
-        max_tokens: 2048,
-      });
-
-      const finalContent = followUp.choices[0]?.message.content ?? "";
-      await saveMessages(convId, [{ role: "assistant", content: finalContent }]);
-      return { type: "message", content: finalContent, conversation_id: convId };
+      // Excedeu o limite de rodadas de ferramentas sem chegar numa resposta em texto.
+      const fallback = assistantMsg.content ?? "Não consegui concluir essa consulta — tenta reformular ou pedir algo mais específico.";
+      await saveMessages(convId, [{ role: "assistant", content: fallback }]);
+      return { type: "message", content: fallback, conversation_id: convId };
 
     } catch (err) {
       return { type: "error", message: err instanceof Error ? err.message : "Erro interno." };

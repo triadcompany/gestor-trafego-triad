@@ -1,6 +1,6 @@
 import type { ChatCompletionTool } from "openai/resources/chat/completions";
 import { fetchCampaigns, fetchAdSets, getMetaToken, updateMetaObject, createCampaignFromScratch } from "./meta";
-import { fetchClients, fetchTasks, createTask, updateTask, createNote, updateClientPix } from "./queries";
+import { fetchClients, fetchTasks, createTask, updateTask, createNote, updateClientPix, type DashboardPeriod } from "./queries";
 
 export type JsonArgs = Record<string, string | number | boolean | null | undefined>;
 
@@ -11,8 +11,18 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "get_clients_overview",
-      description: "Lista todos os clientes ativos com métricas de hoje (CPL, spend, leads) e indica quais estão com CPL acima da meta.",
-      parameters: { type: "object", properties: {}, required: [] },
+      description: "Lista todos os clientes ativos com CPL, gasto e leads do período (indica quais estão com CPL acima da meta). Use isso pra pedidos que envolvem TODOS os clientes de uma vez (ex.: resumo geral, últimos N dias) — não chame get_client_campaigns uma vez por cliente pra isso.",
+      parameters: {
+        type: "object",
+        properties: {
+          period: {
+            type: "string",
+            enum: ["today", "yesterday", "last_7d", "last_30d", "this_month", "last_month"],
+            description: "Período de análise. Padrão: today.",
+          },
+        },
+        required: [],
+      },
     },
   },
   {
@@ -26,7 +36,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
           client_id: { type: "string", description: "ID do cliente no sistema" },
           date_preset: {
             type: "string",
-            enum: ["today", "yesterday", "this_week_mon_today", "last_week_mon_sun", "this_month"],
+            enum: ["today", "yesterday", "last_3d", "last_7d", "this_week_mon_today", "last_week_mon_sun", "this_month", "last_month", "maximum"],
             description: "Período de análise. Padrão: today.",
           },
         },
@@ -252,19 +262,23 @@ export async function executeTool(
   try {
     switch (name) {
       case "get_clients_overview": {
-        const clients = await fetchClients();
+        const period = ((args.period as string | undefined) ?? "today") as DashboardPeriod;
+        const clients = await fetchClients(period);
         return {
           type: "result",
-          data: clients.map((c) => ({
-            id: c.id,
-            name: c.name,
-            status: c.status,
-            cpl_today: c.cplToday,
-            cpl_max: c.cpl_max,
-            spend_today: c.spendToday,
-            leads_today: c.leadsToday,
-            above_target: c.cplToday !== null && c.cplToday > c.cpl_max,
-          })),
+          data: {
+            period,
+            clients: clients.map((c) => ({
+              id: c.id,
+              name: c.name,
+              status: c.status,
+              cpl: c.cplToday,
+              cpl_max: c.cpl_max,
+              spend: c.spendToday,
+              leads: c.leadsToday,
+              above_target: c.cplToday !== null && c.cplToday > c.cpl_max,
+            })),
+          },
         };
       }
 
