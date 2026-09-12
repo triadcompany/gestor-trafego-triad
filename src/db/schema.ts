@@ -125,6 +125,9 @@ export const clients = pgTable("clients", {
   // admin da organização vê todos. Nulo = "sem responsável" (só admin vê).
   ownerUserId: uuid("owner_user_id").references(() => profiles.id, { onDelete: "set null" }),
   updatedAt: timestamp("updated_at").defaultNow(),
+  // Checkpoint da varredura de sugestão de venda (automations-core.ts) — só
+  // processa mensagens do grupo mais novas que isso. Nulo = nunca escaneado.
+  lastSaleScanAt: timestamp("last_sale_scan_at"),
 });
 
 export const metricsDaily = pgTable(
@@ -256,6 +259,28 @@ export const salesGoals = pgTable(
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [unique("sales_goals_client_id_month_key").on(t.clientId, t.month)]
+);
+
+// Sugestão de venda detectada por palavra-chave numa mensagem do grupo de
+// WhatsApp do cliente — nunca cria uma venda sozinha, o gestor confirma
+// (vira uma linha em `sales`) ou descarta.
+export const saleSuggestions = pgTable(
+  "sale_suggestions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    messageText: text("message_text").notNull(),
+    messageAt: timestamp("message_at").notNull(),
+    status: text("status").notNull().default("pending"), // pending | confirmed | dismissed
+    saleId: uuid("sale_id").references(() => sales.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    unique("sale_suggestions_dedupe_key").on(t.clientId, t.messageAt, t.messageText),
+    index("idx_sale_suggestions_client_status").on(t.clientId, t.status),
+  ]
 );
 
 export const tags = pgTable("tags", {
@@ -562,6 +587,11 @@ export const salesRelations = relations(sales, ({ one }) => ({
 
 export const salesGoalsRelations = relations(salesGoals, ({ one }) => ({
   client: one(clients, { fields: [salesGoals.clientId], references: [clients.id] }),
+}));
+
+export const saleSuggestionsRelations = relations(saleSuggestions, ({ one }) => ({
+  client: one(clients, { fields: [saleSuggestions.clientId], references: [clients.id] }),
+  sale: one(sales, { fields: [saleSuggestions.saleId], references: [sales.id] }),
 }));
 
 export const tagsRelations = relations(tags, ({ one, many }) => ({

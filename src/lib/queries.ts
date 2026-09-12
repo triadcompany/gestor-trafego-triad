@@ -12,6 +12,7 @@ import {
   profiles,
   reportLog,
   sales,
+  saleSuggestions,
   salesGoals,
   tags,
   tasks,
@@ -1270,14 +1271,36 @@ export async function fetchSalesByClient(clientId: string, since: string, until:
 }
 
 const _createSale = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ client_id: z.string(), date: z.string(), value: z.number().nullable().optional(), obs: z.string().nullable().optional() }))
+  .inputValidator(z.object({
+    client_id: z.string(),
+    date: z.string(),
+    value: z.number().nullable().optional(),
+    obs: z.string().nullable().optional(),
+    from_suggestion_id: z.string().optional(),
+  }))
   .handler(async ({ data }) => {
     const { organizationId, role, userId } = await requireOrgContext();
     await assertClientAccessible(data.client_id, { organizationId, role, userId });
-    await db.insert(sales).values({ clientId: data.client_id, date: data.date, value: data.value ?? null, obs: data.obs ?? null });
+    const [row] = await db
+      .insert(sales)
+      .values({ clientId: data.client_id, date: data.date, value: data.value ?? null, obs: data.obs ?? null })
+      .returning({ id: sales.id });
+    // Confirma a sugestão de origem (se veio de uma) — vincula a venda criada
+    // e some da lista de pendentes. Falha silenciosa se a sugestão não bater
+    // com esse cliente ou já não estiver pendente (não deve travar a venda).
+    if (data.from_suggestion_id) {
+      await db
+        .update(saleSuggestions)
+        .set({ status: "confirmed", saleId: row.id })
+        .where(and(
+          eq(saleSuggestions.id, data.from_suggestion_id),
+          eq(saleSuggestions.clientId, data.client_id),
+          eq(saleSuggestions.status, "pending"),
+        ));
+    }
   });
 
-export async function createSale(payload: { client_id: string; date: string; value?: number | null; obs?: string | null }): Promise<void> {
+export async function createSale(payload: { client_id: string; date: string; value?: number | null; obs?: string | null; from_suggestion_id?: string }): Promise<void> {
   await _createSale({ data: payload });
 }
 

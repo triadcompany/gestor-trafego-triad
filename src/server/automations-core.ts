@@ -2,7 +2,7 @@
 // handler do tick e via import() dinâmico dentro de handlers). Concentra toda a
 // lógica que toca o banco fora de um createServerFn: escolha de token/instância
 // sem sessão, materialização de regra em mensagem agendada, e o tick.
-import { and, eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   clients,
@@ -10,6 +10,7 @@ import {
   metaTokens,
   organizations,
   reportTemplates,
+  saleSuggestions,
   scheduledMessageMedia,
   scheduledMessageRecipients,
   scheduledMessages,
@@ -396,18 +397,104 @@ export async function materializeAndStamp(ruleId: string): Promise<MaterializeRe
   return r;
 }
 
+// ── Sugestões de venda (varredura de palavra-chave no grupo do WhatsApp) ─────
+// Roda pra todas as organizações, sem escopo de sessão — mesmo padrão do
+// resto do tick. Nunca cria uma venda: só a sugestão pendente que o gestor
+// confirma ou descarta na página Vendas.
+
+type SaleScanRecord = {
+  key?: { fromMe?: boolean };
+  messageTimestamp?: number;
+  message?: { conversation?: string; extendedTextMessage?: { text?: string } };
+};
+
+export async function scanClientsForSaleSuggestions(): Promise<number> {
+  const rows = await db
+    .select({
+      id: clients.id,
+      organizationId: clients.organizationId,
+      groupId: clients.whatsappGroupId,
+      lastScanAt: clients.lastSaleScanAt,
+    })
+    .from(clients)
+    .where(and(eq(clients.active, true), isNotNull(clients.whatsappGroupId)));
+
+  let created = 0;
+
+  for (const c of rows) {
+    if (!c.groupId) continue;
+    const instance = await pickWhatsappInstance({ organizationId: c.organizationId, clientId: c.id });
+    if (!instance) continue;
+
+    let records: SaleScanRecord[] = [];
+    try {
+      const res = await fetch(`${instance.url.replace(/\/+$/, "")}/chat/findMessages/${encodeURIComponent(instance.instance)}`, {
+        method: "POST",
+        headers: { apikey: instance.apiKey, "Content-Type": "application/json" },
+        body: JSON.stringify({ where: { key: { remoteJid: c.groupId } }, limit: 100 }),
+      });
+      const json = (await res.json()) as { messages?: { records?: SaleScanRecord[] } };
+      records = json?.messages?.records ?? [];
+    } catch {
+      continue; // erro isolado por cliente — não trava a varredura dos demais
+    }
+
+    const lastScanEpoch = c.lastScanAt ? Math.floor(new Date(c.lastScanAt).getTime() / 1000) : null;
+    const isFirstScan = lastScanEpoch === null;
+
+    const incoming = records.filter(
+      (r): r is SaleScanRecord & { messageTimestamp: number } => r.key?.fromMe === false && typeof r.messageTimestamp === "number"
+    );
+    if (incoming.length === 0) continue;
+
+    let maxTs = lastScanEpoch ?? 0;
+    for (const r of incoming) {
+      if (r.messageTimestamp > maxTs) maxTs = r.messageTimestamp;
+      // Primeira varredura do cliente: só marca o checkpoint, não sugere
+      // venda retroativa a partir do histórico inteiro do grupo.
+      if (isFirstScan || r.messageTimestamp <= (lastScanEpoch ?? 0)) continue;
+
+      const text = (r.message?.conversation || r.message?.extendedTextMessage?.text || "").trim();
+      if (!text) continue;
+      if (!classifySummary(text.toLowerCase()).some((cat) => cat.tipo === "venda")) continue;
+
+      try {
+        const [inserted] = await db
+          .insert(saleSuggestions)
+          .values({
+            clientId: c.id,
+            messageText: text.slice(0, 300),
+            messageAt: new Date(r.messageTimestamp * 1000).toISOString(),
+          })
+          .onConflictDoNothing({ target: [saleSuggestions.clientId, saleSuggestions.messageAt, saleSuggestions.messageText] })
+          .returning({ id: saleSuggestions.id });
+        if (inserted) created++;
+      } catch {
+        // segue tentando as próximas mensagens desse cliente
+      }
+    }
+
+    if (maxTs > (lastScanEpoch ?? 0)) {
+      await db.update(clients).set({ lastSaleScanAt: new Date(maxTs * 1000).toISOString() }).where(eq(clients.id, c.id));
+    }
+  }
+
+  return created;
+}
+
 // ── Tick ────────────────────────────────────────────────────────────────────
 
 export interface TickResult {
   rulesChecked: number;
   rulesFired: number;
   messagesCreated: number;
+  saleSuggestionsCreated: number;
   warnings: string[];
 }
 
 export async function runAutomationsTick(): Promise<TickResult> {
   const rules = await db.select().from(messageAutomations).where(eq(messageAutomations.active, true));
-  const result: TickResult = { rulesChecked: rules.length, rulesFired: 0, messagesCreated: 0, warnings: [] };
+  const result: TickResult = { rulesChecked: rules.length, rulesFired: 0, messagesCreated: 0, saleSuggestionsCreated: 0, warnings: [] };
 
   for (const rule of rules) {
     if (!ruleDueNow(rule)) continue;
@@ -419,6 +506,12 @@ export async function runAutomationsTick(): Promise<TickResult> {
     } catch (e) {
       result.warnings.push(`Regra "${rule.name}": erro inesperado — ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  try {
+    result.saleSuggestionsCreated = await scanClientsForSaleSuggestions();
+  } catch (e) {
+    result.warnings.push(`Varredura de sugestões de venda: erro inesperado — ${e instanceof Error ? e.message : String(e)}`);
   }
 
   return result;

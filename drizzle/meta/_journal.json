@@ -99,6 +99,13 @@
       "when": 1789090903283,
       "tag": "0013_report_templates",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1789176740369,
+      "tag": "0014_sale_suggestions",
+      "breakpoints": true
     }
   ]
 }

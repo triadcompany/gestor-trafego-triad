@@ -31,7 +31,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { TrendingUp, Plus, Check, X, Trash2, ChevronsUpDown } from "lucide-react";
+import { TrendingUp, Plus, Check, X, Trash2, ChevronsUpDown, MessageCircle } from "lucide-react";
 import {
   fetchAllClients,
   fetchSales,
@@ -45,6 +45,7 @@ import {
   type SalesGoalRow,
 } from "@/lib/queries";
 import type { DashboardPeriod } from "@/lib/queries";
+import { fetchPendingSaleSuggestions, dismissSaleSuggestion, type SaleSuggestionRow } from "@/server/sale-suggestions";
 
 export const Route = createFileRoute("/vendas")({
   head: () => ({ meta: [{ title: "Vendas — Gestor de Tráfego" }] }),
@@ -84,6 +85,11 @@ function activeMonth(start: string): string {
 const brl = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 });
 
+function formatSuggestionAt(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+}
+
 const PERIODS: { value: DashboardPeriod; label: string }[] = [
   { value: "today", label: "Hoje" },
   { value: "yesterday", label: "Ontem" },
@@ -105,6 +111,7 @@ function VendasPage() {
   const [drawerClient, setDrawerClient] = useState<ClientRow | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerStartWithForm, setDrawerStartWithForm] = useState(false);
+  const [drawerPrefill, setDrawerPrefill] = useState<{ date?: string; obs?: string; suggestionId?: string } | null>(null);
   const [addPopoverOpen, setAddPopoverOpen] = useState(false);
 
   const { start, end } = periodDateRange(period, period === "custom" ? { since: customSince, until: customUntil } : undefined);
@@ -180,6 +187,28 @@ function VendasPage() {
   const openDrawer = (client: ClientRow, withForm: boolean) => {
     setDrawerClient(client);
     setDrawerStartWithForm(withForm);
+    setDrawerPrefill(null);
+    setDrawerOpen(true);
+  };
+
+  // ── Sugestões de venda (detectadas no grupo do WhatsApp) ─────────────────
+  const { data: suggestions = [] } = useQuery({
+    queryKey: ["sale-suggestions"],
+    queryFn: fetchPendingSaleSuggestions,
+    refetchInterval: 60_000,
+  });
+
+  const dismissMutation = useMutation({
+    mutationFn: (id: string) => dismissSaleSuggestion(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["sale-suggestions"] }),
+  });
+
+  const confirmSuggestion = (s: SaleSuggestionRow) => {
+    const client = clients.find((c) => c.id === s.client_id);
+    if (!client) return;
+    setDrawerClient(client);
+    setDrawerStartWithForm(true);
+    setDrawerPrefill({ date: s.message_at.slice(0, 10), obs: `Detectado no WhatsApp: "${s.message_text}"`, suggestionId: s.id });
     setDrawerOpen(true);
   };
 
@@ -240,6 +269,38 @@ function VendasPage() {
             </Popover>
           </div>
         </div>
+
+        {/* Sugestões de venda detectadas no WhatsApp */}
+        {suggestions.length > 0 && (
+          <div className="mb-6 rounded-xl border border-status-on-target/30 bg-status-on-target/5 overflow-hidden">
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-status-on-target/20">
+              <MessageCircle className="h-4 w-4 text-status-on-target shrink-0" />
+              <span className="text-sm font-semibold text-status-on-target">
+                Sugestões do WhatsApp ({suggestions.length})
+              </span>
+            </div>
+            <div className="divide-y divide-status-on-target/10">
+              {suggestions.map((s) => (
+                <div key={s.id} className="flex items-start gap-3 px-4 py-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium">
+                      {s.client_name} <span className="font-normal text-muted-foreground">· {formatSuggestionAt(s.message_at)}</span>
+                    </p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground italic">"{s.message_text}"</p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => dismissMutation.mutate(s.id)} disabled={dismissMutation.isPending}>
+                      Descartar
+                    </Button>
+                    <Button size="sm" className="h-7 text-xs gap-1" onClick={() => confirmSuggestion(s)}>
+                      <Check className="h-3.5 w-3.5" /> Confirmar
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Summary cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
@@ -347,6 +408,9 @@ function VendasPage() {
               month={month}
               goal={goalsMap.get(drawerClient.id) ?? null}
               startWithForm={drawerStartWithForm}
+              prefillDate={drawerPrefill?.date}
+              prefillObs={drawerPrefill?.obs}
+              suggestionId={drawerPrefill?.suggestionId}
               onClose={() => setDrawerOpen(false)}
             />
           )}
@@ -477,7 +541,7 @@ function ClientRow({
 // ── ClientDrawer ──────────────────────────────────────────────────────────────
 
 function ClientDrawer({
-  client, since, until, month, goal, startWithForm, onClose,
+  client, since, until, month, goal, startWithForm, prefillDate, prefillObs, suggestionId, onClose,
 }: {
   client: ClientRow;
   since: string;
@@ -485,13 +549,16 @@ function ClientDrawer({
   month: string;
   goal: number | null;
   startWithForm: boolean;
+  prefillDate?: string;
+  prefillObs?: string;
+  suggestionId?: string;
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
   const [showForm, setShowForm] = useState(startWithForm);
-  const [date, setDate] = useState(today());
+  const [date, setDate] = useState(prefillDate ?? today());
   const [value, setValue] = useState("");
-  const [obs, setObs] = useState("");
+  const [obs, setObs] = useState(prefillObs ?? "");
 
   const { data: sales = [], isLoading } = useQuery({
     queryKey: ["sales-by-client", client.id, since, until],
@@ -504,10 +571,12 @@ function ClientDrawer({
       date,
       value: value !== "" ? parseFloat(value.replace(",", ".")) : null,
       obs: obs.trim() || null,
+      from_suggestion_id: suggestionId,
     }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales"] });
       queryClient.invalidateQueries({ queryKey: ["sales-by-client", client.id] });
+      if (suggestionId) queryClient.invalidateQueries({ queryKey: ["sale-suggestions"] });
       setDate(today());
       setValue("");
       setObs("");
