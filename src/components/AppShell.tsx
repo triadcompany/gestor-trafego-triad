@@ -35,7 +35,7 @@ const navGroups = [
   {
     label: "Ferramentas",
     items: [
-      { to: "/mensagens", label: "Mensagens", icon: MessageCircle, exact: false },
+      { to: "/mensagens", label: "Automações", icon: MessageCircle, exact: false },
       { to: "/agente", label: "Agente IA", icon: Bot, exact: false },
       { to: "/campaigns/new", label: "Nova Campanha", icon: PlusSquare, exact: false },
       { to: "/diagnostico-meta", label: "Diagnóstico", icon: Stethoscope, exact: false },
