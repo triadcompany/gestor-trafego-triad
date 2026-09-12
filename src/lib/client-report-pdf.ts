@@ -54,7 +54,7 @@ function periodLabel(since: string, until: string, kind: "eyebrow" | "short"): s
   return kind === "eyebrow" ? `${fmtDate(since)} A ${fmtDate(until)}` : `${fmtDate(since)} a ${fmtDate(until)}`;
 }
 
-function slug(s: string): string {
+export function slug(s: string): string {
   return (
     s
       .normalize("NFD")

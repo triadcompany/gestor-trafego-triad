@@ -15,7 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil, Repeat, Play, Trash2 } from "lucide-react";
+import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil, Repeat, Play, Trash2, MessageSquare, BarChart3, FileText, MessagesSquare } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { DEFAULT_REPORT_TEMPLATE, REPORT_TEMPLATE_PLACEHOLDERS } from "@/lib/meta";
 import { fetchReportTemplates, upsertReportTemplate, deleteReportTemplate, type ReportTemplateRow } from "@/server/report-templates";
 import { toast } from "sonner";
@@ -579,6 +580,9 @@ function contentLabel(r: MessageAutomationRow): string {
   if (r.content_type === "report") {
     return `Relatório ${r.report_period_days} dias${r.client_name ? ` · ${r.client_name}` : ""}`;
   }
+  if (r.content_type === "report_pdf") {
+    return `Relatório PDF ${r.report_period_days} dias${r.client_name ? ` · ${r.client_name}` : ""}`;
+  }
   if (r.content_type === "group_summary") {
     return `Resumo de grupo · ${r.summary_turno === "tarde" ? "tarde" : "manhã"} · ${r.summary_client_ids.length} cliente${r.summary_client_ids.length === 1 ? "" : "s"}`;
   }
@@ -680,6 +684,7 @@ function AutomacoesTab() {
             <SelectContent>
               <SelectItem value="all">Todos os tipos</SelectItem>
               <SelectItem value="report">Relatório</SelectItem>
+              <SelectItem value="report_pdf">Relatório PDF</SelectItem>
               <SelectItem value="text">Mensagem</SelectItem>
               <SelectItem value="group_summary">Resumo de grupo</SelectItem>
             </SelectContent>
@@ -773,6 +778,18 @@ function AutomacoesTab() {
   );
 }
 
+const CONTENT_TYPE_OPTIONS: Array<{
+  value: "text" | "report" | "report_pdf" | "group_summary";
+  label: string;
+  hint: string;
+  icon: typeof MessageSquare;
+}> = [
+  { value: "text", label: "Texto", hint: "Mensagem livre, com mídia opcional", icon: MessageSquare },
+  { value: "report", label: "Relatório de métricas", hint: "Texto com números do período no WhatsApp", icon: BarChart3 },
+  { value: "report_pdf", label: "Relatório PDF", hint: "O relatório completo em arquivo, anexado", icon: FileText },
+  { value: "group_summary", label: "Resumo de grupo", hint: "Resumo das conversas do grupo por turno", icon: MessagesSquare },
+];
+
 const WEEKDAYS: { value: number; label: string }[] = [
   { value: 1, label: "Seg" }, { value: 2, label: "Ter" }, { value: 3, label: "Qua" },
   { value: 4, label: "Qui" }, { value: 5, label: "Sex" }, { value: 6, label: "Sáb" }, { value: 7, label: "Dom" },
@@ -790,10 +807,11 @@ function AutomationComposerDialog({
   const qc = useQueryClient();
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [contentType, setContentType] = useState<"text" | "report" | "group_summary">("text");
+  const [contentType, setContentType] = useState<"text" | "report" | "report_pdf" | "group_summary">("text");
   const [body, setBody] = useState("");
   const [clientId, setClientId] = useState<string>("none");
   const [reportPeriodDays, setReportPeriodDays] = useState<number>(7);
+  const [pdfCaption, setPdfCaption] = useState("");
   const [reportTemplateId, setReportTemplateId] = useState<string | null>(null);
   const [reportBody, setReportBody] = useState<string>(DEFAULT_REPORT_TEMPLATE);
   const [templateEditorOpen, setTemplateEditorOpen] = useState(false);
@@ -829,7 +847,7 @@ function AutomationComposerDialog({
 
   const reset = () => {
     setLoadedId(null);
-    setName(""); setContentType("text"); setBody(""); setClientId("none"); setReportPeriodDays(7);
+    setName(""); setContentType("text"); setBody(""); setClientId("none"); setReportPeriodDays(7); setPdfCaption("");
     setReportTemplateId(null); setReportBody(DEFAULT_REPORT_TEMPLATE);
     setSummaryTurno("manha"); setSummaryClientIds([]);
     setRecurrenceType("weekly"); setWeekdays([1]); setMonthdays([1]); setSendHour("10"); setSendMinute("00");
@@ -843,6 +861,7 @@ function AutomationComposerDialog({
     setBody(editing.content_type === "text" ? (editing.body ?? "") : "");
     setClientId(editing.client_id ?? "none");
     setReportPeriodDays(editing.report_period_days);
+    setPdfCaption(editing.content_type === "report_pdf" ? (editing.body ?? "") : "");
     setReportTemplateId(editing.report_template_id ?? null);
     setReportBody(
       editing.content_type === "report"
@@ -924,7 +943,7 @@ function AutomationComposerDialog({
         id: editing?.id,
         name: name.trim(),
         contentType,
-        body: contentType === "text" ? body : contentType === "report" ? (reportTemplateId ? null : reportBody) : null,
+        body: contentType === "text" ? body : contentType === "report" ? (reportTemplateId ? null : reportBody) : contentType === "report_pdf" ? (pdfCaption.trim() || null) : null,
         reportTemplateId: contentType === "report" ? reportTemplateId : null,
         summaryTurno: contentType === "group_summary" ? summaryTurno : null,
         summaryClientIds: contentType === "group_summary" ? summaryClientIds : [],
@@ -955,7 +974,9 @@ function AutomationComposerDialog({
       ? body.trim().length > 0 || mediaFiles.length > 0 || existingMedia.length > 0
       : contentType === "report"
         ? hasClient && reportBody.trim().length > 0
-        : summaryClientIds.length > 0) &&
+        : contentType === "report_pdf"
+          ? hasClient
+          : summaryClientIds.length > 0) &&
     (recurrenceType === "daily" ||
       (recurrenceType === "weekly" && weekdays.length > 0) ||
       (recurrenceType === "monthly" && monthdays.length > 0)) &&
@@ -977,17 +998,28 @@ function AutomationComposerDialog({
 
           <div className="space-y-1.5">
             <Label>Tipo de conteúdo</Label>
-            <RadioGroup value={contentType} onValueChange={(v) => setContentType(v as "text" | "report" | "group_summary")} className="flex flex-wrap gap-x-4 gap-y-2">
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <RadioGroupItem value="text" /> Texto
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <RadioGroupItem value="report" /> Relatório de métricas
-              </label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <RadioGroupItem value="group_summary" /> Resumo de grupo
-              </label>
-            </RadioGroup>
+            <div className="grid grid-cols-2 gap-2">
+              {CONTENT_TYPE_OPTIONS.map((ct) => {
+                const active = contentType === ct.value;
+                return (
+                  <button
+                    key={ct.value}
+                    type="button"
+                    onClick={() => setContentType(ct.value)}
+                    className={cn(
+                      "flex items-start gap-2.5 rounded-lg border p-3 text-left transition-colors",
+                      active ? "border-primary bg-primary/5" : "border-border hover:bg-muted/50"
+                    )}
+                  >
+                    <ct.icon className={cn("h-4 w-4 mt-0.5 shrink-0", active ? "text-primary" : "text-muted-foreground")} />
+                    <div className="min-w-0">
+                      <div className="text-sm font-medium leading-tight">{ct.label}</div>
+                      <div className="text-[11px] text-muted-foreground mt-0.5">{ct.hint}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {contentType === "text" ? (
@@ -1117,6 +1149,50 @@ function AutomationComposerDialog({
                 </p>
               </div>
             </div>
+          ) : contentType === "report_pdf" ? (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Cliente</Label>
+                  <Select value={clientId} onValueChange={setClientId}>
+                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
+                    <SelectContent>
+                      {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Período</Label>
+                  <Select value={String(reportPeriodDays)} onValueChange={(v) => setReportPeriodDays(Number(v))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="7">7 dias</SelectItem>
+                      <SelectItem value="15">15 dias</SelectItem>
+                      <SelectItem value="30">30 dias</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/20 p-3">
+                <FileText className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+                <p className="text-xs text-muted-foreground">
+                  Gera o mesmo PDF de "Relatório PDF" na página do cliente — capa com resumo e gráfico, mais a tabela por
+                  campanha — e envia como arquivo no WhatsApp.
+                </p>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label>Legenda <span className="text-muted-foreground font-normal text-xs ml-1.5">opcional</span></Label>
+                <Textarea
+                  value={pdfCaption}
+                  onChange={(e) => setPdfCaption(e.target.value)}
+                  placeholder={`Ex: 📊 Relatório de campanhas — últimos ${reportPeriodDays} dias`}
+                  className="min-h-[60px] resize-none"
+                />
+                <p className="text-[11px] text-muted-foreground">Vai junto com o arquivo. Se deixar em branco, uso uma legenda padrão.</p>
+              </div>
+            </div>
           ) : (
             <div className="space-y-3">
               <div className="space-y-1.5">
@@ -1153,8 +1229,8 @@ function AutomationComposerDialog({
             </div>
           )}
 
-          <div className="space-y-2">
-            <Label>Recorrência</Label>
+          <div className="space-y-2.5 rounded-lg border border-border/60 bg-muted/10 p-3">
+            <Label className="flex items-center gap-1.5"><Repeat className="h-3.5 w-3.5 text-muted-foreground" /> Recorrência</Label>
             <RadioGroup value={recurrenceType} onValueChange={(v) => setRecurrenceType(v as typeof recurrenceType)} className="flex gap-4">
               <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="weekly" /> Semanal</label>
               <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="daily" /> Diária</label>
@@ -1208,8 +1284,8 @@ function AutomationComposerDialog({
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label>Destinos</Label>
+          <div className="space-y-2.5 rounded-lg border border-border/60 bg-muted/10 p-3">
+            <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-muted-foreground" /> Destinos</Label>
             {hasClient && (
               <label className="flex items-center gap-2 text-sm cursor-pointer">
                 <Checkbox checked={useClientGroup} onCheckedChange={(v) => setUseClientGroup(v === true)} />

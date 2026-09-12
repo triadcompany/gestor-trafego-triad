@@ -8,13 +8,15 @@ import {
   clients,
   messageAutomations,
   metaTokens,
+  organizations,
   reportTemplates,
   scheduledMessageMedia,
   scheduledMessageRecipients,
   scheduledMessages,
   whatsappInstances,
 } from "@/db/schema";
-import { buildMetricsReportText } from "@/lib/meta";
+import { buildMetricsReportText, fetchCampaigns } from "@/lib/meta";
+import { buildClientReportDoc, slug as slugifyName } from "@/lib/client-report-pdf";
 
 // ── Escolha de token / instância (sem sessão) ────────────────────────────────
 
@@ -256,7 +258,7 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
   const client = rule.clientId
     ? await db.query.clients.findFirst({
         where: eq(clients.id, rule.clientId),
-        columns: { id: true, name: true, metaAdAccountId: true, whatsappGroupId: true },
+        columns: { id: true, name: true, metaAdAccountId: true, whatsappGroupId: true, cplMax: true },
       })
     : null;
 
@@ -268,9 +270,40 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
   });
   if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp ativa na organização.`] };
 
-  // 2. Texto
+  // 2. Texto (+ mídia extra gerada na hora, ex.: PDF do relatório)
   let text: string;
-  if (rule.contentType === "report") {
+  const extraMedia: Array<{ base64: string; mimetype: string; filename: string }> = [];
+  if (rule.contentType === "report_pdf") {
+    if (!client) return { created: false, warnings: [`Regra "${rule.name}": cliente não encontrado.`] };
+    const tokenRow = await pickMetaTokenRow({ organizationId: rule.organizationId, clientId: client.id });
+    if (!tokenRow) return { created: false, warnings: [`Regra "${rule.name}": nenhum token Meta ativo pra esse cliente.`] };
+    if (tokenRow.expiresAt && new Date(tokenRow.expiresAt) < new Date()) {
+      return { created: false, warnings: [`Regra "${rule.name}": token Meta expirado.`] };
+    }
+    try {
+      const until = new Date().toISOString().slice(0, 10);
+      const since = new Date(Date.now() - rule.reportPeriodDays * 86400000).toISOString().slice(0, 10);
+      const campaigns = await fetchCampaigns(client.metaAdAccountId, tokenRow.accessToken, "today", { since, until });
+      const org = await db.query.organizations.findFirst({ where: eq(organizations.id, rule.organizationId), columns: { name: true } });
+      const doc = buildClientReportDoc({
+        clientName: client.name,
+        organizationName: org?.name ?? "Gestão de Tráfego",
+        since,
+        until,
+        cplMax: client.cplMax,
+        campaigns,
+      });
+      const base64 = Buffer.from(doc.output("arraybuffer")).toString("base64");
+      extraMedia.push({
+        base64,
+        mimetype: "application/pdf",
+        filename: `relatorio-${slugifyName(client.name)}-${since}_a_${until}.pdf`,
+      });
+      text = rule.body?.trim() || `📊 Relatório de campanhas — últimos ${rule.reportPeriodDays} dias`;
+    } catch (e) {
+      return { created: false, warnings: [`Regra "${rule.name}": falha ao gerar o PDF — ${e instanceof Error ? e.message : String(e)}`] };
+    }
+  } else if (rule.contentType === "report") {
     if (!client) return { created: false, warnings: [`Regra "${rule.name}": cliente não encontrado.`] };
     const tokenRow = await pickMetaTokenRow({ organizationId: rule.organizationId, clientId: client.id });
     if (!tokenRow) return { created: false, warnings: [`Regra "${rule.name}": nenhum token Meta ativo pra esse cliente.`] };
@@ -341,11 +374,13 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
     await tx.insert(scheduledMessageRecipients).values(
       recipients.map((r) => ({ messageId: msg.id, remoteJid: r.remoteJid, name: r.name, status: "pending" as const }))
     );
-    if (rule.media.length > 0) {
+    const mediaToInsert = [
+      ...[...rule.media].sort((a, b) => a.sortOrder - b.sortOrder).map((m) => ({ base64: m.base64, mimetype: m.mimetype, filename: m.filename })),
+      ...extraMedia,
+    ];
+    if (mediaToInsert.length > 0) {
       await tx.insert(scheduledMessageMedia).values(
-        [...rule.media]
-          .sort((a, b) => a.sortOrder - b.sortOrder)
-          .map((m, i) => ({ messageId: msg.id, base64: m.base64, mimetype: m.mimetype, filename: m.filename, sortOrder: i }))
+        mediaToInsert.map((m, i) => ({ messageId: msg.id, base64: m.base64, mimetype: m.mimetype, filename: m.filename, sortOrder: i }))
       );
     }
   });

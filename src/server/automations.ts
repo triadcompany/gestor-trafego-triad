@@ -25,7 +25,7 @@ export interface MessageAutomationRow {
   id: string;
   name: string;
   active: boolean;
-  content_type: "text" | "report" | "group_summary";
+  content_type: "text" | "report" | "report_pdf" | "group_summary";
   body: string | null;
   client_id: string | null;
   client_name: string | null;
@@ -60,7 +60,7 @@ const _fetchMessageAutomations = createServerFn({ method: "GET" }).handler(async
     id: r.id,
     name: r.name,
     active: r.active,
-    content_type: r.contentType as "text" | "report" | "group_summary",
+    content_type: r.contentType as "text" | "report" | "report_pdf" | "group_summary",
     body: r.body,
     client_id: r.clientId,
     client_name: r.client?.name ?? null,
@@ -114,7 +114,7 @@ const mediaItemSchema = z.object({ base64: z.string(), mimetype: z.string(), fil
 const upsertSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  contentType: z.enum(["text", "report", "group_summary"]),
+  contentType: z.enum(["text", "report", "report_pdf", "group_summary"]),
   body: z.string().nullable().optional(),
   clientId: z.string().nullable().optional(),
   reportPeriodDays: z.number().int(),
@@ -139,7 +139,7 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { organizationId, role, userId } = await requireOrgContext();
 
-    if (data.contentType === "report") {
+    if (data.contentType === "report" || data.contentType === "report_pdf") {
       if (!data.clientId) throw new Error("Relatório exige um cliente.");
       if (![7, 15, 30].includes(data.reportPeriodDays)) throw new Error("Período do relatório inválido.");
     } else if (data.contentType === "group_summary") {
@@ -187,7 +187,7 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
       organizationId,
       name: data.name,
       contentType: data.contentType,
-      body: data.contentType === "text" || data.contentType === "report" ? (data.body?.trim() || null) : null,
+      body: data.contentType === "text" || data.contentType === "report" || data.contentType === "report_pdf" ? (data.body?.trim() || null) : null,
       clientId: data.clientId ?? null,
       reportPeriodDays: data.reportPeriodDays,
       reportTemplateId: data.contentType === "report" ? (data.reportTemplateId ?? null) : null,
