@@ -19,6 +19,7 @@ import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil, 
 import { cn } from "@/lib/utils";
 import { DEFAULT_REPORT_TEMPLATE, REPORT_TEMPLATE_PLACEHOLDERS } from "@/lib/meta";
 import { fetchReportTemplates, upsertReportTemplate, deleteReportTemplate, type ReportTemplateRow } from "@/server/report-templates";
+import { getCurrentUser, setSaleSuggestionsEnabled } from "@/server/session";
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
@@ -630,6 +631,14 @@ function AutomacoesTab() {
     queryFn: fetchMessageAutomations,
   });
 
+  const { data: currentUser } = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser, staleTime: 1000 * 60 });
+
+  const saleDetectionMut = useMutation({
+    mutationFn: (enabled: boolean) => setSaleSuggestionsEnabled({ data: { enabled } }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["current-user"] }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar"),
+  });
+
   // Opções de cliente derivadas das próprias automações (sem query extra).
   const clientOptions = Array.from(
     new Map(automations.filter((a) => a.client_id).map((a) => [a.client_id!, a.client_name ?? a.client_id!])).entries()
@@ -680,6 +689,25 @@ function AutomacoesTab() {
 
   return (
     <div>
+      <div className="mb-4 flex items-start justify-between gap-3 rounded-xl border border-border bg-card p-4">
+        <div className="flex items-start gap-2.5 min-w-0">
+          <MessageSquare className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <p className="text-sm font-medium">Detectar vendas no WhatsApp</p>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Escaneia os grupos dos seus clientes a cada 5 min procurando "vendi", "fechou"... e sugere a venda em
+              Vendas pra você confirmar. Só afeta os clientes de que você é responsável.
+            </p>
+          </div>
+        </div>
+        <Switch
+          checked={currentUser?.saleSuggestionsEnabled ?? true}
+          onCheckedChange={(v) => saleDetectionMut.mutate(v)}
+          disabled={saleDetectionMut.isPending || !currentUser}
+          className="shrink-0"
+        />
+      </div>
+
       <div className="flex justify-end mb-4">
         <Button onClick={() => { setEditing(null); setComposerOpen(true); }} className="gap-2 w-full sm:w-auto">
           <Plus className="h-4 w-4" />

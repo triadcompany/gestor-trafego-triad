@@ -9,6 +9,7 @@ import {
   messageAutomations,
   metaTokens,
   organizations,
+  profiles,
   reportTemplates,
   saleSuggestions,
   scheduledMessageMedia,
@@ -409,6 +410,9 @@ type SaleScanRecord = {
 };
 
 export async function scanClientsForSaleSuggestions(): Promise<number> {
+  // Só escaneia clientes cujo gestor responsável tem a detecção ligada
+  // (profiles.sale_suggestions_enabled) — cada gestor liga/desliga isso pra
+  // si mesmo em Mensagens › Automações. Cliente sem dono não é escaneado.
   const rows = await db
     .select({
       id: clients.id,
@@ -417,7 +421,8 @@ export async function scanClientsForSaleSuggestions(): Promise<number> {
       lastScanAt: clients.lastSaleScanAt,
     })
     .from(clients)
-    .where(and(eq(clients.active, true), isNotNull(clients.whatsappGroupId)));
+    .innerJoin(profiles, eq(profiles.id, clients.ownerUserId))
+    .where(and(eq(clients.active, true), isNotNull(clients.whatsappGroupId), eq(profiles.saleSuggestionsEnabled, true)));
 
   let created = 0;
 

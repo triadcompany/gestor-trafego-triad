@@ -61,6 +61,9 @@ export const profiles = pgTable(
     // nenhuma organização. Todo outro usuário deve ter isso preenchido (garantido
     // na aplicação, não no banco, pra permitir esse caso especial).
     organizationId: uuid("organization_id").references(() => organizations.id),
+    // Liga/desliga a varredura de sugestão de venda (automations-core.ts) pra
+    // esse gestor — só afeta os clientes de que ele é dono (clients.owner_user_id).
+    saleSuggestionsEnabled: boolean("sale_suggestions_enabled").notNull().default(true),
   },
   (t) => [check("profiles_role_check", sql`${t.role} IN ('admin', 'member')`)]
 );

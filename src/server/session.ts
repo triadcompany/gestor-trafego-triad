@@ -34,6 +34,7 @@ export interface SessionUser {
   isPlatformAdmin: boolean;
   actingOrganizationId: string | null;
   actingOrganizationName: string | null;
+  saleSuggestionsEnabled: boolean;
 }
 
 export interface OrgContext {
@@ -62,6 +63,7 @@ async function loadSessionUser(userId: string): Promise<SessionUser | null> {
       organizationName: organizations.name,
       isPlatformAdmin: users.isPlatformAdmin,
       active: users.active,
+      saleSuggestionsEnabled: profiles.saleSuggestionsEnabled,
     })
     .from(users)
     .innerJoin(profiles, eq(profiles.id, users.id))
@@ -98,6 +100,7 @@ async function loadSessionUser(userId: string): Promise<SessionUser | null> {
     isPlatformAdmin: row.isPlatformAdmin,
     actingOrganizationId,
     actingOrganizationName,
+    saleSuggestionsEnabled: row.saleSuggestionsEnabled,
   };
 }
 
@@ -185,6 +188,17 @@ export const changePassword = createServerFn({ method: "POST" })
     if (!valid) throw new Error("Senha atual incorreta.");
     const passwordHash = await hashPassword(data.newPassword);
     await db.update(users).set({ passwordHash }).where(eq(users.id, userId));
+  });
+
+// Liga/desliga a varredura de sugestão de venda (WhatsApp) só pra esse
+// gestor — automations-core.ts checa profiles.sale_suggestions_enabled do
+// dono do cliente antes de escanear o grupo dele.
+export const setSaleSuggestionsEnabled = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ enabled: z.boolean() }))
+  .handler(async ({ data }) => {
+    const userId = await getSessionUserId();
+    if (!userId) throw new Error("Não autenticado.");
+    await db.update(profiles).set({ saleSuggestionsEnabled: data.enabled }).where(eq(profiles.id, userId));
   });
 
 // Suporte: platform admin "entra" numa organização (age como admin dela até sair).
