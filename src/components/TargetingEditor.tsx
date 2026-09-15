@@ -635,7 +635,7 @@ function InterestSearch({
 
 // ── Small helpers ─────────────────────────────────────────────
 
-function formatWhatsappNumber(raw: string): string {
+export function formatWhatsappNumber(raw: string): string {
   const digits = raw.replace(/\D/g, "");
   // 55 + DDD (2) + 9 dígitos = 13; sem o 9º dígito = 12
   if (digits.length === 13 && digits.startsWith("55")) {

@@ -980,6 +980,13 @@ export async function updateAdSetWhatsappNumber(adSetId: string, newNumber: stri
   await updateMetaObject(adSetId, { promoted_object: JSON.stringify({ page_id: pageId, whatsapp_phone_number: digits }) }, token);
 }
 
+/** Número de WhatsApp exibido no nível da campanha — lido do primeiro conjunto (na prática, todos usam o mesmo). */
+export async function fetchCampaignWhatsappNumber(campaignId: string, token: string): Promise<string | null> {
+  const adSets = await fetchAdSets(campaignId, token);
+  if (adSets.length === 0) return null;
+  return fetchAdSetWhatsappNumber(adSets[0].id, token);
+}
+
 /** Troca o número de WhatsApp em todos os conjuntos de uma campanha de uma vez. */
 export async function bulkUpdateCampaignWhatsappNumber(
   campaignId: string,

@@ -38,12 +38,13 @@ import {
   fetchAds,
   getMetaToken,
   updateMetaObject,
+  fetchCampaignWhatsappNumber,
   bulkUpdateCampaignWhatsappNumber,
   type MetaCampaign,
   type MetaAdSet,
   type MetaAd,
 } from "@/lib/meta";
-import { TargetingEditor } from "@/components/TargetingEditor";
+import { TargetingEditor, formatWhatsappNumber } from "@/components/TargetingEditor";
 import { AdCreativeEditor } from "@/components/AdCreativeEditor";
 import { brl } from "@/lib/mock-data";
 import { statusTextClass } from "@/lib/status-colors";
@@ -210,6 +211,15 @@ function CampaignSection({
   const [waInput, setWaInput] = useState("");
   const isActive = campaign.status === "ACTIVE";
 
+  const { data: campaignWhatsapp, isLoading: campaignWaLoading } = useQuery({
+    queryKey: ["campaign-whatsapp", campaign.id],
+    queryFn: async () => {
+      const token = await getMetaToken(clientId);
+      if (!token) throw new Error("Token não encontrado");
+      return fetchCampaignWhatsappNumber(campaign.id, token);
+    },
+  });
+
   const statusMutation = useMutation({
     mutationFn: async () => {
       const token = await getMetaToken(clientId);
@@ -244,6 +254,7 @@ function CampaignSection({
       }
       setEditingWa(false);
       queryClient.invalidateQueries({ queryKey: ["adset-whatsapp"] });
+      queryClient.invalidateQueries({ queryKey: ["campaign-whatsapp", campaign.id] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar"),
   });
@@ -312,10 +323,20 @@ function CampaignSection({
             </Button>
           </div>
         ) : (
-          <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => { setWaInput(""); setEditingWa(true); }}>
-            <MessageCircle className="h-3.5 w-3.5" />
-            Trocar número
-          </Button>
+          <div className="flex items-center gap-2">
+            <MessageCircle className="h-4 w-4 text-muted-foreground shrink-0" />
+            {campaignWaLoading ? (
+              <Skeleton className="h-5 w-32" />
+            ) : campaignWhatsapp ? (
+              <span className="text-sm font-medium tabular-nums">{formatWhatsappNumber(campaignWhatsapp)}</span>
+            ) : (
+              <span className="text-sm text-muted-foreground">Não configurado</span>
+            )}
+            <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => { setWaInput(campaignWhatsapp ?? ""); setEditingWa(true); }}>
+              <Pencil className="h-3 w-3" />
+              Trocar
+            </Button>
+          </div>
         )}
       </div>
 
