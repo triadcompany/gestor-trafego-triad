@@ -31,7 +31,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { TrendingUp, Plus, Check, X, Trash2, ChevronsUpDown, MessageCircle } from "lucide-react";
+import { TrendingUp, Plus, Check, X, Trash2, ChevronsUpDown, MessageCircle, Search } from "lucide-react";
 import {
   fetchAllClients,
   fetchSales,
@@ -113,6 +113,7 @@ function VendasPage() {
   const [drawerStartWithForm, setDrawerStartWithForm] = useState(false);
   const [drawerPrefill, setDrawerPrefill] = useState<{ date?: string; obs?: string; suggestionId?: string } | null>(null);
   const [addPopoverOpen, setAddPopoverOpen] = useState(false);
+  const [clientSearch, setClientSearch] = useState("");
 
   const { start, end } = periodDateRange(period, period === "custom" ? { since: customSince, until: customUntil } : undefined);
   const month = activeMonth(start);
@@ -175,6 +176,10 @@ function VendasPage() {
     if (a.pct !== null && b.pct !== null) return a.pct - b.pct;
     return 0;
   });
+
+  const filteredStats = clientSearch.trim()
+    ? stats.filter((s) => s.client.name.toLowerCase().includes(clientSearch.trim().toLowerCase()))
+    : stats;
 
   // Totais
   const totalSales = allSales.length;
@@ -349,12 +354,23 @@ function VendasPage() {
 
         {/* Table */}
         <div className="rounded-xl border border-border bg-card overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-3 border-b border-border">
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-b border-border">
             <span className="text-sm font-semibold">Por cliente</span>
-            <div className="flex items-center gap-2 text-[10px]">
-              <span className="flex items-center gap-1 rounded-full border border-status-on-target bg-status-on-target/10 px-2 py-0.5 text-status-on-target">● No alvo</span>
-              <span className="flex items-center gap-1 rounded-full border border-status-attention bg-status-attention/10 px-2 py-0.5 text-status-attention">● Atenção</span>
-              <span className="flex items-center gap-1 rounded-full border border-status-critical bg-status-critical/10 px-2 py-0.5 text-status-critical">● Crítico</span>
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  value={clientSearch}
+                  onChange={(e) => setClientSearch(e.target.value)}
+                  placeholder="Buscar cliente..."
+                  className="h-8 w-48 rounded-md border border-border bg-background pl-8 pr-2 text-xs outline-none focus:ring-1 focus:ring-ring placeholder:text-muted-foreground"
+                />
+              </div>
+              <div className="flex items-center gap-2 text-[10px]">
+                <span className="flex items-center gap-1 rounded-full border border-status-on-target bg-status-on-target/10 px-2 py-0.5 text-status-on-target">● No alvo</span>
+                <span className="flex items-center gap-1 rounded-full border border-status-attention bg-status-attention/10 px-2 py-0.5 text-status-attention">● Atenção</span>
+                <span className="flex items-center gap-1 rounded-full border border-status-critical bg-status-critical/10 px-2 py-0.5 text-status-critical">● Crítico</span>
+              </div>
             </div>
           </div>
 
@@ -378,7 +394,15 @@ function VendasPage() {
                       </td>
                     </tr>
                   ))
-                : stats.map(({ client, count, faturado, goal, pct }) => (
+                : filteredStats.length === 0
+                ? (
+                    <tr>
+                      <td colSpan={6} className="px-5 py-8 text-center text-sm text-muted-foreground">
+                        Nenhum cliente encontrado para "{clientSearch}".
+                      </td>
+                    </tr>
+                  )
+                : filteredStats.map(({ client, count, faturado, goal, pct }) => (
                     <ClientRow
                       key={client.id}
                       client={client}
