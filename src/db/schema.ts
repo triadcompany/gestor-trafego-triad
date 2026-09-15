@@ -464,9 +464,13 @@ export const messageAutomations = pgTable("message_automations", {
   active: boolean("active").notNull().default(true),
   contentType: text("content_type").notNull(), // 'text' | 'report' | 'group_summary'
   body: text("body"), // texto livre (contentType='text') OU texto/template customizado do relatório (contentType='report', sobrepõe reportTemplateId quando preenchido)
-  clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }),
+  clientId: uuid("client_id").references(() => clients.id, { onDelete: "cascade" }), // legado — 1 cliente só; relatório novo usa reportClientIds
   reportPeriodDays: integer("report_period_days").notNull().default(7), // 7 | 15 | 30
   reportTemplateId: uuid("report_template_id").references(() => reportTemplates.id, { onDelete: "set null" }),
+  // Clientes-alvo do relatório (texto ou PDF) — cada um gera seu próprio
+  // texto/arquivo e sua própria mensagem, endereçada ao grupo daquele
+  // cliente. Vazio + clientId preenchido = automação antiga (1 cliente só).
+  reportClientIds: uuid("report_client_ids").array().notNull().default([]),
   summaryTurno: text("summary_turno"), // 'manha' | 'tarde' — só p/ group_summary
   summaryClientIds: uuid("summary_client_ids").array().notNull().default([]), // clientes cujos grupos entram no resumo
   recurrenceType: text("recurrence_type").notNull(), // 'weekly' | 'daily' | 'monthly'

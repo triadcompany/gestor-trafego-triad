@@ -39,7 +39,7 @@ import {
   type EvolutionRecipient,
   type MediaItem,
 } from "@/lib/whatsapp-messages";
-import { fetchAllClients } from "@/lib/queries";
+import { fetchAllClients, type ClientRow } from "@/lib/queries";
 import {
   fetchMessageAutomations,
   fetchMessageAutomationMedia,
@@ -604,12 +604,20 @@ function recurrenceSummary(r: MessageAutomationRow): string {
   return `Todo mês nos dias ${days.join(", ")} às ${hhmm}`;
 }
 
+function reportClientsLabel(r: MessageAutomationRow): string {
+  if (r.report_client_names.length === 1) return r.report_client_names[0];
+  if (r.report_client_names.length > 1) return `${r.report_client_names.length} clientes`;
+  return r.client_name ?? "";
+}
+
 function contentLabel(r: MessageAutomationRow): string {
   if (r.content_type === "report") {
-    return `Relatório ${r.report_period_days} dias${r.client_name ? ` · ${r.client_name}` : ""}`;
+    const who = reportClientsLabel(r);
+    return `Relatório ${r.report_period_days} dias${who ? ` · ${who}` : ""}`;
   }
   if (r.content_type === "report_pdf") {
-    return `Relatório PDF ${r.report_period_days} dias${r.client_name ? ` · ${r.client_name}` : ""}`;
+    const who = reportClientsLabel(r);
+    return `Relatório PDF ${r.report_period_days} dias${who ? ` · ${who}` : ""}`;
   }
   if (r.content_type === "group_summary") {
     return `Resumo de grupo · ${r.summary_turno === "tarde" ? "tarde" : "manhã"} · ${r.summary_client_ids.length} cliente${r.summary_client_ids.length === 1 ? "" : "s"}`;
@@ -850,6 +858,55 @@ const WEEKDAYS: { value: number; label: string }[] = [
   { value: 4, label: "Qui" }, { value: 5, label: "Sex" }, { value: 6, label: "Sáb" }, { value: 7, label: "Dom" },
 ];
 
+// Multi-seleção de clientes-alvo do relatório — cada um gera seu próprio
+// texto/PDF, enviado ao grupo daquele cliente (ou aos destinos avulsos da
+// regra). "Todos" é um retrato de agora: cliente novo não entra sozinho,
+// precisa reabrir a automação e clicar em "Todos" de novo.
+function ReportClientsField({
+  clients,
+  selected,
+  onChange,
+}: {
+  clients: ClientRow[];
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const allSelected = clients.length > 0 && selected.length === clients.length;
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <Label>Clientes</Label>
+        <button
+          type="button"
+          className="text-xs text-primary hover:underline"
+          onClick={() => onChange(allSelected ? [] : clients.map((c) => c.id))}
+        >
+          {allSelected ? "Limpar seleção" : "Todos os clientes"}
+        </button>
+      </div>
+      <div className="max-h-44 overflow-y-auto rounded-md border border-border divide-y divide-border">
+        {clients.length === 0 ? (
+          <p className="px-3 py-2 text-sm text-muted-foreground">Nenhum cliente.</p>
+        ) : (
+          clients.map((c) => (
+            <label key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer">
+              <Checkbox
+                checked={selected.includes(c.id)}
+                onCheckedChange={(v) => onChange(v === true ? [...selected, c.id] : selected.filter((x) => x !== c.id))}
+              />
+              <span className="flex-1 truncate">{c.name}</span>
+            </label>
+          ))
+        )}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        {selected.length} selecionado{selected.length === 1 ? "" : "s"} — um relatório por cliente, cada um pro grupo dele.
+        {allSelected && " (todos agora — cliente novo não entra sozinho depois)"}
+      </p>
+    </div>
+  );
+}
+
 function AutomationComposerDialog({
   open,
   onOpenChange,
@@ -865,6 +922,7 @@ function AutomationComposerDialog({
   const [contentType, setContentType] = useState<"text" | "report" | "report_pdf" | "group_summary">("text");
   const [body, setBody] = useState("");
   const [clientId, setClientId] = useState<string>("none");
+  const [reportClientIds, setReportClientIds] = useState<string[]>([]);
   const [reportPeriodDays, setReportPeriodDays] = useState<number>(7);
   const [pdfCaption, setPdfCaption] = useState("");
   const [reportTemplateId, setReportTemplateId] = useState<string | null>(null);
@@ -902,7 +960,7 @@ function AutomationComposerDialog({
 
   const reset = () => {
     setLoadedId(null);
-    setName(""); setContentType("text"); setBody(""); setClientId("none"); setReportPeriodDays(7); setPdfCaption("");
+    setName(""); setContentType("text"); setBody(""); setClientId("none"); setReportClientIds([]); setReportPeriodDays(7); setPdfCaption("");
     setReportTemplateId(null); setReportBody(DEFAULT_REPORT_TEMPLATE);
     setSummaryTurno("manha"); setSummaryClientIds([]);
     setRecurrenceType("weekly"); setWeekdays([1]); setMonthdays([1]); setSendHour("10"); setSendMinute("00");
@@ -915,6 +973,7 @@ function AutomationComposerDialog({
     setContentType(editing.content_type);
     setBody(editing.content_type === "text" ? (editing.body ?? "") : "");
     setClientId(editing.client_id ?? "none");
+    setReportClientIds(editing.report_client_ids.length > 0 ? editing.report_client_ids : editing.client_id ? [editing.client_id] : []);
     setReportPeriodDays(editing.report_period_days);
     setPdfCaption(editing.content_type === "report_pdf" ? (editing.body ?? "") : "");
     setReportTemplateId(editing.report_template_id ?? null);
@@ -1002,7 +1061,8 @@ function AutomationComposerDialog({
         reportTemplateId: contentType === "report" ? reportTemplateId : null,
         summaryTurno: contentType === "group_summary" ? summaryTurno : null,
         summaryClientIds: contentType === "group_summary" ? summaryClientIds : [],
-        clientId: clientId === "none" ? null : clientId,
+        clientId: contentType === "text" ? (clientId === "none" ? null : clientId) : null,
+        reportClientIds: contentType === "report" || contentType === "report_pdf" ? reportClientIds : [],
         reportPeriodDays,
         recurrenceType,
         recurrenceDays: recurrenceType === "weekly" ? weekdays : recurrenceType === "monthly" ? monthdays : [],
@@ -1027,9 +1087,9 @@ function AutomationComposerDialog({
     contentType === "text"
       ? body.trim().length > 0 || mediaFiles.length > 0 || existingMedia.length > 0
       : contentType === "report"
-        ? hasClient && reportBody.trim().length > 0
+        ? reportClientIds.length > 0 && reportBody.trim().length > 0
         : contentType === "report_pdf"
-          ? hasClient
+          ? reportClientIds.length > 0
           : summaryClientIds.length > 0;
   const hasValidRecurrence =
     recurrenceType === "daily" ||
@@ -1125,28 +1185,19 @@ function AutomationComposerDialog({
             </>
           ) : contentType === "report" ? (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Cliente</Label>
-                  <Select value={clientId} onValueChange={setClientId}>
-                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                    <SelectContent>
-                      {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Período</Label>
-                  <Select value={String(reportPeriodDays)} onValueChange={(v) => setReportPeriodDays(Number(v))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="7">7 dias</SelectItem>
-                      <SelectItem value="15">15 dias</SelectItem>
-                      <SelectItem value="30">30 dias</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="space-y-1.5">
+                <Label>Período</Label>
+                <Select value={String(reportPeriodDays)} onValueChange={(v) => setReportPeriodDays(Number(v))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7">7 dias</SelectItem>
+                    <SelectItem value="15">15 dias</SelectItem>
+                    <SelectItem value="30">30 dias</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+
+              <ReportClientsField clients={clients} selected={reportClientIds} onChange={setReportClientIds} />
 
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
@@ -1211,28 +1262,19 @@ function AutomationComposerDialog({
             </div>
           ) : contentType === "report_pdf" ? (
             <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1.5">
-                  <Label>Cliente</Label>
-                  <Select value={clientId} onValueChange={setClientId}>
-                    <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                    <SelectContent>
-                      {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Período</Label>
-                  <Select value={String(reportPeriodDays)} onValueChange={(v) => setReportPeriodDays(Number(v))}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="7">7 dias</SelectItem>
-                      <SelectItem value="15">15 dias</SelectItem>
-                      <SelectItem value="30">30 dias</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
+              <div className="space-y-1.5">
+                <Label>Período</Label>
+                <Select value={String(reportPeriodDays)} onValueChange={(v) => setReportPeriodDays(Number(v))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7">7 dias</SelectItem>
+                    <SelectItem value="15">15 dias</SelectItem>
+                    <SelectItem value="30">30 dias</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
+
+              <ReportClientsField clients={clients} selected={reportClientIds} onChange={setReportClientIds} />
 
               <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/20 p-3">
                 <FileText className="h-4 w-4 mt-0.5 shrink-0 text-muted-foreground" />

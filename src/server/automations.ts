@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import {
@@ -31,6 +31,8 @@ export interface MessageAutomationRow {
   client_name: string | null;
   report_period_days: number;
   report_template_id: string | null;
+  report_client_ids: string[];
+  report_client_names: string[];
   summary_turno: "manha" | "tarde" | null;
   summary_client_ids: string[];
   recurrence_type: "weekly" | "daily" | "monthly";
@@ -56,6 +58,16 @@ const _fetchMessageAutomations = createServerFn({ method: "GET" }).handler(async
       media: { columns: { id: true } },
     },
   });
+
+  // Nomes dos clientes-alvo do relatório (reportClientIds) — uma query só
+  // pra todos os ids referenciados, em vez de uma por automação.
+  const allReportClientIds = Array.from(new Set(rows.flatMap((r) => r.reportClientIds)));
+  const clientNameById = new Map<string, string>();
+  if (allReportClientIds.length > 0) {
+    const found = await db.select({ id: clients.id, name: clients.name }).from(clients).where(inArray(clients.id, allReportClientIds));
+    for (const c of found) clientNameById.set(c.id, c.name);
+  }
+
   return rows.map((r) => ({
     id: r.id,
     name: r.name,
@@ -66,6 +78,8 @@ const _fetchMessageAutomations = createServerFn({ method: "GET" }).handler(async
     client_name: r.client?.name ?? null,
     report_period_days: r.reportPeriodDays,
     report_template_id: r.reportTemplateId,
+    report_client_ids: r.reportClientIds,
+    report_client_names: r.reportClientIds.map((id) => clientNameById.get(id) ?? "?"),
     summary_turno: (r.summaryTurno as "manha" | "tarde" | null) ?? null,
     summary_client_ids: r.summaryClientIds,
     recurrence_type: r.recurrenceType as "weekly" | "daily" | "monthly",
@@ -119,6 +133,7 @@ const upsertSchema = z.object({
   clientId: z.string().nullable().optional(),
   reportPeriodDays: z.number().int(),
   reportTemplateId: z.string().nullable().optional(),
+  reportClientIds: z.array(z.string()).default([]),
   summaryTurno: z.enum(["manha", "tarde"]).nullable().optional(),
   summaryClientIds: z.array(z.string()).default([]),
   recurrenceType: z.enum(["weekly", "daily", "monthly"]),
@@ -140,8 +155,14 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
     const { organizationId, role, userId } = await requireOrgContext();
 
     if (data.contentType === "report" || data.contentType === "report_pdf") {
-      if (!data.clientId) throw new Error("Relatório exige um cliente.");
+      if (data.reportClientIds.length === 0) throw new Error("Relatório exige pelo menos um cliente.");
       if (![7, 15, 30].includes(data.reportPeriodDays)) throw new Error("Período do relatório inválido.");
+      const acessiveis = await db
+        .select({ id: clients.id })
+        .from(clients)
+        .where(and(eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })));
+      const okIds = new Set(acessiveis.map((c) => c.id));
+      if (data.reportClientIds.some((id) => !okIds.has(id))) throw new Error("Cliente do relatório não encontrado ou sem acesso.");
     } else if (data.contentType === "group_summary") {
       if (!data.summaryTurno) throw new Error("Escolha o turno (manhã ou tarde).");
       if (data.summaryClientIds.length === 0) throw new Error("Selecione ao menos um cliente pro resumo.");
@@ -188,9 +209,10 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
       name: data.name,
       contentType: data.contentType,
       body: data.contentType === "text" || data.contentType === "report" || data.contentType === "report_pdf" ? (data.body?.trim() || null) : null,
-      clientId: data.clientId ?? null,
+      clientId: data.contentType === "text" ? (data.clientId ?? null) : null,
       reportPeriodDays: data.reportPeriodDays,
       reportTemplateId: data.contentType === "report" ? (data.reportTemplateId ?? null) : null,
+      reportClientIds: data.contentType === "report" || data.contentType === "report_pdf" ? data.reportClientIds : [],
       summaryTurno: data.contentType === "group_summary" ? (data.summaryTurno ?? null) : null,
       summaryClientIds: data.contentType === "group_summary" ? data.summaryClientIds : [],
       recurrenceType: data.recurrenceType,

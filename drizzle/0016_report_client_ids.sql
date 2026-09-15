@@ -1,0 +1,1 @@
+ALTER TABLE "message_automations" ADD COLUMN "report_client_ids" uuid[] DEFAULT '{}' NOT NULL;

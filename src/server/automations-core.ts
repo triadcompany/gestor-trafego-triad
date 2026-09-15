@@ -249,13 +249,121 @@ export interface MaterializeResult {
 // regra. created=false (+ warnings) quando não dá pra montar — o chamador então
 // NÃO seta last_run_at, pra retentar no próximo tick.
 export async function materializeAutomation(ruleId: string): Promise<MaterializeResult> {
-  const warnings: string[] = [];
-
   const rule = await db.query.messageAutomations.findFirst({
     where: eq(messageAutomations.id, ruleId),
     with: { destinations: true, media: { columns: { base64: true, mimetype: true, filename: true, sortOrder: true } } },
   });
   if (!rule) return { created: false, warnings: [`Regra ${ruleId} não encontrada.`] };
+
+  // Relatório (texto ou PDF) pode ter vários clientes-alvo: cada um gera seu
+  // próprio texto/arquivo e sua própria mensagem, endereçada ao grupo daquele
+  // cliente (destinos avulsos configurados na regra valem pra todos).
+  if (rule.contentType === "report" || rule.contentType === "report_pdf") {
+    const targetIds = rule.reportClientIds.length > 0 ? rule.reportClientIds : rule.clientId ? [rule.clientId] : [];
+    if (targetIds.length === 0) {
+      return { created: false, warnings: [`Regra "${rule.name}": nenhum cliente selecionado.`] };
+    }
+
+    const materializeForClient = async (clientId: string): Promise<MaterializeResult> => {
+      const client = await db.query.clients.findFirst({
+        where: eq(clients.id, clientId),
+        columns: { id: true, name: true, metaAdAccountId: true, whatsappGroupId: true, cplMax: true },
+      });
+      if (!client) return { created: false, warnings: [`Regra "${rule.name}": cliente ${clientId} não encontrado.`] };
+
+      const instance = await pickWhatsappInstance({ organizationId: rule.organizationId, clientId: client.id, explicitInstanceId: rule.whatsappInstanceId });
+      if (!instance) return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): nenhuma instância de WhatsApp ativa.`] };
+
+      const tokenRow = await pickMetaTokenRow({ organizationId: rule.organizationId, clientId: client.id });
+      if (!tokenRow) return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): nenhum token Meta ativo.`] };
+      if (tokenRow.expiresAt && new Date(tokenRow.expiresAt) < new Date()) {
+        return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): token Meta expirado.`] };
+      }
+
+      let text: string;
+      const extraMedia: Array<{ base64: string; mimetype: string; filename: string }> = [];
+
+      if (rule.contentType === "report_pdf") {
+        try {
+          const until = new Date().toISOString().slice(0, 10);
+          const since = new Date(Date.now() - rule.reportPeriodDays * 86400000).toISOString().slice(0, 10);
+          const campaigns = await fetchCampaigns(client.metaAdAccountId, tokenRow.accessToken, "today", { since, until });
+          const org = await db.query.organizations.findFirst({ where: eq(organizations.id, rule.organizationId), columns: { name: true } });
+          const doc = buildClientReportDoc({
+            clientName: client.name,
+            organizationName: org?.name ?? "Gestão de Tráfego",
+            since,
+            until,
+            cplMax: client.cplMax,
+            campaigns,
+          });
+          const base64 = Buffer.from(doc.output("arraybuffer")).toString("base64");
+          extraMedia.push({
+            base64,
+            mimetype: "application/pdf",
+            filename: `relatorio-${slugifyName(client.name)}-${since}_a_${until}.pdf`,
+          });
+          text = rule.body?.trim() || `📊 Relatório de campanhas — últimos ${rule.reportPeriodDays} dias`;
+        } catch (e) {
+          return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): falha ao gerar o PDF — ${e instanceof Error ? e.message : String(e)}`] };
+        }
+      } else {
+        try {
+          let templateBody: string | null = null;
+          if (rule.reportTemplateId) {
+            const tpl = await db.query.reportTemplates.findFirst({ where: eq(reportTemplates.id, rule.reportTemplateId), columns: { body: true } });
+            templateBody = tpl?.body ?? null;
+          } else if (rule.body) {
+            templateBody = rule.body;
+          }
+          text = await buildMetricsReportText({ metaAdAccountId: client.metaAdAccountId, name: client.name }, rule.reportPeriodDays, tokenRow.accessToken, templateBody);
+        } catch (e) {
+          return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): falha ao gerar relatório — ${e instanceof Error ? e.message : String(e)}`] };
+        }
+      }
+
+      const warnings: string[] = [];
+      const recipients: { remoteJid: string; name: string }[] = [];
+      for (const dest of rule.destinations) {
+        if (dest.kind === "client_group") {
+          if (client.whatsappGroupId) {
+            recipients.push({ remoteJid: client.whatsappGroupId, name: dest.name || "Grupo do cliente" });
+          } else {
+            warnings.push(`Regra "${rule.name}" (${client.name}): destino "grupo do cliente" pulado — sem grupo configurado.`);
+          }
+        } else if (dest.remoteJid) {
+          recipients.push({ remoteJid: dest.remoteJid, name: dest.name });
+        }
+      }
+      if (recipients.length === 0) {
+        warnings.push(`Regra "${rule.name}" (${client.name}): nenhum destino resolvível — nada enviado.`);
+        return { created: false, warnings };
+      }
+
+      await db.transaction(async (tx) => {
+        const [msg] = await tx
+          .insert(scheduledMessages)
+          .values({ organizationId: rule.organizationId, whatsappInstanceId: instance.instanceId, body: text, scheduledAt: new Date().toISOString(), status: "pending" })
+          .returning();
+        await tx.insert(scheduledMessageRecipients).values(
+          recipients.map((r) => ({ messageId: msg.id, remoteJid: r.remoteJid, name: r.name, status: "pending" as const }))
+        );
+        if (extraMedia.length > 0) {
+          await tx.insert(scheduledMessageMedia).values(
+            extraMedia.map((m, i) => ({ messageId: msg.id, base64: m.base64, mimetype: m.mimetype, filename: m.filename, sortOrder: i }))
+          );
+        }
+      });
+
+      return { created: true, warnings };
+    };
+
+    const results = await Promise.all(targetIds.map(materializeForClient));
+    return {
+      created: results.some((r) => r.created),
+      warnings: results.flatMap((r) => r.warnings),
+    };
+  }
 
   const client = rule.clientId
     ? await db.query.clients.findFirst({
@@ -264,7 +372,8 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
       })
     : null;
 
-  // 1. Instância (necessária já pra ler mensagens no caso do resumo de grupo)
+  const warnings: string[] = [];
+
   const instance = await pickWhatsappInstance({
     organizationId: rule.organizationId,
     clientId: rule.clientId,
@@ -272,62 +381,8 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
   });
   if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp ativa na organização.`] };
 
-  // 2. Texto (+ mídia extra gerada na hora, ex.: PDF do relatório)
   let text: string;
-  const extraMedia: Array<{ base64: string; mimetype: string; filename: string }> = [];
-  if (rule.contentType === "report_pdf") {
-    if (!client) return { created: false, warnings: [`Regra "${rule.name}": cliente não encontrado.`] };
-    const tokenRow = await pickMetaTokenRow({ organizationId: rule.organizationId, clientId: client.id });
-    if (!tokenRow) return { created: false, warnings: [`Regra "${rule.name}": nenhum token Meta ativo pra esse cliente.`] };
-    if (tokenRow.expiresAt && new Date(tokenRow.expiresAt) < new Date()) {
-      return { created: false, warnings: [`Regra "${rule.name}": token Meta expirado.`] };
-    }
-    try {
-      const until = new Date().toISOString().slice(0, 10);
-      const since = new Date(Date.now() - rule.reportPeriodDays * 86400000).toISOString().slice(0, 10);
-      const campaigns = await fetchCampaigns(client.metaAdAccountId, tokenRow.accessToken, "today", { since, until });
-      const org = await db.query.organizations.findFirst({ where: eq(organizations.id, rule.organizationId), columns: { name: true } });
-      const doc = buildClientReportDoc({
-        clientName: client.name,
-        organizationName: org?.name ?? "Gestão de Tráfego",
-        since,
-        until,
-        cplMax: client.cplMax,
-        campaigns,
-      });
-      const base64 = Buffer.from(doc.output("arraybuffer")).toString("base64");
-      extraMedia.push({
-        base64,
-        mimetype: "application/pdf",
-        filename: `relatorio-${slugifyName(client.name)}-${since}_a_${until}.pdf`,
-      });
-      text = rule.body?.trim() || `📊 Relatório de campanhas — últimos ${rule.reportPeriodDays} dias`;
-    } catch (e) {
-      return { created: false, warnings: [`Regra "${rule.name}": falha ao gerar o PDF — ${e instanceof Error ? e.message : String(e)}`] };
-    }
-  } else if (rule.contentType === "report") {
-    if (!client) return { created: false, warnings: [`Regra "${rule.name}": cliente não encontrado.`] };
-    const tokenRow = await pickMetaTokenRow({ organizationId: rule.organizationId, clientId: client.id });
-    if (!tokenRow) return { created: false, warnings: [`Regra "${rule.name}": nenhum token Meta ativo pra esse cliente.`] };
-    if (tokenRow.expiresAt && new Date(tokenRow.expiresAt) < new Date()) {
-      return { created: false, warnings: [`Regra "${rule.name}": token Meta expirado.`] };
-    }
-    try {
-      let templateBody: string | null = null;
-      if (rule.reportTemplateId) {
-        const tpl = await db.query.reportTemplates.findFirst({
-          where: eq(reportTemplates.id, rule.reportTemplateId),
-          columns: { body: true },
-        });
-        templateBody = tpl?.body ?? null;
-      } else if (rule.body) {
-        templateBody = rule.body;
-      }
-      text = await buildMetricsReportText({ metaAdAccountId: client.metaAdAccountId, name: client.name }, rule.reportPeriodDays, tokenRow.accessToken, templateBody);
-    } catch (e) {
-      return { created: false, warnings: [`Regra "${rule.name}": falha ao gerar relatório — ${e instanceof Error ? e.message : String(e)}`] };
-    }
-  } else if (rule.contentType === "group_summary") {
+  if (rule.contentType === "group_summary") {
     if (rule.summaryClientIds.length === 0) {
       return { created: false, warnings: [`Regra "${rule.name}": nenhum cliente selecionado pro resumo.`] };
     }
@@ -343,7 +398,7 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
     }
   }
 
-  // 3. Destinos
+  // Destinos
   const recipients: { remoteJid: string; name: string }[] = [];
   for (const dest of rule.destinations) {
     if (dest.kind === "client_group") {
@@ -361,7 +416,7 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
     return { created: false, warnings };
   }
 
-  // 4. Cria a mensagem agendada + destinatários + cópias de mídia
+  // Cria a mensagem agendada + destinatários + cópias de mídia
   await db.transaction(async (tx) => {
     const [msg] = await tx
       .insert(scheduledMessages)
@@ -376,13 +431,9 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
     await tx.insert(scheduledMessageRecipients).values(
       recipients.map((r) => ({ messageId: msg.id, remoteJid: r.remoteJid, name: r.name, status: "pending" as const }))
     );
-    const mediaToInsert = [
-      ...[...rule.media].sort((a, b) => a.sortOrder - b.sortOrder).map((m) => ({ base64: m.base64, mimetype: m.mimetype, filename: m.filename })),
-      ...extraMedia,
-    ];
-    if (mediaToInsert.length > 0) {
+    if (rule.media.length > 0) {
       await tx.insert(scheduledMessageMedia).values(
-        mediaToInsert.map((m, i) => ({ messageId: msg.id, base64: m.base64, mimetype: m.mimetype, filename: m.filename, sortOrder: i }))
+        [...rule.media].sort((a, b) => a.sortOrder - b.sortOrder).map((m, i) => ({ messageId: msg.id, base64: m.base64, mimetype: m.mimetype, filename: m.filename, sortOrder: i }))
       );
     }
   });
