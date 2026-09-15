@@ -16,7 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, X, Check, Search, Loader2, Users } from "lucide-react";
+import { Plus, X, Check, Search, Loader2, Users, Building2, Target, UserCog, Wallet, Tag as TagIcon } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
 import { fetchTags, createTag, upsertClient, type ClientRow, type TagRow } from "@/lib/queries";
 import { getCurrentUser } from "@/server/session";
 import { fetchOrgMembers } from "@/server/team";
@@ -28,6 +29,28 @@ const segmentDefaults = {
   popular: { cpl_min: 6, cpl_max: 12 },
   premium: { cpl_min: 12, cpl_max: 25 },
 };
+
+function FormSection({
+  title,
+  icon: Icon,
+  first,
+  children,
+}: {
+  title: string;
+  icon: typeof Users;
+  first?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className={first ? "space-y-3" : "space-y-3 border-t border-border pt-5"}>
+      <div className="flex items-center gap-1.5">
+        <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h3>
+      </div>
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
 
 export function ClientFormDialog({
   client,
@@ -120,246 +143,254 @@ export function ClientFormDialog({
   };
 
   return (
-    <DialogContent>
-      <DialogHeader>
+    <DialogContent className="flex max-h-[85vh] max-w-2xl flex-col gap-0 overflow-hidden p-0">
+      <DialogHeader className="shrink-0 border-b border-border px-6 py-4">
         <DialogTitle>{client ? "Editar cliente" : "Novo cliente"}</DialogTitle>
       </DialogHeader>
-      <form onSubmit={handleSubmit} className="space-y-4 py-2">
-        <div className="space-y-1">
-          <Label>Nome</Label>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Auto Center Silva"
-            required
-          />
-        </div>
-        <div className="space-y-1">
-          <Label>ID da conta de anúncio (act_...)</Label>
-          <Input
-            value={adAccountId}
-            onChange={(e) => setAdAccountId(e.target.value)}
-            placeholder="act_1234567890"
-            required
-          />
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label>ID da Página do Facebook</Label>
-            <Input
-              value={pageId}
-              onChange={(e) => setPageId(e.target.value)}
-              placeholder="123456789012345"
-            />
-          </div>
-          <div className="space-y-1">
-            <Label>WhatsApp Business (+55...)</Label>
-            <Input
-              value={whatsappNumber}
-              onChange={(e) => setWhatsappNumber(e.target.value)}
-              placeholder="+5511999999999"
-            />
-          </div>
-        </div>
-        <div className="space-y-1">
-          <Label>Segmento</Label>
-          <Select value={segment} onValueChange={handleSegmentChange}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="popular">Popular (R$6 – R$12)</SelectItem>
-              <SelectItem value="premium">Premium (R$12 – R$25)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1">
-          <Label>Cobrança Meta</Label>
-          <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as "pix" | "cartao")}>
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="pix">Pré-pago (PIX / crédito)</SelectItem>
-              <SelectItem value="cartao">Pós-pago (Cartão)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="space-y-1">
-            <Label>CPL mínimo (R$)</Label>
-            <Input
-              type="number"
-              value={cplMin}
-              onChange={(e) => setCplMin(Number(e.target.value))}
-              min={0}
-              step={0.5}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label>CPL máximo (R$)</Label>
-            <Input
-              type="number"
-              value={cplMax}
-              onChange={(e) => setCplMax(Number(e.target.value))}
-              min={0}
-              step={0.5}
-            />
-          </div>
-        </div>
 
-        <div className="space-y-1">
-          <Label>Gestor responsável</Label>
-          {isAdmin ? (
-            <Select value={ownerUserId} onValueChange={setOwnerUserId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecionar gestor" />
-              </SelectTrigger>
-              <SelectContent>
-                {orgMembers.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>{m.fullName}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : (
-            <p className="text-sm text-muted-foreground px-3 py-2 border border-input rounded-md bg-muted/40">
-              {currentUser?.fullName ?? "Você"} <span className="text-xs">(só admin pode transferir)</span>
-            </p>
-          )}
-        </div>
-
-        {(metaTokens.length > 1 || whatsappInstances.length > 1) && (
-          <div className="grid grid-cols-2 gap-3">
-            {metaTokens.length > 1 && (
+      <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+        <div className="flex-1 space-y-5 overflow-y-auto px-6 py-5">
+          <FormSection title="Identificação" icon={Building2} first>
+            <div className="space-y-1">
+              <Label>Nome</Label>
+              <Input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="Auto Center Silva"
+                required
+              />
+            </div>
+            <div className="space-y-1">
+              <Label>ID da conta de anúncio (act_...)</Label>
+              <Input
+                value={adAccountId}
+                onChange={(e) => setAdAccountId(e.target.value)}
+                placeholder="act_1234567890"
+                required
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>Token Meta</Label>
-                <Select value={metaTokenId ?? ""} onValueChange={setMetaTokenId}>
+                <Label>ID da Página do Facebook</Label>
+                <Input
+                  value={pageId}
+                  onChange={(e) => setPageId(e.target.value)}
+                  placeholder="123456789012345"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>WhatsApp Business (+55...)</Label>
+                <Input
+                  value={whatsappNumber}
+                  onChange={(e) => setWhatsappNumber(e.target.value)}
+                  placeholder="+5511999999999"
+                />
+              </div>
+            </div>
+          </FormSection>
+
+          <FormSection title="Segmento e meta de CPL" icon={Target}>
+            <div className="space-y-1">
+              <Label>Segmento</Label>
+              <Select value={segment} onValueChange={handleSegmentChange}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="popular">Popular (R$6 – R$12)</SelectItem>
+                  <SelectItem value="premium">Premium (R$12 – R$25)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>CPL mínimo (R$)</Label>
+                <Input
+                  type="number"
+                  value={cplMin}
+                  onChange={(e) => setCplMin(Number(e.target.value))}
+                  min={0}
+                  step={0.5}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>CPL máximo (R$)</Label>
+                <Input
+                  type="number"
+                  value={cplMax}
+                  onChange={(e) => setCplMax(Number(e.target.value))}
+                  min={0}
+                  step={0.5}
+                />
+              </div>
+            </div>
+          </FormSection>
+
+          <FormSection title="Responsável e acesso" icon={UserCog}>
+            <div className="space-y-1">
+              <Label>Gestor responsável</Label>
+              {isAdmin ? (
+                <Select value={ownerUserId} onValueChange={setOwnerUserId}>
                   <SelectTrigger>
-                    <SelectValue placeholder="Selecionar token" />
+                    <SelectValue placeholder="Selecionar gestor" />
                   </SelectTrigger>
                   <SelectContent>
-                    {metaTokens.map((t) => (
-                      <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>
+                    {orgMembers.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>{m.fullName}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
-              </div>
-            )}
-            {whatsappInstances.length > 1 && (
-              <div className="space-y-1">
-                <Label>Instância WhatsApp</Label>
-                <Select value={whatsappInstanceId ?? ""} onValueChange={setWhatsappInstanceId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecionar instância" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {whatsappInstances.map((i) => (
-                      <SelectItem key={i.id} value={i.id}>{i.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
-        )}
-        <div className="space-y-1">
-          <Label>Orçamento mensal (R$)</Label>
-          <Input
-            type="number"
-            min={0}
-            step={50}
-            value={monthlyBudget}
-            onChange={(e) => setMonthlyBudget(e.target.value)}
-            placeholder="Ex: 2000"
-          />
-        </div>
-
-        <div className="space-y-1">
-          <Label>Grupo do WhatsApp (resumo diário)</Label>
-          <WhatsappGroupPicker value={whatsappGroup} onChange={setWhatsappGroup} />
-        </div>
-
-        {/* Tags */}
-        <div className="space-y-2">
-          <Label>Tags</Label>
-          <TagSelector
-            allTags={allTags}
-            selectedIds={selectedTagIds}
-            onChange={setSelectedTagIds}
-            onCreateTag={(name, color) => createTagMutation.mutate({ name, color })}
-            creating={createTagMutation.isPending}
-          />
-        </div>
-
-        {/* PIX */}
-        <div className="space-y-3 rounded-lg border border-border p-3">
-          <div className="flex items-center justify-between">
-            <Label className="text-sm font-medium">Cobrança PIX (honorários)</Label>
-            <button
-              type="button"
-              onClick={() => setPixActive((v) => !v)}
-              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors ${pixActive ? "bg-primary" : "bg-muted"}`}
-            >
-              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-lg transition-transform ${pixActive ? "translate-x-4" : "translate-x-0"}`} />
-            </button>
-          </div>
-
-          {pixActive && (
-            <>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Ciclo</Label>
-                  <Select value={pixCycle} onValueChange={(v) => { setPixCycle(v as typeof pixCycle); setPixRefDay("1"); }}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="mensal">Mensal</SelectItem>
-                      <SelectItem value="quinzenal">Quinzenal</SelectItem>
-                      <SelectItem value="semanal">Semanal</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">
-                    {pixCycle === "semanal" ? "Dia da semana" : pixCycle === "quinzenal" ? "Dia ref. (e +15)" : "Dia do mês"}
-                  </Label>
-                  {pixCycle === "semanal" ? (
-                    <Select value={pixRefDay} onValueChange={setPixRefDay}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {["Segunda","Terça","Quarta","Quinta","Sexta","Sábado","Domingo"].map((d, i) => (
-                          <SelectItem key={i + 1} value={String(i + 1)}>{d}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Select value={pixRefDay} onValueChange={setPixRefDay}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        {Array.from({ length: pixCycle === "quinzenal" ? 16 : 28 }, (_, i) => i + 1).map((d) => (
-                          <SelectItem key={d} value={String(d)}>
-                            {pixCycle === "quinzenal" ? `${d} e ${d + 15}` : `Dia ${d}`}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                </div>
-              </div>
-              {monthlyBudget && (
-                <p className="text-xs text-muted-foreground">
-                  Parcela:{" "}
-                  <strong className="text-foreground">
-                    {(Number(monthlyBudget) / (pixCycle === "semanal" ? 4 : pixCycle === "quinzenal" ? 2 : 1)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
-                  </strong>
+              ) : (
+                <p className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                  {currentUser?.fullName ?? "Você"} <span className="text-xs">(só admin pode transferir)</span>
                 </p>
               )}
-            </>
-          )}
+            </div>
+
+            {(metaTokens.length > 1 || whatsappInstances.length > 1) && (
+              <div className="grid grid-cols-2 gap-3">
+                {metaTokens.length > 1 && (
+                  <div className="space-y-1">
+                    <Label>Token Meta</Label>
+                    <Select value={metaTokenId ?? ""} onValueChange={setMetaTokenId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecionar token" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {metaTokens.map((t) => (
+                          <SelectItem key={t.id} value={t.id}>{t.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {whatsappInstances.length > 1 && (
+                  <div className="space-y-1">
+                    <Label>Instância WhatsApp</Label>
+                    <Select value={whatsappInstanceId ?? ""} onValueChange={setWhatsappInstanceId}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecionar instância" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {whatsappInstances.map((i) => (
+                          <SelectItem key={i.id} value={i.id}>{i.label}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+              </div>
+            )}
+          </FormSection>
+
+          <FormSection title="Cobrança" icon={Wallet}>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Cobrança Meta</Label>
+                <Select value={paymentMethod} onValueChange={(v) => setPaymentMethod(v as "pix" | "cartao")}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pix">Pré-pago (PIX / crédito)</SelectItem>
+                    <SelectItem value="cartao">Pós-pago (Cartão)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label>Orçamento mensal (R$)</Label>
+                <Input
+                  type="number"
+                  min={0}
+                  step={50}
+                  value={monthlyBudget}
+                  onChange={(e) => setMonthlyBudget(e.target.value)}
+                  placeholder="Ex: 2000"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-3 rounded-lg border border-border p-3">
+              <div className="flex items-center justify-between">
+                <Label className="text-sm font-medium">Cobrança PIX (honorários)</Label>
+                <Switch checked={pixActive} onCheckedChange={setPixActive} />
+              </div>
+
+              {pixActive && (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Ciclo</Label>
+                      <Select value={pixCycle} onValueChange={(v) => { setPixCycle(v as typeof pixCycle); setPixRefDay("1"); }}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="mensal">Mensal</SelectItem>
+                          <SelectItem value="quinzenal">Quinzenal</SelectItem>
+                          <SelectItem value="semanal">Semanal</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">
+                        {pixCycle === "semanal" ? "Dia da semana" : pixCycle === "quinzenal" ? "Dia ref. (e +15)" : "Dia do mês"}
+                      </Label>
+                      {pixCycle === "semanal" ? (
+                        <Select value={pixRefDay} onValueChange={setPixRefDay}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {["Segunda","Terça","Quarta","Quinta","Sexta","Sábado","Domingo"].map((d, i) => (
+                              <SelectItem key={i + 1} value={String(i + 1)}>{d}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      ) : (
+                        <Select value={pixRefDay} onValueChange={setPixRefDay}>
+                          <SelectTrigger><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: pixCycle === "quinzenal" ? 16 : 28 }, (_, i) => i + 1).map((d) => (
+                              <SelectItem key={d} value={String(d)}>
+                                {pixCycle === "quinzenal" ? `${d} e ${d + 15}` : `Dia ${d}`}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      )}
+                    </div>
+                  </div>
+                  {monthlyBudget && (
+                    <p className="text-xs text-muted-foreground">
+                      Parcela:{" "}
+                      <strong className="text-foreground">
+                        {(Number(monthlyBudget) / (pixCycle === "semanal" ? 4 : pixCycle === "quinzenal" ? 2 : 1)).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}
+                      </strong>
+                    </p>
+                  )}
+                </>
+              )}
+            </div>
+          </FormSection>
+
+          <FormSection title="WhatsApp e organização" icon={TagIcon}>
+            <div className="space-y-1">
+              <Label>Grupo do WhatsApp (resumo diário)</Label>
+              <WhatsappGroupPicker value={whatsappGroup} onChange={setWhatsappGroup} />
+            </div>
+            <div className="space-y-2">
+              <Label>Tags</Label>
+              <TagSelector
+                allTags={allTags}
+                selectedIds={selectedTagIds}
+                onChange={setSelectedTagIds}
+                onCreateTag={(name, color) => createTagMutation.mutate({ name, color })}
+                creating={createTagMutation.isPending}
+              />
+            </div>
+          </FormSection>
         </div>
 
-        <DialogFooter>
+        <DialogFooter className="shrink-0 border-t border-border px-6 py-4">
           <Button type="submit" disabled={saving}>
             {saving ? "Salvando..." : "Salvar"}
           </Button>
