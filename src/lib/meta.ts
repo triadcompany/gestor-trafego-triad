@@ -967,6 +967,38 @@ export async function fetchAdSetWhatsappNumber(adSetId: string, token: string): 
   return fetchWhatsappNumberFromAdSet(adSetId, token);
 }
 
+/** Troca o número de WhatsApp que recebe os leads de um conjunto (destino do click-to-WhatsApp). */
+export async function updateAdSetWhatsappNumber(adSetId: string, newNumber: string, token: string): Promise<void> {
+  const digits = newNumber.replace(/\D/g, "");
+  if (!digits) throw new Error("Número de WhatsApp inválido.");
+  const params = new URLSearchParams({ fields: "promoted_object", access_token: token });
+  const res = await fetch(`${BASE_URL}/${adSetId}?${params}`);
+  const json = await res.json() as { promoted_object?: { page_id?: string }; error?: { message: string } };
+  if (json.error) throw new Error(json.error.message);
+  const pageId = json.promoted_object?.page_id;
+  if (!pageId) throw new Error("Não foi possível identificar a página deste conjunto — troca de número não suportada aqui.");
+  await updateMetaObject(adSetId, { promoted_object: JSON.stringify({ page_id: pageId, whatsapp_phone_number: digits }) }, token);
+}
+
+/** Troca o número de WhatsApp em todos os conjuntos de uma campanha de uma vez. */
+export async function bulkUpdateCampaignWhatsappNumber(
+  campaignId: string,
+  newNumber: string,
+  token: string
+): Promise<{ succeeded: number; failed: Array<{ name: string; error: string }> }> {
+  const adSets = await fetchAdSets(campaignId, token);
+  const settled = await mapWithConcurrency(adSets, 3, async (adSet) => {
+    await updateAdSetWhatsappNumber(adSet.id, newNumber, token);
+  });
+  const failed: Array<{ name: string; error: string }> = [];
+  settled.forEach((r, i) => {
+    if (r.status === "rejected") {
+      failed.push({ name: adSets[i].name, error: r.reason instanceof Error ? r.reason.message : String(r.reason) });
+    }
+  });
+  return { succeeded: settled.length - failed.length, failed };
+}
+
 export async function updateAdSetTargeting(adSetId: string, targeting: MetaTargeting, token: string): Promise<void> {
   await updateMetaObject(adSetId, { targeting: JSON.stringify(targeting) }, token);
 }
@@ -1205,7 +1237,8 @@ export async function updateAdCreative(
   updates: { body?: string; title?: string; description?: string },
   token: string,
   clientWhatsappNumber?: string, // from client record — most reliable source
-  conversationOverrides?: { whatsappGreeting?: string; whatsappMessage?: string }
+  conversationOverrides?: { whatsappGreeting?: string; whatsappMessage?: string },
+  newWhatsappNumber?: string // troca explícita do número que recebe os leads deste anúncio
 ): Promise<void> {
   // NOTA: não tentar PATCH direto em creative.id — a Meta aceita o POST e responde sucesso
   // mesmo sem aplicar nada (criativos já usados em anúncio são efetivamente imutáveis pra
@@ -1217,6 +1250,7 @@ export async function updateAdCreative(
   const pageWelcomeMessage = conversationOverrides?.whatsappGreeting
     ? buildWelcomeMessage(conversationOverrides.whatsappGreeting, conversationOverrides.whatsappMessage || conversationOverrides.whatsappGreeting)
     : undefined;
+  const overrideWa = newWhatsappNumber ? newWhatsappNumber.replace(/\D/g, "") : undefined;
 
   // Try via object_story_spec — only if we have the required media reference
   const spec = creative.object_story_spec;
@@ -1226,6 +1260,10 @@ export async function updateAdCreative(
 
   if (specPageId && (hasValidVideoData || hasValidLinkData)) {
     const baseSpec = { ...spec, page_id: specPageId };
+    const existingCta = spec?.video_data?.call_to_action ?? spec?.link_data?.call_to_action;
+    const cta = overrideWa
+      ? { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: overrideWa } }
+      : existingCta;
     const updatedSpec = hasValidVideoData
       ? {
           ...baseSpec,
@@ -1237,6 +1275,7 @@ export async function updateAdCreative(
             // Meta exige uma miniatura (image_url/image_hash) — usa a já existente se a
             // busca não trouxe uma em video_data.image_url.
             ...(!spec!.video_data?.image_url && creative.thumbnail_url ? { image_url: creative.thumbnail_url } : {}),
+            ...(cta ? { call_to_action: cta } : {}),
             ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
           },
         }
@@ -1247,6 +1286,7 @@ export async function updateAdCreative(
             ...(updates.body !== undefined ? { message: updates.body } : {}),
             ...(updates.title !== undefined ? { name: updates.title } : {}),
             ...(updates.description !== undefined ? { description: updates.description } : {}),
+            ...(cta ? { call_to_action: cta } : {}),
             ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
           },
         };
@@ -1285,7 +1325,7 @@ export async function updateAdCreative(
   const videoId = creative.video_id ?? creative.object_story_spec?.video_data?.video_id;
   const pageId2 = creative.actor_id ?? creative.object_story_spec?.page_id;
   if (videoId && pageId2) {
-    const resolvedWa = (clientWhatsappNumber ?? creative.whatsapp_number ?? "").replace(/\D/g, "");
+    const resolvedWa = (overrideWa ?? clientWhatsappNumber ?? creative.whatsapp_number ?? "").replace(/\D/g, "");
     if (!resolvedWa) throw new Error("Número WhatsApp não encontrado. Cadastre o número em Configurações do cliente.");
 
     const newCreative = (await postMeta(`${accountId}/adcreatives`, {

@@ -61,6 +61,7 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
   const [primaryText, setPrimaryText] = useState("");
   const [headline, setHeadline] = useState("");
   const [description, setDescription] = useState("");
+  const [ctaWhatsappNumber, setCtaWhatsappNumber] = useState("");
   const [dirty, setDirty] = useState(false);
 
   const [newMediaFile, setNewMediaFile] = useState<File | null>(null);
@@ -154,10 +155,11 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
 
   useEffect(() => {
     if (!creative) return;
-    const { primaryText: pt, headline: hl, description: desc } = extractFields(creative);
+    const { primaryText: pt, headline: hl, description: desc, whatsappNumber: waNum } = extractFields(creative);
     setPrimaryText(pt);
     setHeadline(hl);
     setDescription(desc);
+    setCtaWhatsappNumber(waNum || whatsappNumber || "");
     setDirty(false);
   }, [creative]);
 
@@ -209,6 +211,8 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
       const conversationOverrides = whatsappGreeting
         ? { whatsappGreeting, whatsappMessage: whatsappPreMessage }
         : undefined;
+      const { isWhatsApp: creativeIsWhatsApp } = extractFields(creative);
+      const waToUse = creativeIsWhatsApp ? (ctaWhatsappNumber || whatsappNumber) : undefined;
       if (newMediaFile) {
         const pid = "swap-progress";
         await swapAdCreativeMedia(
@@ -216,7 +220,7 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
           creative,
           newMediaFile,
           token,
-          whatsappNumber,
+          waToUse ?? whatsappNumber,
           (msg) => toast.loading(msg, { id: pid }),
           { body: primaryText, title: headline, description },
           conversationOverrides
@@ -229,7 +233,8 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
           { body: primaryText, title: headline, description },
           token,
           whatsappNumber,
-          conversationOverrides
+          conversationOverrides,
+          waToUse
         );
       }
     },
@@ -289,7 +294,7 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
     );
   }
 
-  const { isWhatsApp, whatsappNumber: creativeWhatsappNumber, whatsappMessage } = extractFields(creative);
+  const { isWhatsApp, whatsappMessage } = extractFields(creative);
   const metaAdUrl = `https://adsmanager.facebook.com/adsmanager/manage/ads?act=&selected_ad_ids=${adId}`;
 
   return (
@@ -444,12 +449,15 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
       {isWhatsApp && (
         <div className="rounded-lg border border-border bg-muted/30 p-3 space-y-2">
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Modelo de mensagem WhatsApp</p>
-          {(creativeWhatsappNumber || whatsappNumber) && (
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Número</Label>
-              <p className="text-sm font-medium">{creativeWhatsappNumber || whatsappNumber}</p>
-            </div>
-          )}
+          <div className="space-y-1">
+            <Label className="text-xs text-muted-foreground">Número que recebe os leads</Label>
+            <Input
+              value={ctaWhatsappNumber}
+              onChange={(e) => { setCtaWhatsappNumber(e.target.value); mark(); }}
+              placeholder="+55 11 91234-5678"
+              className="h-8 text-sm"
+            />
+          </div>
           {whatsappMessage ? (
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Mensagem pré-preenchida</Label>

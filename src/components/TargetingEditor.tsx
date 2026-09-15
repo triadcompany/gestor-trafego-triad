@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -7,12 +7,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
-import { X, Search, Loader2, MessageCircle, MapPin } from "lucide-react";
+import { X, Search, Loader2, MessageCircle, MapPin, Pencil, Check } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchAdSetTargeting,
   updateAdSetTargeting,
   fetchAdSetWhatsappNumber,
+  updateAdSetWhatsappNumber,
   searchMetaInterests,
   searchMetaLocations,
   type MetaTargeting,
@@ -57,6 +58,9 @@ interface TargetingEditorProps {
 }
 
 export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
+  const queryClient = useQueryClient();
+  const [editingWa, setEditingWa] = useState(false);
+  const [waInput, setWaInput] = useState("");
   const [ageMin, setAgeMin] = useState(18);
   const [ageMax, setAgeMax] = useState(65);
   const [genderMode, setGenderMode] = useState<"all" | "male" | "female">("all");
@@ -79,6 +83,16 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
   const { data: whatsappNumber, isLoading: whatsappLoading, error: whatsappError } = useQuery({
     queryKey: ["adset-whatsapp", adSetId],
     queryFn: () => fetchAdSetWhatsappNumber(adSetId, token),
+  });
+
+  const waMutation = useMutation({
+    mutationFn: async () => updateAdSetWhatsappNumber(adSetId, waInput, token),
+    onSuccess: () => {
+      toast.success("Número de WhatsApp atualizado.");
+      setEditingWa(false);
+      queryClient.invalidateQueries({ queryKey: ["adset-whatsapp", adSetId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
   });
 
   useEffect(() => {
@@ -179,18 +193,47 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
       <FieldSection title="WhatsApp">
         {whatsappLoading ? (
           <Skeleton className="h-6 w-40" />
+        ) : editingWa ? (
+          <div className="flex items-center gap-2">
+            <MessageCircle className="h-4 w-4 text-muted-foreground shrink-0" />
+            <Input
+              value={waInput}
+              onChange={(e) => setWaInput(e.target.value)}
+              placeholder="+55 11 91234-5678"
+              className="h-8 text-sm flex-1"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") waMutation.mutate();
+                if (e.key === "Escape") setEditingWa(false);
+              }}
+            />
+            <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => waMutation.mutate()} disabled={waMutation.isPending}>
+              <Check className="h-3.5 w-3.5" />
+            </Button>
+            <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => setEditingWa(false)}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
         ) : (
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-sm group">
             <MessageCircle className="h-4 w-4 text-muted-foreground shrink-0" />
             {whatsappNumber ? (
-              <span className="font-medium tabular-nums">{formatWhatsappNumber(whatsappNumber)}</span>
+              <span className="font-medium tabular-nums flex-1">{formatWhatsappNumber(whatsappNumber)}</span>
             ) : whatsappError ? (
-              <span className="text-destructive">
+              <span className="text-destructive flex-1">
                 Erro ao buscar: {whatsappError instanceof Error ? whatsappError.message : "erro desconhecido"}
               </span>
             ) : (
-              <span className="text-muted-foreground">Não configurado</span>
+              <span className="text-muted-foreground flex-1">Não configurado</span>
             )}
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+              onClick={() => { setWaInput(whatsappNumber ?? ""); setEditingWa(true); }}
+            >
+              <Pencil className="h-3 w-3" />
+            </Button>
           </div>
         )}
       </FieldSection>
