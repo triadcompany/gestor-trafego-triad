@@ -28,6 +28,8 @@ import {
   X,
   Image,
   Settings2,
+  AlertTriangle,
+  RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -298,7 +300,7 @@ function AdSetsSection({
   initialAdSetId?: string;
   initialAdId?: string;
 }) {
-  const { data: adSets, isLoading } = useQuery({
+  const { data: adSets, isLoading, isError, error, refetch, isRefetching } = useQuery({
     queryKey: ["adsets", campaignId],
     queryFn: async () => {
       const token = await getMetaToken(clientId);
@@ -312,6 +314,16 @@ function AdSetsSection({
       <SectionLabel>Conjuntos de Anúncios</SectionLabel>
       {isLoading ? (
         <div className="space-y-2">{[1, 2].map((i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}</div>
+      ) : isError ? (
+        <div className="flex items-start gap-2 rounded-lg border border-status-critical/30 bg-status-critical/10 px-3 py-2.5">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-status-critical" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm text-status-critical">Erro ao carregar conjuntos: {error instanceof Error ? error.message : "erro desconhecido"}</p>
+            <Button size="sm" variant="outline" className="mt-2 h-7 text-xs gap-1.5" onClick={() => refetch()} disabled={isRefetching}>
+              <RefreshCw className={`h-3 w-3 ${isRefetching ? "animate-spin" : ""}`} /> Tentar de novo
+            </Button>
+          </div>
+        </div>
       ) : !adSets || adSets.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nenhum conjunto encontrado.</p>
       ) : (
@@ -377,7 +389,7 @@ function AdSetRow({
     setExpanded(!expanded);
   };
 
-  const { data: ads, isLoading: adsLoading } = useQuery({
+  const { data: ads, isLoading: adsLoading, isError: adsError, error: adsErrorObj, refetch: refetchAds, isRefetching: adsRefetching } = useQuery({
     queryKey: ["ads", adSet.id],
     queryFn: async () => {
       const t = token ?? await getMetaToken(clientId);
@@ -493,6 +505,16 @@ function AdSetRow({
             <TabsContent value="ads" className="m-0 p-3 space-y-1.5 bg-muted/10">
               {adsLoading ? (
                 <div className="space-y-1.5">{[1, 2].map((i) => <Skeleton key={i} className="h-9 w-full rounded-md" />)}</div>
+              ) : adsError ? (
+                <div className="flex items-start gap-2 rounded-md border border-status-critical/30 bg-status-critical/10 px-2.5 py-2">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-status-critical" />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs text-status-critical">Erro ao carregar anúncios: {adsErrorObj instanceof Error ? adsErrorObj.message : "erro desconhecido"}</p>
+                    <Button size="sm" variant="outline" className="mt-1.5 h-6 text-[11px] gap-1" onClick={() => refetchAds()} disabled={adsRefetching}>
+                      <RefreshCw className={`h-3 w-3 ${adsRefetching ? "animate-spin" : ""}`} /> Tentar de novo
+                    </Button>
+                  </div>
+                </div>
               ) : !ads || ads.length === 0 ? (
                 <p className="text-xs text-muted-foreground py-1">Nenhum anúncio encontrado.</p>
               ) : (

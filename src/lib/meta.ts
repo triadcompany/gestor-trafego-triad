@@ -1379,12 +1379,9 @@ export async function fetchAdSets(campaignId: string, token: string): Promise<Me
     limit: "50",
     access_token: token,
   });
-  const res = await fetch(`${BASE_URL}/${campaignId}/adsets?${params}`);
-  const json = await res.json() as {
+  const json = await fetchMetaJson<{
     data?: Array<{ id: string; name: string; status: string; daily_budget?: string; optimization_goal?: string }>;
-    error?: { message: string };
-  };
-  if (json.error) throw new Error(json.error.message);
+  }>(`${BASE_URL}/${campaignId}/adsets?${params}`);
   return (json.data ?? []).map((a) => ({
     id: a.id,
     name: a.name,
@@ -1400,12 +1397,9 @@ export async function fetchAds(adSetId: string, token: string): Promise<MetaAd[]
     limit: "50",
     access_token: token,
   });
-  const res = await fetch(`${BASE_URL}/${adSetId}/ads?${params}`);
-  const json = await res.json() as {
+  const json = await fetchMetaJson<{
     data?: Array<{ id: string; name: string; status: string; creative?: { thumbnail_url?: string } }>;
-    error?: { message: string };
-  };
-  if (json.error) throw new Error(json.error.message);
+  }>(`${BASE_URL}/${adSetId}/ads?${params}`);
   return (json.data ?? []).map((a) => ({
     id: a.id,
     name: a.name,
