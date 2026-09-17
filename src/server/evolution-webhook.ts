@@ -82,12 +82,22 @@ function extractMessageEnvelope(data: unknown): { fromMe: boolean; remoteJid: st
 
 function extractReferral(raw: JsonRecord): { ctwaClid: string; sourceId: string | null } | null {
   const message = asRecord(raw.message);
+  const rawContextInfo = asRecord(raw.contextInfo);
+  const extendedText = message ? asRecord(message.extendedTextMessage) : null;
+  const extendedContextInfo = extendedText ? asRecord(extendedText.contextInfo) : null;
+  const messageContextInfo = message ? asRecord(message.contextInfo) : null;
+  // "externalAdReply" é o nome real do campo no Baileys/Evolution API (confirmado
+  // no patch aplicado no servidor); "externalAdReplyInfo" é mantido como
+  // fallback caso alguma versão futura da Evolution API mude o nome do campo.
   const candidates: Array<JsonRecord | null> = [
     asRecord(raw.referral),
     asRecord(raw.adReferral),
-    asRecord(asRecord(raw.contextInfo)?.externalAdReplyInfo),
-    message ? asRecord(asRecord(message.extendedTextMessage)?.contextInfo)?.externalAdReplyInfo as JsonRecord : null,
-    message ? asRecord(asRecord(message.contextInfo)?.externalAdReplyInfo) : null,
+    rawContextInfo ? asRecord(rawContextInfo.externalAdReply) : null,
+    rawContextInfo ? asRecord(rawContextInfo.externalAdReplyInfo) : null,
+    extendedContextInfo ? asRecord(extendedContextInfo.externalAdReply) : null,
+    extendedContextInfo ? asRecord(extendedContextInfo.externalAdReplyInfo) : null,
+    messageContextInfo ? asRecord(messageContextInfo.externalAdReply) : null,
+    messageContextInfo ? asRecord(messageContextInfo.externalAdReplyInfo) : null,
   ];
   for (const c of candidates) {
     if (!c) continue;
