@@ -174,13 +174,15 @@ function StatCard({ label, value }: { label: string; value: string }) {
 function ConvertToSaleDialog({ lead, onClose, onSuccess }: { lead: LeadAttributionRow | null; onClose: () => void; onSuccess: () => void }) {
   const [value, setValue] = useState("");
   const [obs, setObs] = useState("");
+  const [email, setEmail] = useState("");
 
   const mutation = useMutation({
-    mutationFn: () => convertLeadToSale(lead!.id, value.trim() ? Number(value) : null, obs),
+    mutationFn: () => convertLeadToSale(lead!.id, value.trim() ? Number(value) : null, obs, email),
     onSuccess: () => {
       toast.success("Venda registrada.");
       setValue("");
       setObs("");
+      setEmail("");
       onSuccess();
       onClose();
     },
@@ -200,6 +202,11 @@ function ConvertToSaleDialog({ lead, onClose, onSuccess }: { lead: LeadAttributi
           <div className="space-y-1.5">
             <Label>Valor (R$)</Label>
             <Input type="number" min={0} step={0.01} value={value} onChange={(e) => setValue(e.target.value)} placeholder="0,00" autoFocus />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Email do lead (opcional)</Label>
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="cliente@email.com" />
+            <p className="text-[11px] text-muted-foreground">Ajuda a Meta casar o evento com uma conta real — melhora a otimização (Event Match Quality).</p>
           </div>
           <div className="space-y-1.5">
             <Label>Observação (opcional)</Label>

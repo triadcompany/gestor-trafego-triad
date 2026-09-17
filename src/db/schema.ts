@@ -311,6 +311,7 @@ export const metaLeadAttributions = pgTable(
       .references(() => clients.id, { onDelete: "cascade" }),
     remoteJid: text("remote_jid").notNull(),
     contactName: text("contact_name"),
+    leadEmail: text("lead_email"),
     ctwaClid: text("ctwa_clid").notNull(),
     adId: text("ad_id").notNull(),
     adName: text("ad_name"),

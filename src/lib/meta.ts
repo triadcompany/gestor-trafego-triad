@@ -1827,7 +1827,7 @@ async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T,
   return results;
 }
 
-async function postMetaJson(endpoint: string, params: Record<string, unknown>): Promise<unknown> {
+export async function postMetaJson(endpoint: string, params: Record<string, unknown>): Promise<unknown> {
   return withRetry(async () => {
     const res = await fetch(`${BASE_URL}/${endpoint}`, {
       method: "POST",
@@ -1849,45 +1849,6 @@ async function postMetaJson(endpoint: string, params: Record<string, unknown>): 
  * anúncio via ctwa_clid. Exige um token com as permissões
  * whatsapp_business_management + whatsapp_business_manage_events.
  */
-export async function sendQualifiedLeadEvent(params: {
-  datasetId: string;
-  ctwaClid: string;
-  token: string;
-}): Promise<void> {
-  await postMetaJson(`${params.datasetId}/events?access_token=${encodeURIComponent(params.token)}`, {
-    data: [
-      {
-        event_name: "QualifiedLead",
-        event_time: Math.floor(Date.now() / 1000),
-        action_source: "business_messaging",
-        messaging_channel: "whatsapp",
-        user_data: { ctwa_clid: params.ctwaClid },
-      },
-    ],
-  });
-}
-
-/** Envia o evento de conversão "Purchase" pra Meta Conversions API, com valor da venda. */
-export async function sendPurchaseEvent(params: {
-  datasetId: string;
-  ctwaClid: string;
-  value: number | null;
-  token: string;
-}): Promise<void> {
-  await postMetaJson(`${params.datasetId}/events?access_token=${encodeURIComponent(params.token)}`, {
-    data: [
-      {
-        event_name: "Purchase",
-        event_time: Math.floor(Date.now() / 1000),
-        action_source: "business_messaging",
-        messaging_channel: "whatsapp",
-        user_data: { ctwa_clid: params.ctwaClid },
-        ...(params.value !== null ? { custom_data: { currency: "BRL", value: params.value } } : {}),
-      },
-    ],
-  });
-}
-
 async function postMeta(endpoint: string, params: Record<string, string>): Promise<unknown> {
   return withRetry(async () => {
     const body = new URLSearchParams(params);

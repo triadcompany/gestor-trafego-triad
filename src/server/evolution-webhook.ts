@@ -1,7 +1,8 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { clients, metaLeadAttributions, whatsappInstances } from "@/db/schema";
-import { fetchAdContext, sendQualifiedLeadEvent } from "@/lib/meta";
+import { fetchAdContext } from "@/lib/meta";
+import { sendQualifiedLeadEvent } from "@/server/meta-capi";
 import { pickMetaTokenRow } from "./automations-core";
 
 // Recebe os webhooks da Evolution API (não passa por sessão — a instância
@@ -202,7 +203,7 @@ async function handleLabelAssociation(
   if (!token) return;
 
   try {
-    await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: attribution.ctwaClid, token });
+    await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: attribution.ctwaClid, phoneRemoteJid: attribution.remoteJid, token });
     await db
       .update(metaLeadAttributions)
       .set({ status: "conversion_sent", conversionSentAt: new Date().toISOString() })

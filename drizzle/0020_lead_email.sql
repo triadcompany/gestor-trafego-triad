@@ -1,0 +1,1 @@
+ALTER TABLE "meta_lead_attributions" ADD COLUMN "lead_email" text;

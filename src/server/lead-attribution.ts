@@ -5,7 +5,8 @@ import { db } from "@/db/client";
 import { clients, metaLeadAttributions, sales } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 import { canAccessClient } from "@/lib/client-access";
-import { getMetaToken, sendQualifiedLeadEvent, sendPurchaseEvent } from "@/lib/meta";
+import { getMetaToken } from "@/lib/meta";
+import { sendQualifiedLeadEvent, sendPurchaseEvent } from "@/server/meta-capi";
 
 // Painel de rastreamento de leads do Meta Ads por cliente — a captura em si
 // (ctwa_clid, anúncio de origem) é gravada pelo webhook da Evolution API sem
@@ -195,7 +196,7 @@ const _markLeadQualified = createServerFn({ method: "POST" })
     if (!token) return;
 
     try {
-      await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, token });
+      await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, phoneRemoteJid: lead.remoteJid, email: lead.leadEmail ?? undefined, token });
       await db
         .update(metaLeadAttributions)
         .set({ status: "conversion_sent", conversionSentAt: new Date().toISOString() })
@@ -214,10 +215,12 @@ export async function markLeadQualified(leadId: string): Promise<void> {
 }
 
 const _convertLeadToSale = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ leadId: z.string(), value: z.number().nullable(), obs: z.string().optional() }))
+  .inputValidator(z.object({ leadId: z.string(), value: z.number().nullable(), obs: z.string().optional(), email: z.string().optional() }))
   .handler(async ({ data }) => {
     const { lead, client } = await loadLeadWithClient(data.leadId);
     if (lead.saleId) throw new Error("Esse lead já foi convertido em venda.");
+
+    const email = data.email?.trim() || lead.leadEmail || undefined;
 
     const [sale] = await db
       .insert(sales)
@@ -229,14 +232,17 @@ const _convertLeadToSale = createServerFn({ method: "POST" })
       })
       .returning({ id: sales.id });
 
-    await db.update(metaLeadAttributions).set({ saleId: sale.id }).where(eq(metaLeadAttributions.id, data.leadId));
+    await db
+      .update(metaLeadAttributions)
+      .set({ saleId: sale.id, ...(email ? { leadEmail: email } : {}) })
+      .where(eq(metaLeadAttributions.id, data.leadId));
 
     if (!client.metaCapiDatasetId) return;
     const token = await getMetaToken(lead.clientId);
     if (!token) return;
 
     try {
-      await sendPurchaseEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, value: data.value, token });
+      await sendPurchaseEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, value: data.value, phoneRemoteJid: lead.remoteJid, email, token });
       await db
         .update(metaLeadAttributions)
         .set({ purchaseEventSentAt: new Date().toISOString() })
@@ -250,6 +256,6 @@ const _convertLeadToSale = createServerFn({ method: "POST" })
     }
   });
 
-export async function convertLeadToSale(leadId: string, value: number | null, obs?: string): Promise<void> {
-  await _convertLeadToSale({ data: { leadId, value, obs } });
+export async function convertLeadToSale(leadId: string, value: number | null, obs?: string, email?: string): Promise<void> {
+  await _convertLeadToSale({ data: { leadId, value, obs, email } });
 }
