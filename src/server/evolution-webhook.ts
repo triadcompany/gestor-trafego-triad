@@ -1,7 +1,8 @@
 import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { clients, metaLeadAttributions, whatsappInstances } from "@/db/schema";
-import { getMetaToken, fetchAdContext, sendQualifiedLeadEvent } from "@/lib/meta";
+import { fetchAdContext, sendQualifiedLeadEvent } from "@/lib/meta";
+import { pickMetaTokenRow } from "./automations-core";
 
 // Recebe os webhooks da Evolution API (não passa por sessão — a instância
 // identifica o cliente). Dois eventos importam aqui:
@@ -48,7 +49,7 @@ export async function handleEvolutionWebhook(body: EvolutionWebhookBody): Promis
 
   const eventName = (body.event ?? "").toLowerCase();
   if (eventName === "messages.upsert") {
-    await handleNewMessage(client.id, body.data);
+    await handleNewMessage(client.id, instance.organizationId, body.data);
     return { handled: true };
   }
   if (eventName === "labels.association") {
@@ -110,13 +111,14 @@ function extractReferral(raw: JsonRecord): { ctwaClid: string; sourceId: string 
   return null;
 }
 
-async function handleNewMessage(clientId: string, data: unknown): Promise<void> {
+async function handleNewMessage(clientId: string, organizationId: string, data: unknown): Promise<void> {
   const envelope = extractMessageEnvelope(data);
   if (!envelope || envelope.fromMe) return;
   const referral = extractReferral(envelope.raw);
   if (!referral || !referral.sourceId) return; // conversa sem clique de anúncio — nada a atribuir
 
-  const token = await getMetaToken(clientId);
+  const tokenRow = await pickMetaTokenRow({ organizationId, clientId });
+  const token = tokenRow?.accessToken ?? null;
   let context = { adName: null as string | null, adsetId: null as string | null, adsetName: null as string | null, campaignId: null as string | null, campaignName: null as string | null };
   if (token) {
     try {
@@ -161,7 +163,7 @@ async function resolveLabelName(instance: { evolutionUrl: string; evolutionKey: 
 
 async function handleLabelAssociation(
   client: { id: string; qualifiedLeadLabel: string | null; metaCapiDatasetId: string | null },
-  instance: { evolutionUrl: string; evolutionKey: string; instanceName: string },
+  instance: { evolutionUrl: string; evolutionKey: string; instanceName: string; organizationId: string },
   data: unknown
 ): Promise<void> {
   if (!client.qualifiedLeadLabel) return;
@@ -195,7 +197,8 @@ async function handleLabelAssociation(
 
   if (!client.metaCapiDatasetId) return; // qualificado, mas sem dataset configurado — não envia evento
 
-  const token = await getMetaToken(client.id);
+  const tokenRow = await pickMetaTokenRow({ organizationId: instance.organizationId, clientId: client.id });
+  const token = tokenRow?.accessToken ?? null;
   if (!token) return;
 
   try {

@@ -22,7 +22,7 @@ import { buildClientReportDoc, slug as slugifyName } from "@/lib/client-report-p
 
 // ── Escolha de token / instância (sem sessão) ────────────────────────────────
 
-async function pickMetaTokenRow(opts: {
+export async function pickMetaTokenRow(opts: {
   organizationId: string;
   clientId?: string | null;
 }): Promise<{ accessToken: string; expiresAt: string | null } | null> {
