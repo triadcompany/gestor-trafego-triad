@@ -870,9 +870,9 @@ function ClientLeadAttribution({ clientId }: { clientId: string }) {
           <Target className="h-4 w-4 text-muted-foreground" />
           Rastreamento de leads (Meta Ads → WhatsApp)
         </h2>
-        <Link to="/clients/$id/leads" params={{ id: clientId }} search={{ openCampaignId: undefined }} className="text-xs text-primary hover:underline shrink-0">
+        <a href={`/clients/${clientId}/leads`} className="text-xs text-primary hover:underline shrink-0">
           Ver todos os leads →
-        </Link>
+        </a>
       </div>
 
       {showHealthWarning && (

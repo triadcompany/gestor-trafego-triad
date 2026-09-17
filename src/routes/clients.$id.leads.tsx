@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
@@ -89,9 +89,9 @@ function LeadsPage() {
     <AppShell>
       <div className="max-w-6xl mx-auto px-4 py-6 space-y-5">
         <div>
-          <Link to="/clients/$id" params={{ id }} search={{ openCampaignId: undefined }} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-2">
+          <a href={`/clients/${id}`} className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-2">
             <ArrowLeft className="h-3.5 w-3.5" /> Voltar pro cliente
-          </Link>
+          </a>
           <h1 className="text-xl font-semibold flex items-center gap-2">
             <Target className="h-5 w-5 text-muted-foreground" />
             Leads do Meta Ads {client ? `— ${client.name}` : ""}
