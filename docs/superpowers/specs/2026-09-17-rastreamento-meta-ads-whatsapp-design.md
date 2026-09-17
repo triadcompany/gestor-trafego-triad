@@ -125,11 +125,11 @@ funcionando normalmente, já que não depende disso).
 Segue o mesmo padrão de `automations-tick.route.ts` (handler h3 registrado
 em `vite.config.ts`, sem sessão de usuário — roda cross-org).
 
-- **Autenticação**: a Evolution API é configurada pra mandar, em cada
-  chamada, um header com a `evolutionKey` daquela instância (`whatsapp_instances.evolution_key`).
-  O handler resolve a instância pelo campo `instance` do corpo do evento e
-  confere a chave antes de processar. Evento de instância desconhecida ou
-  chave errada é rejeitado (401).
+- **Autenticação**: por um parâmetro na própria URL do webhook
+  (`?secret=...`), configurado no setup, contra a env var
+  `EVOLUTION_WEBHOOK_SECRET` — não depende de header customizado (suporte a
+  isso no `/webhook/set` varia entre versões da Evolution API). O handler
+  resolve o cliente pelo campo `instance` do corpo do evento.
 - **Idempotência**: cada evento processado é checado contra o índice único
   da tabela antes de gravar — reentrega não duplica.
 - **Eventos tratados**:

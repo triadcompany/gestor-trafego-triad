@@ -38,6 +38,11 @@ export default defineConfig(({ mode }) => {
             method: "POST",
             handler: "./src/server/automations-tick.route.ts",
           },
+          {
+            route: "/api/webhooks/evolution",
+            method: "POST",
+            handler: "./src/server/evolution-webhook.route.ts",
+          },
         ],
       }),
       viteReact(),

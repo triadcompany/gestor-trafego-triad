@@ -633,3 +633,38 @@ const _sendActiveCampaignsList = createServerFn({ method: "POST" })
 export async function sendActiveCampaignsList(clientId: string, clientName: string, campaignNames: string[]): Promise<void> {
   await _sendActiveCampaignsList({ data: { clientId, clientName, campaignNames } });
 }
+
+export interface WhatsappLabel {
+  id: string;
+  name: string;
+  color?: string;
+}
+
+// Lista as etiquetas existentes na instância do cliente — usado no dropdown
+// de Configurações do cliente pra escolher qual etiqueta marca um lead como
+// qualificado. A Evolution API não expõe qual etiqueta está em qual conversa
+// (só via webhook labels.association), mas listar as etiquetas em si funciona.
+const _fetchClientWhatsappLabels = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async ({ data }): Promise<WhatsappLabel[]> => {
+    const { organizationId, role, userId } = await requireOrgContext();
+    const client = await db.query.clients.findFirst({
+      where: eq(clients.id, data.clientId),
+      columns: { organizationId: true, ownerUserId: true },
+    });
+    if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
+
+    const { url, apiKey, instance } = await resolveWhatsappInstance(data.clientId);
+    try {
+      const res = await fetch(`${url}/label/findLabels/${instance}`, { headers: { apikey: apiKey } });
+      const json = (await res.json()) as Array<{ id?: string; name?: string; color?: string }>;
+      if (!Array.isArray(json)) return [];
+      return json.filter((l): l is { id: string; name: string; color?: string } => !!l.id && !!l.name);
+    } catch {
+      return [];
+    }
+  });
+
+export async function fetchClientWhatsappLabels(clientId: string): Promise<WhatsappLabel[]> {
+  return _fetchClientWhatsappLabels({ data: { clientId } });
+}

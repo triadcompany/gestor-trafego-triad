@@ -131,6 +131,14 @@ export const clients = pgTable("clients", {
   // Checkpoint da varredura de sugestão de venda (automations-core.ts) — só
   // processa mensagens do grupo mais novas que isso. Nulo = nunca escaneado.
   lastSaleScanAt: timestamp("last_sale_scan_at"),
+  // Nome exato da etiqueta do WhatsApp que marca um lead como qualificado
+  // (dispara o evento de conversão pra Meta). Nulo = cliente não participa
+  // do rastreamento de qualificação (a atribuição de campanha continua ativa).
+  qualifiedLeadLabel: text("qualified_lead_label"),
+  // Dataset da Meta (criado no Events Manager, em "Business Messaging") pra
+  // onde o evento QualifiedLead é enviado via Conversions API. Sem isso
+  // configurado, a atribuição de campanha funciona mas o evento não é enviado.
+  metaCapiDatasetId: text("meta_capi_dataset_id"),
 });
 
 export const metricsDaily = pgTable(
@@ -283,6 +291,39 @@ export const saleSuggestions = pgTable(
   (t) => [
     unique("sale_suggestions_dedupe_key").on(t.clientId, t.messageAt, t.messageText),
     index("idx_sale_suggestions_client_status").on(t.clientId, t.status),
+  ]
+);
+
+// Atribuição de leads do WhatsApp a campanha/conjunto/anúncio de origem
+// (via ctwa_clid capturado na primeira mensagem de conversas Click-to-WhatsApp)
+// e acompanhamento da qualificação (etiqueta no WhatsApp -> evento pra Meta).
+export const metaLeadAttributions = pgTable(
+  "meta_lead_attributions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    remoteJid: text("remote_jid").notNull(),
+    contactName: text("contact_name"),
+    ctwaClid: text("ctwa_clid").notNull(),
+    adId: text("ad_id").notNull(),
+    adName: text("ad_name"),
+    adsetId: text("adset_id"),
+    adsetName: text("adset_name"),
+    campaignId: text("campaign_id"),
+    campaignName: text("campaign_name"),
+    firstMessageAt: timestamp("first_message_at").notNull(),
+    status: text("status").notNull().default("pending"), // pending | qualified | conversion_sent | conversion_failed
+    qualifiedAt: timestamp("qualified_at"),
+    labelName: text("label_name"),
+    conversionSentAt: timestamp("conversion_sent_at"),
+    conversionError: text("conversion_error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    unique("meta_lead_attributions_dedupe_key").on(t.clientId, t.remoteJid, t.firstMessageAt),
+    index("idx_meta_lead_attributions_client_status").on(t.clientId, t.status),
   ]
 );
 

@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3, Target, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { sendActiveCampaignsList } from "@/lib/whatsapp-messages";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
@@ -62,6 +62,7 @@ import {
   type CustomDateRange,
 } from "@/lib/meta";
 import { brl } from "@/lib/mock-data";
+import { fetchLeadAttributions, fetchLeadAttributionSummary } from "@/server/lead-attribution";
 
 export const Route = createFileRoute("/clients/$id")({
   head: () => ({
@@ -805,6 +806,8 @@ function ClientDetail() {
           }}
         />
 
+        <ClientLeadAttribution clientId={id} />
+
         {/* Tarefas + Anotações lado a lado */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
           <ClientTasks clientId={id} />
@@ -827,6 +830,121 @@ function ClientDetail() {
         initialAdId={sheetInitialAdId}
       />
     </AppShell>
+  );
+}
+
+const LEAD_STATUS_LABEL: Record<string, string> = {
+  pending: "Aguardando qualificação",
+  qualified: "Qualificado",
+  conversion_sent: "Qualificado · enviado à Meta",
+  conversion_failed: "Qualificado · falha ao enviar",
+};
+
+const LEAD_STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
+  pending: "secondary",
+  qualified: "default",
+  conversion_sent: "default",
+  conversion_failed: "destructive",
+};
+
+function ClientLeadAttribution({ clientId }: { clientId: string }) {
+  const { data: summary, isLoading: summaryLoading } = useQuery({
+    queryKey: ["lead-attribution-summary", clientId],
+    queryFn: () => fetchLeadAttributionSummary(clientId),
+  });
+  const { data: leads } = useQuery({
+    queryKey: ["lead-attributions", clientId],
+    queryFn: () => fetchLeadAttributions(clientId),
+    enabled: !!summary && summary.total_leads > 0,
+  });
+
+  const daysSinceLastAttribution = summary?.last_attribution_at
+    ? Math.floor((Date.now() - new Date(summary.last_attribution_at).getTime()) / 86400000)
+    : null;
+  const showHealthWarning = !!summary && summary.total_leads > 0 && daysSinceLastAttribution !== null && daysSinceLastAttribution >= 7;
+
+  return (
+    <Card className="p-4 mb-6">
+      <h2 className="text-base font-semibold flex items-center gap-2 mb-4">
+        <Target className="h-4 w-4 text-muted-foreground" />
+        Rastreamento de leads (Meta Ads → WhatsApp)
+      </h2>
+
+      {showHealthWarning && (
+        <div className="flex items-start gap-2 rounded-lg border border-status-attention/30 bg-status-attention/10 px-3 py-2.5 mb-4">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5 text-status-attention" />
+          <p className="text-sm text-status-attention">
+            Nenhum lead novo atribuído a um anúncio nos últimos {daysSinceLastAttribution} dias. Se há campanha ativa gastando, vale checar se a captura ainda está funcionando.
+          </p>
+        </div>
+      )}
+
+      {summaryLoading ? (
+        <Skeleton className="h-20 w-full" />
+      ) : !summary || summary.total_leads === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Nenhum lead atribuído ainda. Conversas novas do WhatsApp que vieram de um anúncio "Clique para o WhatsApp" aparecem aqui.
+        </p>
+      ) : (
+        <>
+          <div className="grid grid-cols-3 gap-3 mb-4">
+            <TotalStat label="Conversas iniciadas" value={String(summary.total_leads)} />
+            <TotalStat label="Qualificados" value={String(summary.qualified_leads)} />
+            <TotalStat label="Taxa de qualificação" value={summary.qualification_rate !== null ? `${summary.qualification_rate}%` : "—"} />
+          </div>
+
+          {summary.by_campaign.length > 0 && (
+            <div className="mb-4 overflow-x-auto rounded-lg border border-border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Campanha</TableHead>
+                    <TableHead className="text-right">Leads</TableHead>
+                    <TableHead className="text-right">Qualificados</TableHead>
+                    <TableHead className="text-right">Taxa</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {summary.by_campaign.map((c) => (
+                    <TableRow key={c.campaign_id ?? "sem-campanha"}>
+                      <TableCell className="truncate max-w-xs">{c.campaign_name}</TableCell>
+                      <TableCell className="text-right tabular-nums">{c.total_leads}</TableCell>
+                      <TableCell className="text-right tabular-nums">{c.qualified_leads}</TableCell>
+                      <TableCell className="text-right tabular-nums">{Math.round((c.qualified_leads / c.total_leads) * 100)}%</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+
+          <div className="max-h-80 overflow-y-auto overflow-x-auto rounded-lg border border-border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Contato</TableHead>
+                  <TableHead>Anúncio</TableHead>
+                  <TableHead>Quando</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {(leads ?? []).map((l) => (
+                  <TableRow key={l.id}>
+                    <TableCell className="truncate max-w-[160px]">{l.contact_name || l.remote_jid.split("@")[0]}</TableCell>
+                    <TableCell className="truncate max-w-xs text-xs text-muted-foreground">{l.ad_name ?? l.campaign_name ?? "—"}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground whitespace-nowrap">{new Date(l.first_message_at).toLocaleDateString("pt-BR")}</TableCell>
+                    <TableCell>
+                      <Badge variant={LEAD_STATUS_VARIANT[l.status]} className="text-[10px]">{LEAD_STATUS_LABEL[l.status]}</Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
+      )}
+    </Card>
   );
 }
 

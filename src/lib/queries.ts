@@ -64,6 +64,8 @@ export interface ClientRow {
   meta_token_id: string | null;
   whatsapp_instance_id: string | null;
   owner_user_id: string | null;
+  qualified_lead_label: string | null;
+  meta_capi_dataset_id: string | null;
   tags?: TagRow[];
 }
 
@@ -115,6 +117,8 @@ function toClientRow(c: typeof clients.$inferSelect): ClientRow {
     meta_token_id: c.metaTokenId,
     whatsapp_instance_id: c.whatsappInstanceId,
     owner_user_id: c.ownerUserId,
+    qualified_lead_label: c.qualifiedLeadLabel,
+    meta_capi_dataset_id: c.metaCapiDatasetId,
   };
 }
 
@@ -337,6 +341,8 @@ const upsertClientSchema = z.object({
   meta_token_id: z.string().nullable().optional(),
   whatsapp_instance_id: z.string().nullable().optional(),
   owner_user_id: z.string().nullable().optional(),
+  qualified_lead_label: z.string().nullable().optional(),
+  meta_capi_dataset_id: z.string().nullable().optional(),
 });
 
 const _upsertClient = createServerFn({ method: "POST" })
@@ -385,6 +391,8 @@ const _upsertClient = createServerFn({ method: "POST" })
       ...(data.whatsapp_group_name !== undefined ? { whatsappGroupName: data.whatsapp_group_name } : {}),
       ...(data.meta_token_id !== undefined ? { metaTokenId: data.meta_token_id } : {}),
       ...(data.whatsapp_instance_id !== undefined ? { whatsappInstanceId: data.whatsapp_instance_id } : {}),
+      ...(data.qualified_lead_label !== undefined ? { qualifiedLeadLabel: data.qualified_lead_label } : {}),
+      ...(data.meta_capi_dataset_id !== undefined ? { metaCapiDatasetId: data.meta_capi_dataset_id } : {}),
     };
     const [row] = await db
       .insert(clients)
@@ -413,6 +421,8 @@ export async function upsertClient(data: {
   meta_token_id?: string | null;
   whatsapp_instance_id?: string | null;
   owner_user_id?: string | null;
+  qualified_lead_label?: string | null;
+  meta_capi_dataset_id?: string | null;
 }): Promise<{ id: string }> {
   return _upsertClient({ data });
 }

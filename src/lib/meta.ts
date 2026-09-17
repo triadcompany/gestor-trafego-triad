@@ -750,6 +750,31 @@ export async function fetchCampaignById(
   };
 }
 
+export interface AdContext {
+  adName: string | null;
+  adsetId: string | null;
+  adsetName: string | null;
+  campaignId: string | null;
+  campaignName: string | null;
+}
+
+/** Resolve o conjunto e a campanha de um anúncio, a partir só do ID do anúncio (usado na atribuição de leads por ctwa_clid). */
+export async function fetchAdContext(adId: string, token: string): Promise<AdContext> {
+  const params = new URLSearchParams({ fields: "name,adset{id,name},campaign{id,name}", access_token: token });
+  const json = await fetchMetaJson<{
+    name?: string;
+    adset?: { id?: string; name?: string };
+    campaign?: { id?: string; name?: string };
+  }>(`${BASE_URL}/${adId}?${params}`);
+  return {
+    adName: json.name ?? null,
+    adsetId: json.adset?.id ?? null,
+    adsetName: json.adset?.name ?? null,
+    campaignId: json.campaign?.id ?? null,
+    campaignName: json.campaign?.name ?? null,
+  };
+}
+
 export async function fetchCampaigns(
   adAccountId: string,
   token: string,
@@ -1815,6 +1840,30 @@ async function postMetaJson(endpoint: string, params: Record<string, unknown>): 
       throw new MetaApiCallError(formatMetaError(json.error), json.error.code);
     }
     return json;
+  });
+}
+
+/**
+ * Envia o evento de conversão "QualifiedLead" pra Meta Conversions API
+ * (Business Messaging), atribuindo a qualificação ao clique original do
+ * anúncio via ctwa_clid. Exige um token com as permissões
+ * whatsapp_business_management + whatsapp_business_manage_events.
+ */
+export async function sendQualifiedLeadEvent(params: {
+  datasetId: string;
+  ctwaClid: string;
+  token: string;
+}): Promise<void> {
+  await postMetaJson(`${params.datasetId}/events?access_token=${encodeURIComponent(params.token)}`, {
+    data: [
+      {
+        event_name: "QualifiedLead",
+        event_time: Math.floor(Date.now() / 1000),
+        action_source: "business_messaging",
+        messaging_channel: "whatsapp",
+        user_data: { ctwa_clid: params.ctwaClid },
+      },
+    ],
   });
 }
 
