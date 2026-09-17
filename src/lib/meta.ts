@@ -1867,6 +1867,27 @@ export async function sendQualifiedLeadEvent(params: {
   });
 }
 
+/** Envia o evento de conversão "Purchase" pra Meta Conversions API, com valor da venda. */
+export async function sendPurchaseEvent(params: {
+  datasetId: string;
+  ctwaClid: string;
+  value: number | null;
+  token: string;
+}): Promise<void> {
+  await postMetaJson(`${params.datasetId}/events?access_token=${encodeURIComponent(params.token)}`, {
+    data: [
+      {
+        event_name: "Purchase",
+        event_time: Math.floor(Date.now() / 1000),
+        action_source: "business_messaging",
+        messaging_channel: "whatsapp",
+        user_data: { ctwa_clid: params.ctwaClid },
+        ...(params.value !== null ? { custom_data: { currency: "BRL", value: params.value } } : {}),
+      },
+    ],
+  });
+}
+
 async function postMeta(endpoint: string, params: Record<string, string>): Promise<unknown> {
   return withRetry(async () => {
     const body = new URLSearchParams(params);

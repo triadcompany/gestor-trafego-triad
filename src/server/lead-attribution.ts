@@ -2,13 +2,16 @@ import { createServerFn } from "@tanstack/react-start";
 import { desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { clients, metaLeadAttributions } from "@/db/schema";
+import { clients, metaLeadAttributions, sales } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 import { canAccessClient } from "@/lib/client-access";
+import { getMetaToken, sendQualifiedLeadEvent, sendPurchaseEvent } from "@/lib/meta";
 
-// Painel de rastreamento de leads do Meta Ads por cliente — dados gravados
-// pelo webhook da Evolution API (ver evolution-webhook.ts). Só leitura aqui;
-// quem escreve é o webhook, sem sessão de usuário.
+// Painel de rastreamento de leads do Meta Ads por cliente — a captura em si
+// (ctwa_clid, anúncio de origem) é gravada pelo webhook da Evolution API sem
+// sessão (ver evolution-webhook.ts). Aqui: leitura pro painel + as duas ações
+// manuais (marcar qualificado / converter em venda), que disparam os mesmos
+// eventos de conversão pra Meta que a etiqueta do WhatsApp dispararia.
 
 export interface LeadAttributionRow {
   id: string;
@@ -22,6 +25,10 @@ export interface LeadAttributionRow {
   first_message_at: string;
   qualified_at: string | null;
   conversion_error: string | null;
+  sale_id: string | null;
+  sale_value: number | null;
+  sale_date: string | null;
+  purchase_event_error: string | null;
 }
 
 async function assertAccessible(clientId: string) {
@@ -38,11 +45,28 @@ const _fetchLeadAttributions = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<LeadAttributionRow[]> => {
     await assertAccessible(data.clientId);
     const rows = await db
-      .select()
+      .select({
+        id: metaLeadAttributions.id,
+        remoteJid: metaLeadAttributions.remoteJid,
+        contactName: metaLeadAttributions.contactName,
+        campaignId: metaLeadAttributions.campaignId,
+        campaignName: metaLeadAttributions.campaignName,
+        adsetName: metaLeadAttributions.adsetName,
+        adName: metaLeadAttributions.adName,
+        status: metaLeadAttributions.status,
+        firstMessageAt: metaLeadAttributions.firstMessageAt,
+        qualifiedAt: metaLeadAttributions.qualifiedAt,
+        conversionError: metaLeadAttributions.conversionError,
+        saleId: metaLeadAttributions.saleId,
+        purchaseEventError: metaLeadAttributions.purchaseEventError,
+        saleValue: sales.value,
+        saleDate: sales.date,
+      })
       .from(metaLeadAttributions)
+      .leftJoin(sales, eq(sales.id, metaLeadAttributions.saleId))
       .where(eq(metaLeadAttributions.clientId, data.clientId))
       .orderBy(desc(metaLeadAttributions.firstMessageAt))
-      .limit(200);
+      .limit(300);
     return rows.map((r) => ({
       id: r.id,
       remote_jid: r.remoteJid,
@@ -55,6 +79,10 @@ const _fetchLeadAttributions = createServerFn({ method: "GET" })
       first_message_at: r.firstMessageAt,
       qualified_at: r.qualifiedAt,
       conversion_error: r.conversionError,
+      sale_id: r.saleId,
+      sale_value: r.saleValue,
+      sale_date: r.saleDate,
+      purchase_event_error: r.purchaseEventError,
     }));
   });
 
@@ -73,6 +101,9 @@ export interface LeadAttributionSummary {
   total_leads: number;
   qualified_leads: number;
   qualification_rate: number | null;
+  sales_count: number;
+  sales_value_total: number;
+  sales_rate: number | null;
   by_campaign: CampaignAttributionStats[];
   last_attribution_at: string | null;
 }
@@ -89,17 +120,26 @@ const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
         campaignName: metaLeadAttributions.campaignName,
         status: metaLeadAttributions.status,
         firstMessageAt: metaLeadAttributions.firstMessageAt,
+        saleId: metaLeadAttributions.saleId,
+        saleValue: sales.value,
       })
       .from(metaLeadAttributions)
+      .leftJoin(sales, eq(sales.id, metaLeadAttributions.saleId))
       .where(eq(metaLeadAttributions.clientId, data.clientId));
 
     const byCampaign = new Map<string, CampaignAttributionStats>();
     let qualifiedTotal = 0;
+    let salesCount = 0;
+    let salesValueTotal = 0;
     let lastAt: string | null = null;
     for (const r of rows) {
       const key = r.campaignId ?? "__sem_campanha__";
       const isQualified = QUALIFIED_STATUSES.has(r.status);
       if (isQualified) qualifiedTotal++;
+      if (r.saleId) {
+        salesCount++;
+        salesValueTotal += r.saleValue ?? 0;
+      }
       if (!lastAt || r.firstMessageAt > lastAt) lastAt = r.firstMessageAt;
       const entry = byCampaign.get(key) ?? {
         campaign_id: r.campaignId,
@@ -116,6 +156,9 @@ const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
       total_leads: rows.length,
       qualified_leads: qualifiedTotal,
       qualification_rate: rows.length > 0 ? Math.round((qualifiedTotal / rows.length) * 1000) / 10 : null,
+      sales_count: salesCount,
+      sales_value_total: salesValueTotal,
+      sales_rate: rows.length > 0 ? Math.round((salesCount / rows.length) * 1000) / 10 : null,
       by_campaign: Array.from(byCampaign.values()).sort((a, b) => b.total_leads - a.total_leads),
       last_attribution_at: lastAt,
     };
@@ -123,4 +166,90 @@ const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
 
 export async function fetchLeadAttributionSummary(clientId: string): Promise<LeadAttributionSummary> {
   return _fetchLeadAttributionSummary({ data: { clientId } });
+}
+
+async function loadLeadWithClient(leadId: string) {
+  const lead = await db.query.metaLeadAttributions.findFirst({ where: eq(metaLeadAttributions.id, leadId) });
+  if (!lead) throw new Error("Lead não encontrado.");
+  const { organizationId, role, userId } = await requireOrgContext();
+  const client = await db.query.clients.findFirst({
+    where: eq(clients.id, lead.clientId),
+    columns: { organizationId: true, ownerUserId: true, metaCapiDatasetId: true },
+  });
+  if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Lead não encontrado.");
+  return { lead, client };
+}
+
+const _markLeadQualified = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ leadId: z.string() }))
+  .handler(async ({ data }) => {
+    const { lead, client } = await loadLeadWithClient(data.leadId);
+
+    await db
+      .update(metaLeadAttributions)
+      .set({ status: "qualified", qualifiedAt: new Date().toISOString(), labelName: lead.labelName ?? "Marcado manualmente" })
+      .where(eq(metaLeadAttributions.id, data.leadId));
+
+    if (!client.metaCapiDatasetId) return;
+    const token = await getMetaToken(lead.clientId);
+    if (!token) return;
+
+    try {
+      await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, token });
+      await db
+        .update(metaLeadAttributions)
+        .set({ status: "conversion_sent", conversionSentAt: new Date().toISOString() })
+        .where(eq(metaLeadAttributions.id, data.leadId));
+    } catch (err) {
+      await db
+        .update(metaLeadAttributions)
+        .set({ status: "conversion_failed", conversionError: err instanceof Error ? err.message : String(err) })
+        .where(eq(metaLeadAttributions.id, data.leadId));
+      throw err;
+    }
+  });
+
+export async function markLeadQualified(leadId: string): Promise<void> {
+  await _markLeadQualified({ data: { leadId } });
+}
+
+const _convertLeadToSale = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ leadId: z.string(), value: z.number().nullable(), obs: z.string().optional() }))
+  .handler(async ({ data }) => {
+    const { lead, client } = await loadLeadWithClient(data.leadId);
+    if (lead.saleId) throw new Error("Esse lead já foi convertido em venda.");
+
+    const [sale] = await db
+      .insert(sales)
+      .values({
+        clientId: lead.clientId,
+        date: new Date().toISOString().slice(0, 10),
+        value: data.value,
+        obs: data.obs?.trim() || `Venda a partir do lead ${lead.contactName ?? lead.remoteJid}`,
+      })
+      .returning({ id: sales.id });
+
+    await db.update(metaLeadAttributions).set({ saleId: sale.id }).where(eq(metaLeadAttributions.id, data.leadId));
+
+    if (!client.metaCapiDatasetId) return;
+    const token = await getMetaToken(lead.clientId);
+    if (!token) return;
+
+    try {
+      await sendPurchaseEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, value: data.value, token });
+      await db
+        .update(metaLeadAttributions)
+        .set({ purchaseEventSentAt: new Date().toISOString() })
+        .where(eq(metaLeadAttributions.id, data.leadId));
+    } catch (err) {
+      await db
+        .update(metaLeadAttributions)
+        .set({ purchaseEventError: err instanceof Error ? err.message : String(err) })
+        .where(eq(metaLeadAttributions.id, data.leadId));
+      throw err;
+    }
+  });
+
+export async function convertLeadToSale(leadId: string, value: number | null, obs?: string): Promise<void> {
+  await _convertLeadToSale({ data: { leadId, value, obs } });
 }

@@ -865,10 +865,15 @@ function ClientLeadAttribution({ clientId }: { clientId: string }) {
 
   return (
     <Card className="p-4 mb-6">
-      <h2 className="text-base font-semibold flex items-center gap-2 mb-4">
-        <Target className="h-4 w-4 text-muted-foreground" />
-        Rastreamento de leads (Meta Ads → WhatsApp)
-      </h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-base font-semibold flex items-center gap-2">
+          <Target className="h-4 w-4 text-muted-foreground" />
+          Rastreamento de leads (Meta Ads → WhatsApp)
+        </h2>
+        <Link to="/clients/$id/leads" params={{ id: clientId }} search={{ openCampaignId: undefined }} className="text-xs text-primary hover:underline shrink-0">
+          Ver todos os leads →
+        </Link>
+      </div>
 
       {showHealthWarning && (
         <div className="flex items-start gap-2 rounded-lg border border-status-attention/30 bg-status-attention/10 px-3 py-2.5 mb-4">

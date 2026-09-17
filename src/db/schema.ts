@@ -324,6 +324,11 @@ export const metaLeadAttributions = pgTable(
     labelName: text("label_name"),
     conversionSentAt: timestamp("conversion_sent_at"),
     conversionError: text("conversion_error"),
+    // Venda — independente do status de qualificação acima (um lead pode virar
+    // venda sem nunca ter sido marcado qualificado, ou vice-versa).
+    saleId: uuid("sale_id").references(() => sales.id, { onDelete: "set null" }),
+    purchaseEventSentAt: timestamp("purchase_event_sent_at"),
+    purchaseEventError: text("purchase_event_error"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => [
