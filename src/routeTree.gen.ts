@@ -14,6 +14,7 @@ import { Route as VendasRouteImport } from './routes/vendas'
 import { Route as TarefasRouteImport } from './routes/tarefas'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SaldosRouteImport } from './routes/saldos'
+import { Route as RastreamentoRouteImport } from './routes/rastreamento'
 import { Route as PixRouteImport } from './routes/pix'
 import { Route as MensagensRouteImport } from './routes/mensagens'
 import { Route as LoginRouteImport } from './routes/login'
@@ -54,6 +55,11 @@ const SettingsRoute = SettingsRouteImport.update({
 const SaldosRoute = SaldosRouteImport.update({
   id: '/saldos',
   path: '/saldos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RastreamentoRoute = RastreamentoRouteImport.update({
+  id: '/rastreamento',
+  path: '/rastreamento',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PixRoute = PixRouteImport.update({
@@ -145,6 +151,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
   '/pix': typeof PixRoute
+  '/rastreamento': typeof RastreamentoRoute
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
@@ -168,6 +175,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
   '/pix': typeof PixRoute
+  '/rastreamento': typeof RastreamentoRoute
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
@@ -192,6 +200,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
   '/pix': typeof PixRoute
+  '/rastreamento': typeof RastreamentoRoute
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
@@ -217,6 +226,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/mensagens'
     | '/pix'
+    | '/rastreamento'
     | '/saldos'
     | '/settings'
     | '/tarefas'
@@ -240,6 +250,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/mensagens'
     | '/pix'
+    | '/rastreamento'
     | '/saldos'
     | '/settings'
     | '/tarefas'
@@ -263,6 +274,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/mensagens'
     | '/pix'
+    | '/rastreamento'
     | '/saldos'
     | '/settings'
     | '/tarefas'
@@ -287,6 +299,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   MensagensRoute: typeof MensagensRoute
   PixRoute: typeof PixRoute
+  RastreamentoRoute: typeof RastreamentoRoute
   SaldosRoute: typeof SaldosRoute
   SettingsRoute: typeof SettingsRoute
   TarefasRoute: typeof TarefasRoute
@@ -337,6 +350,13 @@ declare module '@tanstack/react-router' {
       path: '/saldos'
       fullPath: '/saldos'
       preLoaderRoute: typeof SaldosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/rastreamento': {
+      id: '/rastreamento'
+      path: '/rastreamento'
+      fullPath: '/rastreamento'
+      preLoaderRoute: typeof RastreamentoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pix': {
@@ -474,6 +494,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   MensagensRoute: MensagensRoute,
   PixRoute: PixRoute,
+  RastreamentoRoute: RastreamentoRoute,
   SaldosRoute: SaldosRoute,
   SettingsRoute: SettingsRoute,
   TarefasRoute: TarefasRoute,
