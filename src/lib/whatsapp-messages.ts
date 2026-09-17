@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { appConfig, clients, scheduledMessageMedia, scheduledMessageRecipients, scheduledMessages, whatsappInstances } from "@/db/schema";
@@ -95,11 +96,13 @@ export interface WhatsappInstanceRow {
   assignedUserId: string | null;
   active: boolean;
   createdAt: string;
+  clientId: string | null;
+  clientName: string | null;
 }
 
 const _fetchWhatsappInstances = createServerFn({ method: "GET" }).handler(async (): Promise<WhatsappInstanceRow[]> => {
   const { organizationId } = await requireOrgContext();
-  return db
+  const rows = await db
     .select({
       id: whatsappInstances.id,
       label: whatsappInstances.label,
@@ -107,10 +110,17 @@ const _fetchWhatsappInstances = createServerFn({ method: "GET" }).handler(async 
       assignedUserId: whatsappInstances.assignedUserId,
       active: whatsappInstances.active,
       createdAt: whatsappInstances.createdAt,
+      clientId: clients.id,
+      clientName: clients.name,
     })
     .from(whatsappInstances)
+    .leftJoin(clients, eq(clients.whatsappInstanceId, whatsappInstances.id))
     .where(eq(whatsappInstances.organizationId, organizationId))
     .orderBy(whatsappInstances.createdAt);
+  // Se mais de um cliente estiver (por engano) apontando pra mesma instância, o
+  // join traria uma linha por cliente — dedupe mantendo só a primeira ocorrência.
+  const seen = new Set<string>();
+  return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
 });
 
 export async function fetchWhatsappInstances(): Promise<WhatsappInstanceRow[]> {
@@ -135,12 +145,23 @@ const _createWhatsappInstance = createServerFn({ method: "POST" })
       label: z.string().min(1),
       instanceName: z.string().min(1),
       assignedUserId: z.string().nullable().optional(),
+      clientId: z.string().nullable().optional(),
     })
   )
   .handler(async ({ data }): Promise<{ id: string; qrBase64: string | null }> => {
-    const { organizationId } = await requireOrgContext();
+    const { organizationId, role, userId } = await requireOrgContext();
     const base = sanitizeInstanceName(data.instanceName);
     if (!base) throw new Error("Nome da instância inválido — use letras e números.");
+
+    let client: { organizationId: string; ownerUserId: string | null } | undefined;
+    if (data.clientId) {
+      client = await db.query.clients.findFirst({
+        where: eq(clients.id, data.clientId),
+        columns: { organizationId: true, ownerUserId: true },
+      });
+      if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
+    }
+
     // Sufixo curto da org pra evitar colisão no servidor compartilhado.
     const instanceName = `${base}-${organizationId.slice(0, 4)}`;
 
@@ -169,6 +190,10 @@ const _createWhatsappInstance = createServerFn({ method: "POST" })
       })
       .returning({ id: whatsappInstances.id });
 
+    if (data.clientId) {
+      await db.update(clients).set({ whatsappInstanceId: row.id }).where(eq(clients.id, data.clientId));
+    }
+
     return { id: row.id, qrBase64: created.qrcode?.base64 ?? null };
   });
 
@@ -176,6 +201,7 @@ export async function createWhatsappInstance(data: {
   label: string;
   instanceName: string;
   assignedUserId?: string | null;
+  clientId?: string | null;
 }): Promise<{ id: string; qrBase64: string | null }> {
   return _createWhatsappInstance({ data });
 }
@@ -254,6 +280,80 @@ const _deleteWhatsappInstance = createServerFn({ method: "POST" })
 
 export async function deleteWhatsappInstance(id: string): Promise<void> {
   await _deleteWhatsappInstance({ data: { id } });
+}
+
+// ── Link público de conexão (cliente escaneia sem precisar logar) ──────────
+
+const _generateInstanceConnectLink = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }): Promise<{ token: string }> => {
+    const { organizationId } = await requireOrgContext();
+    await loadInstanceInOrg(data.id, organizationId);
+    const token = randomBytes(24).toString("hex");
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString();
+    await db
+      .update(whatsappInstances)
+      .set({ connectToken: token, connectTokenExpiresAt: expiresAt })
+      .where(eq(whatsappInstances.id, data.id));
+    return { token };
+  });
+
+export async function generateInstanceConnectLink(id: string): Promise<{ token: string }> {
+  return _generateInstanceConnectLink({ data: { id } });
+}
+
+async function loadInstanceByToken(token: string) {
+  const row = await db.query.whatsappInstances.findFirst({ where: eq(whatsappInstances.connectToken, token) });
+  if (!row || (row.connectTokenExpiresAt && new Date(row.connectTokenExpiresAt) < new Date())) {
+    throw new Error("Link inválido ou expirado.");
+  }
+  return row;
+}
+
+// Sem requireOrgContext() de propósito — essa dupla (QR + estado) é acessada
+// por quem recebeu o link, sem estar logado no sistema. A validação é só o
+// token bater e não estar expirado; nunca expõe evolutionKey/instanceName.
+const _fetchInstanceQrByToken = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<{ qrBase64: string | null }> => {
+    const inst = await loadInstanceByToken(data.token);
+    const r = (await evoFetch(`/instance/connect/${encodeURIComponent(inst.instanceName)}`, {
+      method: "GET",
+      apikey: inst.evolutionKey,
+    })) as { base64?: string; code?: string };
+    return { qrBase64: r.base64 ?? null };
+  });
+
+export async function fetchInstanceQrByToken(token: string): Promise<{ qrBase64: string | null }> {
+  return _fetchInstanceQrByToken({ data: { token } });
+}
+
+const _fetchInstanceStateByToken = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<{ state: "open" | "connecting" | "close" | "unknown" }> => {
+    const inst = await loadInstanceByToken(data.token);
+    try {
+      const r = (await evoFetch(`/instance/connectionState/${encodeURIComponent(inst.instanceName)}`, {
+        method: "GET",
+        apikey: inst.evolutionKey,
+      })) as { instance?: { state?: string } };
+      const s = r.instance?.state;
+      const state = s === "open" || s === "connecting" || s === "close" ? s : "unknown";
+      if (state === "open") {
+        // Link já cumpriu o papel — invalida pra não continuar acessível depois de conectado.
+        await db
+          .update(whatsappInstances)
+          .set({ connectToken: null, connectTokenExpiresAt: null })
+          .where(eq(whatsappInstances.id, inst.id));
+      }
+      return { state };
+    } catch {
+      return { state: "unknown" };
+    }
+  });
+
+export async function fetchInstanceStateByToken(token: string): Promise<{ state: "open" | "connecting" | "close" | "unknown" }> {
+  return _fetchInstanceStateByToken({ data: { token } });
 }
 
 export interface ScheduledMessageRecipientRow {

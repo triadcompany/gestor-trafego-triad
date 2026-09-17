@@ -98,6 +98,11 @@ export const whatsappInstances = pgTable("whatsapp_instances", {
   assignedUserId: uuid("assigned_user_id").references(() => profiles.id, { onDelete: "set null" }),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  // Token pra link público de conexão (cliente escaneia o QR sem precisar logar
+  // no sistema) — nulo = nenhum link ativo no momento. Expira sozinho por tempo
+  // e é zerado assim que a instância conecta (ver connect.$token.tsx).
+  connectToken: text("connect_token").unique(),
+  connectTokenExpiresAt: timestamp("connect_token_expires_at"),
 });
 
 export const clients = pgTable("clients", {

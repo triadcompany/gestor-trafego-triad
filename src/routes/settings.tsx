@@ -60,7 +60,9 @@ import {
   deleteWhatsappInstance,
   fetchWhatsappInstanceQr,
   fetchWhatsappInstanceState,
+  generateInstanceConnectLink,
 } from "@/lib/whatsapp-messages";
+import { fetchAllClients } from "@/lib/queries";
 import { getN8nWebhookUrl, saveN8nWebhookUrl } from "@/lib/n8n";
 import {
   agentListConversations,
@@ -494,11 +496,13 @@ function WhatsappInstancesSection() {
   const [label, setLabel] = useState("");
   const [instanceName, setInstanceName] = useState("");
   const [assignedUserId, setAssignedUserId] = useState<string>("none");
+  const [clientId, setClientId] = useState<string>("none");
   const [qrFor, setQrFor] = useState<string | null>(null);
   const [qrInitial, setQrInitial] = useState<string | null>(null);
 
   const { data: instances = [], isLoading } = useQuery({ queryKey: ["whatsapp-instances"], queryFn: fetchWhatsappInstances });
   const { data: members = [] } = useQuery({ queryKey: ["org-members"], queryFn: fetchOrgMembers });
+  const { data: clientsList = [] } = useQuery({ queryKey: ["all-clients"], queryFn: fetchAllClients });
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -506,17 +510,30 @@ function WhatsappInstancesSection() {
         label: label.trim() || instanceName.trim(),
         instanceName: instanceName.trim(),
         assignedUserId: assignedUserId === "none" ? null : assignedUserId,
+        clientId: clientId === "none" ? null : clientId,
       }),
     onSuccess: (res) => {
       setOpen(false);
       setLabel("");
       setInstanceName("");
       setAssignedUserId("none");
+      setClientId("none");
       queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
+      queryClient.invalidateQueries({ queryKey: ["all-clients"] });
       setQrInitial(res.qrBase64);
       setQrFor(res.id);
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao criar instância", { duration: 8000 }),
+  });
+
+  const linkMutation = useMutation({
+    mutationFn: generateInstanceConnectLink,
+    onSuccess: ({ token }) => {
+      const url = `${window.location.origin}/connect/${token}`;
+      navigator.clipboard.writeText(url);
+      toast.success("Link copiado! Válido por 48h ou até conectar.");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao gerar link"),
   });
 
   const deleteMutation = useMutation({
@@ -588,6 +605,17 @@ function WhatsappInstancesSection() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-1.5">
+                <Label>Cliente (opcional)</Label>
+                <Select value={clientId} onValueChange={setClientId}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum — instância interna/gestor</SelectItem>
+                    {clientsList.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-[11px] text-muted-foreground">Se escolher um cliente, essa instância já fica vinculada a ele — é o WhatsApp que vai ser rastreado pros leads dele.</p>
+              </div>
             </div>
             <DialogFooter>
               <Button onClick={() => createMutation.mutate()} disabled={!instanceName.trim() || createMutation.isPending}>
@@ -616,9 +644,19 @@ function WhatsappInstancesSection() {
                   <p className="text-xs text-muted-foreground font-mono truncate">
                     {i.instanceName}{assigned ? ` · ${assigned.fullName}` : ""}
                   </p>
+                  <p className="text-xs mt-0.5">
+                    {i.clientName ? (
+                      <span className="text-primary">Cliente: {i.clientName}</span>
+                    ) : (
+                      <span className="text-muted-foreground">Sem cliente vinculado</span>
+                    )}
+                  </p>
                 </div>
                 <WaStateDot id={i.id} />
                 <Button size="sm" variant="outline" onClick={() => openConnect(i.id)}>Conectar</Button>
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => linkMutation.mutate(i.id)} disabled={linkMutation.isPending}>
+                  <Copy className="h-3.5 w-3.5" /> Copiar link
+                </Button>
                 <Button size="icon" variant="ghost" onClick={() => { if (confirm(`Excluir a instância "${i.label}"? Isso desconecta e apaga ela na Evolution.`)) deleteMutation.mutate(i.id); }} className="text-destructive hover:text-destructive">
                   <Trash2 className="h-4 w-4" />
                 </Button>
