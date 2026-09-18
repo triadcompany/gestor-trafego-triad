@@ -789,7 +789,6 @@ const _sendActiveCampaignsList = createServerFn({ method: "POST" })
     });
     if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
 
-    const { url, apiKey, instance } = await resolveWhatsappInstance(data.clientId);
     const rows = await db
       .select({ key: appConfig.key, value: appConfig.value })
       .from(appConfig)
@@ -805,6 +804,12 @@ const _sendActiveCampaignsList = createServerFn({ method: "POST" })
     if (!groupId) {
       throw new Error("Grupo de destino não configurado (whatsapp_group_operacional_id em Configurações).");
     }
+
+    // O grupo "operacional" é interno da equipe — precisa sair pela instância
+    // do gestor (padrão da organização), nunca pela instância própria do
+    // cliente (que normalmente nem é membro desse grupo). Só quando o destino
+    // é o grupo do PRÓPRIO cliente é que faz sentido usar a instância dele.
+    const { url, apiKey, instance } = await resolveWhatsappInstance(destination === "client_group" ? data.clientId : undefined);
 
     const text = `📋 ${data.campaignNames.length} Campanhas ativas — ${data.clientName}\n\n${data.campaignNames.map((n) => `• ${n}`).join("\n")}`;
 
