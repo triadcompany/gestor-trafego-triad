@@ -54,14 +54,14 @@ const PERIOD_OPTIONS: { value: DashboardPeriod; label: string }[] = [
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Aguardando",
-  qualified: "Qualificado",
+  qualified: "Qualificado (não enviado)",
   conversion_sent: "Qualificado",
   conversion_failed: "Qualificado (falha ao enviar)",
 };
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
   pending: "secondary",
-  qualified: "default",
+  qualified: "secondary",
   conversion_sent: "default",
   conversion_failed: "destructive",
 };
@@ -99,22 +99,25 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
 
   const qualifyMutation = useMutation({
     mutationFn: markLeadQualified,
-    onSuccess: () => {
-      toast.success("Lead marcado como qualificado.");
+    onSuccess: () => toast.success("Lead marcado como qualificado."),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao marcar qualificado"),
+    // Mesmo quando o envio pra Meta falha, o lead já foi marcado "qualified" ou
+    // "conversion_failed" no banco — precisa recarregar pra mostrar isso e
+    // liberar o botão "Reenviar", não só quando dá tudo certo.
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["lead-attributions", clientId] });
       queryClient.invalidateQueries({ queryKey: ["lead-attribution-summary", clientId] });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao marcar qualificado"),
   });
 
   const retryMutation = useMutation({
     mutationFn: retryQualifiedLeadEvent,
-    onSuccess: () => {
-      toast.success("Evento reenviado pra Meta com sucesso.");
+    onSuccess: () => toast.success("Evento reenviado pra Meta com sucesso."),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao reenviar evento"),
+    onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ["lead-attributions", clientId] });
       queryClient.invalidateQueries({ queryKey: ["lead-attribution-summary", clientId] });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao reenviar evento"),
   });
 
   const invalidateAfterSale = () => {
@@ -345,7 +348,7 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
                     <Badge
                       variant={STATUS_VARIANT[lead.status]}
                       className="text-[10px]"
-                      title={lead.status === "conversion_failed" ? lead.conversion_error ?? undefined : undefined}
+                      title={lead.status === "conversion_failed" || lead.status === "qualified" ? lead.conversion_error ?? undefined : undefined}
                     >
                       {STATUS_LABEL[lead.status]}
                     </Badge>
@@ -363,7 +366,7 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
                         <Check className="h-3 w-3" /> Qualificar
                       </Button>
                     )}
-                    {lead.status === "conversion_failed" && (
+                    {(lead.status === "conversion_failed" || lead.status === "qualified") && (
                       <Button
                         size="sm"
                         variant="outline"

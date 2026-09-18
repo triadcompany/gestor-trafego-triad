@@ -258,9 +258,21 @@ async function sendQualifiedLeadEventWithStatus(
   lead: { clientId: string; ctwaClid: string; remoteJid: string; leadEmail: string | null },
   client: { metaCapiDatasetId: string | null; metaPageId: string | null },
 ): Promise<void> {
-  if (!client.metaCapiDatasetId) return;
+  // Antes retornava calado quando faltava dataset/token — o lead ficava
+  // travado em "qualified" pra sempre, sem erro nenhum registrado e sem
+  // opção de reenviar (que só aparece em "conversion_failed"). Agora sempre
+  // marca a falha explicitamente.
+  if (!client.metaCapiDatasetId) {
+    const error = 'Cliente sem "Identificação do conjunto de dados" configurada.';
+    await db.update(metaLeadAttributions).set({ status: "conversion_failed", conversionError: error }).where(eq(metaLeadAttributions.id, leadId));
+    throw new Error(error);
+  }
   const token = await getMetaToken(lead.clientId);
-  if (!token) return;
+  if (!token) {
+    const error = "Token da Meta não configurado ou expirado pra esse cliente.";
+    await db.update(metaLeadAttributions).set({ status: "conversion_failed", conversionError: error }).where(eq(metaLeadAttributions.id, leadId));
+    throw new Error(error);
+  }
 
   try {
     await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, phoneRemoteJid: lead.remoteJid, email: lead.leadEmail ?? undefined, pageId: client.metaPageId ?? undefined, token });
@@ -298,7 +310,12 @@ const _retryQualifiedLeadEvent = createServerFn({ method: "POST" })
   .inputValidator(z.object({ leadId: z.string() }))
   .handler(async ({ data }) => {
     const { lead, client } = await loadLeadWithClient(data.leadId);
-    if (lead.status !== "conversion_failed") throw new Error("Esse lead não está com envio falhado.");
+    // "qualified" também é reenviável: é o estado em que um lead pode ficar
+    // travado se o envio nunca chegou a ser tentado de fato (bug antigo —
+    // faltava dataset/token e a função saía calada, sem marcar falha).
+    if (lead.status !== "conversion_failed" && lead.status !== "qualified") {
+      throw new Error("Esse lead não está com envio pendente ou falhado.");
+    }
     await sendQualifiedLeadEventWithStatus(data.leadId, lead, client);
   });
 
@@ -329,9 +346,15 @@ const _convertLeadToSale = createServerFn({ method: "POST" })
       .set({ saleId: sale.id, ...(email ? { leadEmail: email } : {}) })
       .where(eq(metaLeadAttributions.id, data.leadId));
 
-    if (!client.metaCapiDatasetId) return;
+    if (!client.metaCapiDatasetId) {
+      await db.update(metaLeadAttributions).set({ purchaseEventError: 'Cliente sem "Identificação do conjunto de dados" configurada.' }).where(eq(metaLeadAttributions.id, data.leadId));
+      return;
+    }
     const token = await getMetaToken(lead.clientId);
-    if (!token) return;
+    if (!token) {
+      await db.update(metaLeadAttributions).set({ purchaseEventError: "Token da Meta não configurado ou expirado pra esse cliente." }).where(eq(metaLeadAttributions.id, data.leadId));
+      return;
+    }
 
     try {
       await sendPurchaseEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, value: data.value, phoneRemoteJid: lead.remoteJid, email, pageId: client.metaPageId ?? undefined, token });
