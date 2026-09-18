@@ -15,7 +15,7 @@ export const Route = createFileRoute("/visao-geral")({
 });
 
 const TYPE_META: Record<AttentionItem["type"], { label: string; icon: typeof AlertTriangle }> = {
-  cpl_alto: { label: "CPL acima da meta", icon: TrendingUp },
+  cpl_alto: { label: "CCI acima da meta", icon: TrendingUp },
   sem_entrega: { label: "Sem entrega", icon: AlertCircle },
   saldo_baixo: { label: "Saldo acabando", icon: Wallet },
 };

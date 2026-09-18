@@ -132,18 +132,28 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
   return (
     <div className="space-y-5">
       {summaryLoading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">{[1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} className="h-20 w-full" />)}</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">{[1, 2, 3, 4, 5, 6, 7, 8].map((i) => <Skeleton key={i} className="h-20 w-full" />)}</div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           <StatCard
             label="Conversas iniciadas"
             value={String(summary?.meta_conversations_started ?? 0)}
             hint="Gerenciador de Anúncios"
           />
           <StatCard
+            label="Custo por conversa"
+            value={summary?.cost_per_conversation != null ? brl(summary.cost_per_conversation) : "—"}
+            hint="CCI"
+          />
+          <StatCard
             label="Leads"
             value={String(summary?.total_leads ?? 0)}
             hint="Chegou no WhatsApp"
+          />
+          <StatCard
+            label="Custo por lead"
+            value={summary?.cost_per_lead != null ? brl(summary.cost_per_lead) : "—"}
+            hint="Lead de verdade"
           />
           <StatCard label="Qualificados" value={String(summary?.qualified_leads ?? 0)} />
           <StatCard label="Taxa de qualificação" value={summary?.qualification_rate !== null && summary?.qualification_rate !== undefined ? `${summary.qualification_rate}%` : "—"} />

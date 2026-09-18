@@ -505,7 +505,7 @@ export function buildClientReportDoc(input: ClientReportInput): jsPDF {
   doc.text(`${int(totalImpr)} impr. · ${int(totalClicks)} cliques · CTR ${pct(avgCtr)} · CPM ${avgCpm != null ? `R$ ${brl(avgCpm)}` : "—"}`, colName, y);
   y += 30;
 
-  const cplNote = cplMax != null ? ` A meta de CPL deste cliente é ${`R$ ${brl(cplMax)}`}.` : "";
+  const cplNote = cplMax != null ? ` A meta de CCI deste cliente é ${`R$ ${brl(cplMax)}`}.` : "";
   const footnoteLines = wrapRich(
     doc,
     [

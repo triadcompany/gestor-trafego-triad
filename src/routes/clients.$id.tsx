@@ -526,7 +526,7 @@ function ClientDetail() {
         <Card className="p-4 mb-6">
           <div className="flex items-center justify-between gap-4 flex-wrap">
             <div>
-              <div className="text-xs text-muted-foreground mb-1">Meta de CPL</div>
+              <div className="text-xs text-muted-foreground mb-1">Meta de CCI</div>
               <div className="flex items-center gap-3">
                 <span className="text-xl font-semibold tabular-nums">
                   {brl(client.cpl_min)} – {brl(client.cpl_max)}
@@ -552,7 +552,7 @@ function ClientDetail() {
             </div>
             <div className="flex gap-6 flex-wrap">
               <Stat
-                label={`CPL ${periodLabel}`}
+                label={`CCI ${periodLabel}`}
                 value={periodCpl !== null ? brl(periodCpl) : "—"}
               />
               <Stat label="Gasto" value={periodSpend > 0 ? brl(periodSpend) : "—"} />
@@ -568,13 +568,13 @@ function ClientDetail() {
         <Card className="p-4 mb-6">
           <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
             <h2 className="text-sm font-medium">
-              {chartMetric === "cpl" ? "CPL" : chartMetric === "spend" ? "Gasto" : chartMetric === "leads" ? "Conversas iniciadas" : "Formulários"} — {periodLabel}
+              {chartMetric === "cpl" ? "CCI" : chartMetric === "spend" ? "Gasto" : chartMetric === "leads" ? "Conversas iniciadas" : "Formulários"} — {periodLabel}
               {compareEnabled && <span className="text-muted-foreground"> vs {periodLabelB}</span>}
             </h2>
             <div className="flex items-center gap-1 rounded-lg border border-border p-1 bg-muted/30">
               {(
                 [
-                  { key: "cpl", icon: TrendingUp, label: "CPL" },
+                  { key: "cpl", icon: TrendingUp, label: "CCI" },
                   { key: "leads", icon: UsersIcon, label: "Conversas" },
                   { key: "forms", icon: ClipboardList, label: "Forms" },
                   { key: "spend", icon: DollarSign, label: "Gasto" },
@@ -646,7 +646,7 @@ function ClientDetail() {
                     />
                     <Divider />
                     <TotalStat
-                      label="CPL médio"
+                      label="CCI médio"
                       value={p.cpl !== null ? brl(p.cpl) : "—"}
                       valueClass={isBest("cpl", p.cpl, idx) ? "text-status-on-target" : ""}
                     />
@@ -690,7 +690,7 @@ function ClientDetail() {
                   <YAxis stroke="var(--muted-foreground)" fontSize={11} tickFormatter={(chartMetric === "leads" || chartMetric === "forms") ? undefined : (v) => `R$${v}`} />
                   <ChartTooltip
                     contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-                    formatter={(v: number) => chartMetric === "leads" ? [v, "Conversas iniciadas"] : chartMetric === "forms" ? [v, "Formulários"] : [brl(v), chartMetric === "cpl" ? "CPL" : "Gasto"]}
+                    formatter={(v: number) => chartMetric === "leads" ? [v, "Conversas iniciadas"] : chartMetric === "forms" ? [v, "Formulários"] : [brl(v), chartMetric === "cpl" ? "CCI" : "Gasto"]}
                   />
                   {chartMetric === "cpl" && !compareEnabled && (
                     <ReferenceArea y1={client.cpl_min} y2={client.cpl_max} fill="var(--primary)" fillOpacity={0.08} />
@@ -1350,7 +1350,7 @@ function CampaignsTotals({ campaigns, cplMax }: { campaigns: MetaCampaign[]; cpl
         <TotalStat label="Conversas iniciadas" value={totalLeads > 0 ? String(totalLeads) : "—"} />
         {totalForms > 0 && <><Divider /><TotalStat label="Forms" value={String(totalForms)} /></>}
         <Divider />
-        <TotalStat label="CPL médio" value={totalCpl !== null ? brl(totalCpl) : "—"} valueClass={cplColor} />
+        <TotalStat label="CCI médio" value={totalCpl !== null ? brl(totalCpl) : "—"} valueClass={cplColor} />
         <Divider />
         <TotalStat label="Impressões" value={totalImpressions > 0 ? totalImpressions.toLocaleString("pt-BR") : "—"} />
         <Divider />

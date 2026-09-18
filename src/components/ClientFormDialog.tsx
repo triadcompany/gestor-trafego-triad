@@ -198,7 +198,7 @@ export function ClientFormDialog({
             </div>
           </FormSection>
 
-          <FormSection title="Segmento e meta de CPL" icon={Target}>
+          <FormSection title="Segmento e meta de CCI" icon={Target}>
             <div className="space-y-1">
               <Label>Segmento</Label>
               <Select value={segment} onValueChange={handleSegmentChange}>
@@ -213,7 +213,7 @@ export function ClientFormDialog({
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1">
-                <Label>CPL mínimo (R$)</Label>
+                <Label>CCI mínimo (R$)</Label>
                 <Input
                   type="number"
                   value={cplMin}
@@ -223,7 +223,7 @@ export function ClientFormDialog({
                 />
               </div>
               <div className="space-y-1">
-                <Label>CPL máximo (R$)</Label>
+                <Label>CCI máximo (R$)</Label>
                 <Input
                   type="number"
                   value={cplMax}

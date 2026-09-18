@@ -11,7 +11,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "get_clients_overview",
-      description: "Lista todos os clientes ativos com CPL, gasto e conversas iniciadas do período (indica quais estão com CPL acima da meta). Use isso pra pedidos que envolvem TODOS os clientes de uma vez (ex.: resumo geral, últimos N dias) — não chame get_client_campaigns uma vez por cliente pra isso.",
+      description: "Lista todos os clientes ativos com CCI, gasto e conversas iniciadas do período (indica quais estão com CCI acima da meta). Use isso pra pedidos que envolvem TODOS os clientes de uma vez (ex.: resumo geral, últimos N dias) — não chame get_client_campaigns uma vez por cliente pra isso.",
       parameters: {
         type: "object",
         properties: {
@@ -29,7 +29,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
     type: "function",
     function: {
       name: "get_client_campaigns",
-      description: "Retorna as campanhas de um cliente com gasto, conversas iniciadas e CPL do período.",
+      description: "Retorna as campanhas de um cliente com gasto, conversas iniciadas e CCI do período.",
       parameters: {
         type: "object",
         properties: {

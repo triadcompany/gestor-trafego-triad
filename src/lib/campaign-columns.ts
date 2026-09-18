@@ -20,7 +20,7 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
   daily_budget: "Orçamento",
   spend: "Gasto",
   leads: "Conversas",
-  cpl: "CPL",
+  cpl: "CCI",
   impressions: "Impressões",
   link_clicks: "Cliques",
   ctr: "CTR",

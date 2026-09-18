@@ -39,15 +39,15 @@ const periodOptions: { value: DashboardPeriod; label: string }[] = [
 ];
 
 const cplLabel: Record<DashboardPeriod, string> = {
-  today:      "CPL hoje",
-  yesterday:  "CPL ontem",
-  last_3d:    "CPL 3d",
-  last_7d:    "CPL 7d",
-  last_30d:   "CPL 30d",
-  this_month: "CPL mês",
-  last_month: "CPL mês ant.",
-  maximum:    "CPL total",
-  custom:     "CPL período",
+  today:      "CCI hoje",
+  yesterday:  "CCI ontem",
+  last_3d:    "CCI 3d",
+  last_7d:    "CCI 7d",
+  last_30d:   "CCI 30d",
+  this_month: "CCI mês",
+  last_month: "CCI mês ant.",
+  maximum:    "CCI total",
+  custom:     "CCI período",
 };
 
 const STATUS_META: Record<ClientStatus, { label: string; accent: string }> = {

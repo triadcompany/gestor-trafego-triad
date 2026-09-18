@@ -193,7 +193,7 @@ function ClientsList() {
                 <TableHead className="hidden md:table-cell">Tags</TableHead>
                 <TableHead>Segmento</TableHead>
                 <TableHead className="hidden sm:table-cell">Pagamento</TableHead>
-                <TableHead className="hidden sm:table-cell">Meta CPL</TableHead>
+                <TableHead className="hidden sm:table-cell">Meta CCI</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead className="text-right">Ações</TableHead>
               </TableRow>

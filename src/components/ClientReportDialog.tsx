@@ -110,7 +110,7 @@ export function ClientReportDialog({
         <DialogHeader>
           <DialogTitle>Relatório de campanhas — {client.name}</DialogTitle>
           <DialogDescription>
-            Escolha o período. O PDF traz o resumo e a tabela de campanhas com gasto, conversas iniciadas, CPL, impressões, cliques, CTR e CPM.
+            Escolha o período. O PDF traz o resumo e a tabela de campanhas com gasto, conversas iniciadas, CCI, impressões, cliques, CTR e CPM.
           </DialogDescription>
         </DialogHeader>
 

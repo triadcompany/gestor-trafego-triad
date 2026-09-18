@@ -101,6 +101,8 @@ export interface CampaignAttributionStats {
 export interface LeadAttributionSummary {
   total_leads: number;
   meta_conversations_started: number;
+  cost_per_lead: number | null;
+  cost_per_conversation: number | null;
   qualified_leads: number;
   qualification_rate: number | null;
   sales_count: number;
@@ -133,8 +135,13 @@ const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
     // fica sincronizado diariamente em metricsDaily. Comparado com total_leads
     // (o que de fato chegou no WhatsApp via webhook) mostra a diferença entre
     // cliques que a Meta conta como conversa e mensagens que realmente chegaram.
+    // O mesmo gasto sincronizado dá dois custos: por lead real (chegou no
+    // WhatsApp) e por conversa iniciada (CCI, a métrica que a Meta reporta).
     const [metaTotals] = await db
-      .select({ total: sql<number>`coalesce(sum(${metricsDaily.leads}), 0)` })
+      .select({
+        leads: sql<number>`coalesce(sum(${metricsDaily.leads}), 0)`,
+        spend: sql<number>`coalesce(sum(${metricsDaily.spend}), 0)`,
+      })
       .from(metricsDaily)
       .where(eq(metricsDaily.clientId, data.clientId));
 
@@ -163,9 +170,14 @@ const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
       byCampaign.set(key, entry);
     }
 
+    const metaLeadsTotal = Number(metaTotals?.leads ?? 0);
+    const totalSpend = Number(metaTotals?.spend ?? 0);
+
     return {
       total_leads: rows.length,
-      meta_conversations_started: Number(metaTotals?.total ?? 0),
+      meta_conversations_started: metaLeadsTotal,
+      cost_per_lead: rows.length > 0 ? Math.round((totalSpend / rows.length) * 100) / 100 : null,
+      cost_per_conversation: metaLeadsTotal > 0 ? Math.round((totalSpend / metaLeadsTotal) * 100) / 100 : null,
       qualified_leads: qualifiedTotal,
       qualification_rate: rows.length > 0 ? Math.round((qualifiedTotal / rows.length) * 1000) / 10 : null,
       sales_count: salesCount,
