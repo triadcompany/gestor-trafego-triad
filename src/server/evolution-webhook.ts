@@ -44,7 +44,7 @@ export async function handleEvolutionWebhook(body: EvolutionWebhookBody): Promis
 
   const client = await db.query.clients.findFirst({
     where: eq(clients.whatsappInstanceId, instance.id),
-    columns: { id: true, qualifiedLeadLabel: true, metaCapiDatasetId: true },
+    columns: { id: true, qualifiedLeadLabel: true, metaCapiDatasetId: true, metaPageId: true },
   });
   if (!client) return { handled: false, reason: "nenhum cliente vinculado a essa instância" };
 
@@ -163,7 +163,7 @@ async function resolveLabelName(instance: { evolutionUrl: string; evolutionKey: 
 }
 
 async function handleLabelAssociation(
-  client: { id: string; qualifiedLeadLabel: string | null; metaCapiDatasetId: string | null },
+  client: { id: string; qualifiedLeadLabel: string | null; metaCapiDatasetId: string | null; metaPageId: string | null },
   instance: { evolutionUrl: string; evolutionKey: string; instanceName: string; organizationId: string },
   data: unknown
 ): Promise<void> {
@@ -203,7 +203,7 @@ async function handleLabelAssociation(
   if (!token) return;
 
   try {
-    await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: attribution.ctwaClid, phoneRemoteJid: attribution.remoteJid, token });
+    await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: attribution.ctwaClid, phoneRemoteJid: attribution.remoteJid, pageId: client.metaPageId ?? undefined, token });
     await db
       .update(metaLeadAttributions)
       .set({ status: "conversion_sent", conversionSentAt: new Date().toISOString() })

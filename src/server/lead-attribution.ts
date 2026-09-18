@@ -244,7 +244,7 @@ async function loadLeadWithClient(leadId: string) {
   const { organizationId, role, userId } = await requireOrgContext();
   const client = await db.query.clients.findFirst({
     where: eq(clients.id, lead.clientId),
-    columns: { organizationId: true, ownerUserId: true, metaCapiDatasetId: true },
+    columns: { organizationId: true, ownerUserId: true, metaCapiDatasetId: true, metaPageId: true },
   });
   if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Lead não encontrado.");
   return { lead, client };
@@ -265,7 +265,7 @@ const _markLeadQualified = createServerFn({ method: "POST" })
     if (!token) return;
 
     try {
-      await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, phoneRemoteJid: lead.remoteJid, email: lead.leadEmail ?? undefined, token });
+      await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, phoneRemoteJid: lead.remoteJid, email: lead.leadEmail ?? undefined, pageId: client.metaPageId ?? undefined, token });
       await db
         .update(metaLeadAttributions)
         .set({ status: "conversion_sent", conversionSentAt: new Date().toISOString() })
@@ -311,7 +311,7 @@ const _convertLeadToSale = createServerFn({ method: "POST" })
     if (!token) return;
 
     try {
-      await sendPurchaseEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, value: data.value, phoneRemoteJid: lead.remoteJid, email, token });
+      await sendPurchaseEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, value: data.value, phoneRemoteJid: lead.remoteJid, email, pageId: client.metaPageId ?? undefined, token });
       await db
         .update(metaLeadAttributions)
         .set({ purchaseEventSentAt: new Date().toISOString() })

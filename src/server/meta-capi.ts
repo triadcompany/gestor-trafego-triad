@@ -12,8 +12,13 @@ function sha256Hex(input: string): string {
 // DDI), email em minúsculas e sem espaço nas pontas. Aumenta o Event Match
 // Quality (EMQ) — quanto mais dado bate com uma conta real, melhor a Meta
 // otimiza a entrega pelo evento.
-function buildMetaUserData(ctwaClid: string, phoneRemoteJid?: string, email?: string): Record<string, string> {
+function buildMetaUserData(ctwaClid: string, phoneRemoteJid?: string, email?: string, pageId?: string): Record<string, string> {
   const userData: Record<string, string> = { ctwa_clid: ctwaClid };
+  // Exigido pela Meta pra eventos com action_source "business_messaging" —
+  // sem isso a API recusa com "Page ID or WhatsApp Business Account ID Is
+  // Missing" (code 100.2804116). Precisa ser o Page ID vinculado ao mesmo
+  // conjunto de dados pro qual o evento está sendo enviado.
+  if (pageId) userData.page_id = pageId;
   if (phoneRemoteJid) {
     const digits = phoneRemoteJid.replace(/\D/g, "");
     if (digits) userData.ph = sha256Hex(digits);
@@ -29,6 +34,7 @@ export async function sendQualifiedLeadEvent(params: {
   ctwaClid: string;
   phoneRemoteJid?: string;
   email?: string;
+  pageId?: string;
   token: string;
 }): Promise<void> {
   await postMetaJson(`${params.datasetId}/events?access_token=${encodeURIComponent(params.token)}`, {
@@ -38,7 +44,7 @@ export async function sendQualifiedLeadEvent(params: {
         event_time: Math.floor(Date.now() / 1000),
         action_source: "business_messaging",
         messaging_channel: "whatsapp",
-        user_data: buildMetaUserData(params.ctwaClid, params.phoneRemoteJid, params.email),
+        user_data: buildMetaUserData(params.ctwaClid, params.phoneRemoteJid, params.email, params.pageId),
       },
     ],
   });
@@ -51,6 +57,7 @@ export async function sendPurchaseEvent(params: {
   value: number | null;
   phoneRemoteJid?: string;
   email?: string;
+  pageId?: string;
   token: string;
 }): Promise<void> {
   await postMetaJson(`${params.datasetId}/events?access_token=${encodeURIComponent(params.token)}`, {
@@ -60,7 +67,7 @@ export async function sendPurchaseEvent(params: {
         event_time: Math.floor(Date.now() / 1000),
         action_source: "business_messaging",
         messaging_channel: "whatsapp",
-        user_data: buildMetaUserData(params.ctwaClid, params.phoneRemoteJid, params.email),
+        user_data: buildMetaUserData(params.ctwaClid, params.phoneRemoteJid, params.email, params.pageId),
         ...(params.value !== null ? { custom_data: { currency: "BRL", value: params.value } } : {}),
       },
     ],
