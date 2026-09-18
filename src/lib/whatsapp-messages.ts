@@ -147,6 +147,37 @@ const _fetchWhatsappInstances = createServerFn({ method: "GET" }).handler(async 
   return rows.filter((r) => (seen.has(r.id) ? false : (seen.add(r.id), true)));
 });
 
+export interface ClientWhatsappInfo {
+  instanceLabel: string | null;
+  connectedAt: string | null;
+}
+
+// Não existe um timestamp de "conectou de fato" (a Evolution só expõe o
+// estado atual via /instance/connectionState, sem histórico) — usa a criação
+// da instância no sistema como aproximação, já que a instância nasce junto
+// com o fluxo de conexão (criar -> mostrar QR -> escanear).
+const _fetchClientWhatsappInfo = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async ({ data }): Promise<ClientWhatsappInfo> => {
+    const { organizationId, role, userId } = await requireOrgContext();
+    const client = await db.query.clients.findFirst({
+      where: eq(clients.id, data.clientId),
+      columns: { organizationId: true, ownerUserId: true, whatsappInstanceId: true },
+    });
+    if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
+    if (!client.whatsappInstanceId) return { instanceLabel: null, connectedAt: null };
+
+    const instance = await db.query.whatsappInstances.findFirst({
+      where: eq(whatsappInstances.id, client.whatsappInstanceId),
+      columns: { label: true, createdAt: true },
+    });
+    return { instanceLabel: instance?.label ?? null, connectedAt: instance?.createdAt ?? null };
+  });
+
+export async function fetchClientWhatsappInfo(clientId: string): Promise<ClientWhatsappInfo> {
+  return _fetchClientWhatsappInfo({ data: { clientId } });
+}
+
 export async function fetchWhatsappInstances(): Promise<WhatsappInstanceRow[]> {
   return _fetchWhatsappInstances();
 }
