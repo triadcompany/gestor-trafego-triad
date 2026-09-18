@@ -288,17 +288,14 @@ async function sendQualifiedLeadEventWithStatus(
     throw err;
   }
 
-  // Teste experimental: manda o mesmo lead também como "Lead" e "LeadSubmitted"
-  // (nomes que a Meta pode reconhecer com suporte nativo de coluna, diferente
-  // de "QualifiedLead") — em paralelo, sem afetar o status acima nem travar a
-  // qualificação se algum desses falhar. Ver se aparece como coluna nativa no
-  // Gerenciador de Anúncios; remover depois se não servir pra nada.
-  for (const eventName of ["Lead", "LeadSubmitted"]) {
-    try {
-      await sendCustomMessagingEvent({ eventName, datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, phoneRemoteJid: lead.remoteJid, email: lead.leadEmail ?? undefined, pageId: client.metaPageId ?? undefined, token });
-    } catch {
-      // experimental — falha aqui não deve impedir nem confundir o fluxo de qualificação real
-    }
+  // "LeadSubmitted" é o evento que confirmamos aparecer como coluna nativa no
+  // Gerenciador de Anúncios (diferente de "QualifiedLead", que só serve pra
+  // rastreamento). Manda em paralelo, sem afetar o status acima — se falhar,
+  // não deve travar a qualificação real.
+  try {
+    await sendCustomMessagingEvent({ eventName: "LeadSubmitted", datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, phoneRemoteJid: lead.remoteJid, email: lead.leadEmail ?? undefined, pageId: client.metaPageId ?? undefined, token });
+  } catch {
+    // não deve impedir nem confundir o fluxo de qualificação real
   }
 }
 
