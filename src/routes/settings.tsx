@@ -33,6 +33,7 @@ import {
   Users as UsersIcon,
   MessageCircle,
   Star,
+  Pencil,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -57,10 +58,12 @@ import {
   fetchWhatsappInstances,
   createWhatsappInstance,
   renameWhatsappInstance,
+  setInstanceClient,
   deleteWhatsappInstance,
   fetchWhatsappInstanceQr,
   fetchWhatsappInstanceState,
   generateInstanceConnectLink,
+  type WhatsappInstanceRow,
 } from "@/lib/whatsapp-messages";
 import { fetchAllClients } from "@/lib/queries";
 import { getN8nWebhookUrl, saveN8nWebhookUrl } from "@/lib/n8n";
@@ -499,6 +502,10 @@ function WhatsappInstancesSection() {
   const [clientId, setClientId] = useState<string>("none");
   const [qrFor, setQrFor] = useState<string | null>(null);
   const [qrInitial, setQrInitial] = useState<string | null>(null);
+  const [editing, setEditing] = useState<WhatsappInstanceRow | null>(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editAssignedUserId, setEditAssignedUserId] = useState<string>("none");
+  const [editClientId, setEditClientId] = useState<string>("none");
 
   const { data: instances = [], isLoading } = useQuery({ queryKey: ["whatsapp-instances"], queryFn: fetchWhatsappInstances });
   const { data: members = [] } = useQuery({ queryKey: ["org-members"], queryFn: fetchOrgMembers });
@@ -543,6 +550,31 @@ function WhatsappInstancesSection() {
       queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao remover instância"),
+  });
+
+  const openEdit = (i: WhatsappInstanceRow) => {
+    setEditing(i);
+    setEditLabel(i.label);
+    setEditAssignedUserId(i.assignedUserId ?? "none");
+    setEditClientId(i.clientId ?? "none");
+  };
+
+  const editMutation = useMutation({
+    mutationFn: async () => {
+      if (!editing) return;
+      await renameWhatsappInstance(editing.id, editLabel.trim(), editAssignedUserId === "none" ? null : editAssignedUserId);
+      const nextClientId = editClientId === "none" ? null : editClientId;
+      if (nextClientId !== editing.clientId) {
+        await setInstanceClient(editing.id, nextClientId);
+      }
+    },
+    onSuccess: () => {
+      toast.success("Instância atualizada.");
+      setEditing(null);
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
+      queryClient.invalidateQueries({ queryKey: ["all-clients"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar instância"),
   });
 
   const openConnect = async (id: string) => {
@@ -657,6 +689,9 @@ function WhatsappInstancesSection() {
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={() => linkMutation.mutate(i.id)} disabled={linkMutation.isPending}>
                   <Copy className="h-3.5 w-3.5" /> Copiar link
                 </Button>
+                <Button size="icon" variant="ghost" onClick={() => openEdit(i)} title="Editar">
+                  <Pencil className="h-4 w-4" />
+                </Button>
                 <Button size="icon" variant="ghost" onClick={() => { if (confirm(`Excluir a instância "${i.label}"? Isso desconecta e apaga ela na Evolution.`)) deleteMutation.mutate(i.id); }} className="text-destructive hover:text-destructive">
                   <Trash2 className="h-4 w-4" />
                 </Button>
@@ -678,6 +713,48 @@ function WhatsappInstancesSection() {
           toast.success("WhatsApp conectado!");
         }}
       />
+
+      <Dialog open={!!editing} onOpenChange={(v) => { if (!v) setEditing(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar instância</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label>Nome</Label>
+              <Input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Atribuir a um gestor</Label>
+              <Select value={editAssignedUserId} onValueChange={setEditAssignedUserId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Ninguém em específico</SelectItem>
+                  {members.map((m) => <SelectItem key={m.id} value={m.id}>{m.fullName}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">Define o WhatsApp "padrão" desse gestor quando ele manda uma mensagem sem escolher instância manualmente.</p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Cliente</Label>
+              <Select value={editClientId} onValueChange={setEditClientId}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nenhum — instância interna/gestor</SelectItem>
+                  {clientsList.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <p className="text-[11px] text-muted-foreground">Escolher um cliente aqui desvincula ele de qualquer outra instância — cada cliente só pode ter uma.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => editMutation.mutate()} disabled={!editLabel.trim() || editMutation.isPending}>
+              {editMutation.isPending ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

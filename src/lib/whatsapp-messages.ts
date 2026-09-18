@@ -330,6 +330,32 @@ export async function renameWhatsappInstance(id: string, label: string, assigned
   await _renameWhatsappInstance({ data: { id, label, assignedUserId } });
 }
 
+// Troca qual cliente está vinculado a essa instância (usado pelo rastreamento de
+// leads). Sempre desvincula qualquer outro cliente que já apontasse pra ela
+// primeiro — uma instância só pode pertencer a um cliente por vez (uma
+// instância compartilhada entre vários já causou atribuição errada de leads).
+const _setInstanceClient = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string(), clientId: z.string().nullable() }))
+  .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await loadInstanceInOrg(data.id, organizationId);
+
+    await db.update(clients).set({ whatsappInstanceId: null }).where(eq(clients.whatsappInstanceId, data.id));
+
+    if (data.clientId) {
+      const client = await db.query.clients.findFirst({
+        where: eq(clients.id, data.clientId),
+        columns: { organizationId: true },
+      });
+      if (!client || client.organizationId !== organizationId) throw new Error("Cliente não encontrado.");
+      await db.update(clients).set({ whatsappInstanceId: data.id }).where(eq(clients.id, data.clientId));
+    }
+  });
+
+export async function setInstanceClient(id: string, clientId: string | null): Promise<void> {
+  await _setInstanceClient({ data: { id, clientId } });
+}
+
 const _deleteWhatsappInstance = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
