@@ -423,7 +423,7 @@ export function ClientFormDialog({
               </p>
             </div>
             <div className="space-y-1">
-              <Label>Dataset da Meta (Conversions API)</Label>
+              <Label>Identificação do conjunto de dados</Label>
               <Input
                 value={metaCapiDatasetId}
                 onChange={(e) => setMetaCapiDatasetId(e.target.value)}
