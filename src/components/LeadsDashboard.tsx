@@ -33,7 +33,7 @@ import {
   Tooltip as ChartTooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Search, DollarSign, Check, CalendarRange, RefreshCw } from "lucide-react";
+import { Search, DollarSign, Check, CalendarRange, RefreshCw, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
 import { fetchLeadAttributions, fetchLeadAttributionSummary, markLeadQualified, retryQualifiedLeadEvent, convertLeadToSale, type LeadAttributionRow } from "@/server/lead-attribution";
 import { fetchClientWhatsappInfo } from "@/lib/whatsapp-messages";
@@ -253,6 +253,17 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
         </div>
       )}
 
+      {!summaryLoading && summary && (
+        <ConversionFunnel
+          stages={[
+            { label: "Conversas iniciadas", value: summary.meta_conversations_started },
+            { label: "Leads", value: summary.total_leads },
+            { label: "Leads qualificados", value: summary.qualified_leads },
+            { label: "Vendas", value: summary.sales_count },
+          ]}
+        />
+      )}
+
       {!leadsLoading && leads.length > 0 && (
         <div className="grid gap-3 md:grid-cols-3">
           <Card className="p-4 md:col-span-2">
@@ -402,6 +413,65 @@ function StatCard({ label, value, hint }: { label: string; value: string; hint?:
       <p className="text-xs text-muted-foreground mb-1">{label}</p>
       <p className="text-lg font-semibold tabular-nums truncate">{value}</p>
       {hint && <p className="text-[11px] text-muted-foreground/70 mt-0.5 truncate">{hint}</p>}
+    </Card>
+  );
+}
+
+// Funil horizontal: largura de cada etapa é fixa (colunas iguais), a altura
+// do "cano" que afunila comunica a queda de volume entre etapas — com um piso
+// mínimo pra etapas pequenas não sumirem visualmente. As porcentagens entre
+// etapas ficam em selos sobre cada fronteira.
+function ConversionFunnel({ stages }: { stages: { label: string; value: number }[] }) {
+  const maxValue = Math.max(...stages.map((s) => s.value), 1);
+  const minHeightPct = 26;
+  const heights = stages.map((s) => minHeightPct + (100 - minHeightPct) * (s.value / maxValue));
+  const opacities = [1, 0.78, 0.56, 0.36];
+
+  return (
+    <Card className="p-4">
+      <p className="text-sm font-medium mb-4">Funil de conversão</p>
+      <div className="relative h-24">
+        <div className="absolute inset-0 flex">
+          {stages.map((stage, i) => {
+            const left = heights[i];
+            const right = i < stages.length - 1 ? heights[i + 1] : heights[i];
+            return (
+              <div
+                key={stage.label}
+                className="flex-1"
+                style={{
+                  clipPath: `polygon(0% ${50 - left / 2}%, 100% ${50 - right / 2}%, 100% ${50 + right / 2}%, 0% ${50 + left / 2}%)`,
+                  backgroundColor: "var(--primary)",
+                  opacity: opacities[i] ?? 0.3,
+                }}
+              />
+            );
+          })}
+        </div>
+        {stages.slice(0, -1).map((stage, i) => {
+          const next = stages[i + 1];
+          const rate = stage.value > 0 ? Math.round((next.value / stage.value) * 1000) / 10 : null;
+          const leftPct = ((i + 1) / stages.length) * 100;
+          return (
+            <div
+              key={`rate-${stage.label}`}
+              className="absolute top-1/2 flex items-center gap-1 rounded-full border border-border bg-card px-2 py-1 shadow-raised text-[11px] font-mono font-medium whitespace-nowrap"
+              style={{ left: `${leftPct}%`, transform: "translate(-50%, -50%)" }}
+            >
+              <ChevronRight className="h-3 w-3 text-muted-foreground" />
+              {rate !== null ? `${rate}%` : "—"}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex mt-3">
+        {stages.map((stage) => (
+          <div key={stage.label} className="flex-1 text-center px-1">
+            <p className="text-xs text-muted-foreground truncate">{stage.label}</p>
+            <p className="text-base font-semibold tabular-nums">{stage.value.toLocaleString("pt-BR")}</p>
+          </div>
+        ))}
+      </div>
     </Card>
   );
 }
