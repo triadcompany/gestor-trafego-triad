@@ -3,7 +3,6 @@ import { and, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import {
-  campaignSnapshots,
   clientNotes,
   clientTags,
   clients,
@@ -557,91 +556,6 @@ const _fetchClientBalances = createServerFn({ method: "GET" }).handler(async () 
 
 export async function fetchClientBalances(): Promise<ClientBalance[]> {
   return _fetchClientBalances();
-}
-
-// ─── Visão Geral (itens de atenção) ────────────────────────────────────────
-
-export interface AttentionItem {
-  clientId: string;
-  clientName: string;
-  type: "cpl_alto" | "sem_entrega" | "saldo_baixo";
-  severity: "attention" | "critical";
-  campaignId?: string;
-  campaignName?: string;
-  detail: string;
-  value: string;
-}
-
-const brl = (reais: number) =>
-  reais.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-
-const _fetchAttentionItems = createServerFn({ method: "GET" }).handler(async (): Promise<AttentionItem[]> => {
-  const { organizationId, role, userId } = await requireOrgContext();
-  const items: AttentionItem[] = [];
-
-  const campaignRows = await db
-    .select({
-      clientId: clients.id,
-      clientName: clients.name,
-      cplMax: clients.cplMax,
-      campaignId: campaignSnapshots.campaignId,
-      campaignName: campaignSnapshots.name,
-      spend: campaignSnapshots.spend,
-      cpl: campaignSnapshots.cpl,
-    })
-    .from(campaignSnapshots)
-    .innerJoin(clients, eq(campaignSnapshots.clientId, clients.id))
-    .where(and(eq(campaignSnapshots.status, "ACTIVE"), eq(clients.active, true), eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })));
-
-  for (const row of campaignRows) {
-    if (row.cpl !== null && row.cpl > row.cplMax) {
-      const severity = row.cpl <= row.cplMax * 1.3 ? "attention" : "critical";
-      items.push({
-        clientId: row.clientId,
-        clientName: row.clientName,
-        type: "cpl_alto",
-        severity,
-        campaignId: row.campaignId,
-        campaignName: row.campaignName,
-        detail: `Campanha "${row.campaignName}" · meta ${brl(row.cplMax)}`,
-        value: brl(row.cpl),
-      });
-    } else if (row.spend === 0) {
-      items.push({
-        clientId: row.clientId,
-        clientName: row.clientName,
-        type: "sem_entrega",
-        severity: "attention",
-        campaignId: row.campaignId,
-        campaignName: row.campaignName,
-        detail: `Campanha "${row.campaignName}" ativa, sem gasto hoje`,
-        value: brl(0),
-      });
-    }
-  }
-
-  const balances = await _fetchClientBalances();
-  for (const b of balances) {
-    if (b.payment_method !== "pix" || b.meta_balance === null || b.spendToday <= 0) continue;
-    const estimatedDays = b.meta_balance / (b.spendToday * 100);
-    if (estimatedDays < 1) {
-      items.push({
-        clientId: b.id,
-        clientName: b.name,
-        type: "saldo_baixo",
-        severity: "critical",
-        detail: `Saldo cobre menos de 1 dia de veiculação (gasto médio: ${brl(b.spendToday)}/dia)`,
-        value: brl(b.meta_balance / 100),
-      });
-    }
-  }
-
-  const severityOrder = { critical: 0, attention: 1 };
-  return items.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
-});
-
-export async function fetchAttentionItems(): Promise<AttentionItem[]> {
-  return _fetchAttentionItems();
 }
 
 // ─── Notas ───────────────────────────────────────────────────────────────────

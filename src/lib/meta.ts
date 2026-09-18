@@ -396,7 +396,7 @@ export const syncClientMetrics = createServerOnlyFn(async function syncClientMet
     await db.update(clientsTable).set({ metaBalance: balance }).where(eq(clientsTable.id, clientId));
   }
 
-  // Snapshot por campanha — alimenta a página Visão Geral (campanhas com CPL alto / sem entrega)
+  // Snapshot por campanha (histórico de gasto/CCI por campanha do dia)
   try {
     const campaigns = await fetchCampaigns(adAccountId, token, "today");
     for (const c of campaigns) {

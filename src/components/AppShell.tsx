@@ -1,10 +1,10 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X, AlertTriangle, Sun, Moon, MessageCircle, Target, ChevronsLeft } from "lucide-react";
+import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X, Sun, Moon, MessageCircle, Target, ChevronsLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/server/session";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
-import { fetchCurrentProfile, fetchAttentionItems } from "@/lib/queries";
+import { fetchCurrentProfile } from "@/lib/queries";
 import { useTheme } from "@/components/ThemeProvider";
 import { AgentChatWidget } from "@/components/AgentChatWidget";
 
@@ -12,7 +12,6 @@ const navGroups = [
   {
     label: "Visão",
     items: [
-      { to: "/visao-geral", label: "Visão Geral", icon: AlertTriangle, exact: false },
       { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
     ],
   },
@@ -74,11 +73,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     staleTime: Infinity,
   });
 
-  const { data: attentionItems = [] } = useQuery({
-    queryKey: ["attention-items"],
-    queryFn: fetchAttentionItems,
-  });
-  const criticalCount = attentionItems.filter((i) => i.severity === "critical").length;
   const { theme, toggleTheme } = useTheme();
 
   const isActive = (to: string, exact: boolean) =>
@@ -159,11 +153,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     >
                       <Icon className="h-4 w-4 shrink-0" />
                       {!collapsed && <span className="truncate">{item.label}</span>}
-                      {!collapsed && item.to === "/visao-geral" && criticalCount > 0 && (
-                        <span className="ml-auto text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-status-critical/10 text-status-critical border border-status-critical/20">
-                          {criticalCount}
-                        </span>
-                      )}
                     </Link>
                   );
                 })}
@@ -257,11 +246,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         >
                           <Icon className="h-5 w-5 shrink-0" />
                           {item.label}
-                          {item.to === "/visao-geral" && criticalCount > 0 && (
-                            <span className="ml-auto text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-status-critical/10 text-status-critical border border-status-critical/20">
-                              {criticalCount}
-                            </span>
-                          )}
                         </Link>
                       );
                     })}

@@ -9,7 +9,6 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as VisaoGeralRouteImport } from './routes/visao-geral'
 import { Route as VendasRouteImport } from './routes/vendas'
 import { Route as TarefasRouteImport } from './routes/tarefas'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -32,11 +31,6 @@ import { Route as ClientsIdLeadsRouteImport } from './routes/clients.$id.leads'
 import { Route as CampaignsEditIdRouteImport } from './routes/campaigns.edit.$id'
 import { Route as AuthGoogleCallbackRouteImport } from './routes/auth.google.callback'
 
-const VisaoGeralRoute = VisaoGeralRouteImport.update({
-  id: '/visao-geral',
-  path: '/visao-geral',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const VendasRoute = VendasRouteImport.update({
   id: '/vendas',
   path: '/vendas',
@@ -156,7 +150,6 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
   '/vendas': typeof VendasRoute
-  '/visao-geral': typeof VisaoGeralRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
@@ -180,7 +173,6 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
   '/vendas': typeof VendasRoute
-  '/visao-geral': typeof VisaoGeralRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
@@ -205,7 +197,6 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
   '/vendas': typeof VendasRoute
-  '/visao-geral': typeof VisaoGeralRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
@@ -231,7 +222,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tarefas'
     | '/vendas'
-    | '/visao-geral'
     | '/admin/organizations'
     | '/auth/callback'
     | '/campaigns/new'
@@ -255,7 +245,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tarefas'
     | '/vendas'
-    | '/visao-geral'
     | '/admin/organizations'
     | '/auth/callback'
     | '/campaigns/new'
@@ -279,7 +268,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tarefas'
     | '/vendas'
-    | '/visao-geral'
     | '/admin/organizations'
     | '/auth/callback'
     | '/campaigns/new'
@@ -304,7 +292,6 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   TarefasRoute: typeof TarefasRoute
   VendasRoute: typeof VendasRoute
-  VisaoGeralRoute: typeof VisaoGeralRoute
   AdminOrganizationsRoute: typeof AdminOrganizationsRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   CampaignsNewRoute: typeof CampaignsNewRoute
@@ -317,13 +304,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/visao-geral': {
-      id: '/visao-geral'
-      path: '/visao-geral'
-      fullPath: '/visao-geral'
-      preLoaderRoute: typeof VisaoGeralRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/vendas': {
       id: '/vendas'
       path: '/vendas'
@@ -499,7 +479,6 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   TarefasRoute: TarefasRoute,
   VendasRoute: VendasRoute,
-  VisaoGeralRoute: VisaoGeralRoute,
   AdminOrganizationsRoute: AdminOrganizationsRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   CampaignsNewRoute: CampaignsNewRoute,
