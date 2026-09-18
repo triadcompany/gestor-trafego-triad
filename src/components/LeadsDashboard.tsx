@@ -223,9 +223,9 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
       </div>
 
       {summaryLoading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">{[1, 2, 3, 4, 5, 6, 7, 8].map((i) => <Skeleton key={i} className="h-20 w-full" />)}</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">{[1, 2, 3, 4, 5, 6, 7, 8].map((i) => <Skeleton key={i} className="h-20 w-full" />)}</div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard
             label="Conversas iniciadas"
             value={String(summary?.meta_conversations_started ?? 0)}
@@ -409,10 +409,10 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <Card className="p-3">
-      <p className="text-xs text-muted-foreground mb-1">{label}</p>
-      <p className="text-lg font-semibold tabular-nums truncate">{value}</p>
-      {hint && <p className="text-[11px] text-muted-foreground/70 mt-0.5 truncate">{hint}</p>}
+    <Card className="p-4">
+      <p className="text-xs text-muted-foreground mb-1.5">{label}</p>
+      <p className="text-xl font-semibold tabular-nums truncate">{value}</p>
+      {hint && <p className="text-[11px] text-muted-foreground/70 mt-1">{hint}</p>}
     </Card>
   );
 }
