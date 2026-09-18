@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -21,6 +21,18 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  AreaChart,
+  Area,
+  PieChart,
+  Pie,
+  Cell,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip as ChartTooltip,
+  ResponsiveContainer,
+} from "recharts";
 import { Search, DollarSign, Check } from "lucide-react";
 import { toast } from "sonner";
 import { fetchLeadAttributions, fetchLeadAttributionSummary, markLeadQualified, convertLeadToSale, type LeadAttributionRow } from "@/server/lead-attribution";
@@ -39,6 +51,10 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = 
   conversion_sent: "default",
   conversion_failed: "destructive",
 };
+
+const QUALIFIED_STATUSES = new Set(["qualified", "conversion_sent", "conversion_failed"]);
+
+const CHART_TOOLTIP_STYLE = { background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 };
 
 export function LeadsDashboard({ clientId }: { clientId: string }) {
   const queryClient = useQueryClient();
@@ -76,6 +92,43 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
     return (l.contact_name ?? "").toLowerCase().includes(q) || l.remote_jid.includes(q);
   });
 
+  const trendData = useMemo(() => {
+    const byDay = new Map<string, { leads: number; qualified: number }>();
+    for (const lead of leads) {
+      const key = lead.first_message_at.slice(0, 10);
+      const entry = byDay.get(key) ?? { leads: 0, qualified: 0 };
+      entry.leads++;
+      if (lead.sale_id || QUALIFIED_STATUSES.has(lead.status)) entry.qualified++;
+      byDay.set(key, entry);
+    }
+    const days: { key: string; label: string; leads: number; qualified: number }[] = [];
+    const today = new Date();
+    for (let i = 13; i >= 0; i--) {
+      const d = new Date(today);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      const entry = byDay.get(key) ?? { leads: 0, qualified: 0 };
+      days.push({ key, label: d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }), ...entry });
+    }
+    return days;
+  }, [leads]);
+
+  const funnelData = useMemo(() => {
+    let converted = 0;
+    let qualified = 0;
+    let pending = 0;
+    for (const lead of leads) {
+      if (lead.sale_id) converted++;
+      else if (QUALIFIED_STATUSES.has(lead.status)) qualified++;
+      else pending++;
+    }
+    return [
+      { name: "Aguardando", value: pending, color: "var(--chart-5)" },
+      { name: "Qualificado", value: qualified, color: "var(--chart-2)" },
+      { name: "Convertido", value: converted, color: "var(--primary)" },
+    ].filter((d) => d.value > 0);
+  }, [leads]);
+
   return (
     <div className="space-y-5">
       {summaryLoading ? (
@@ -87,6 +140,59 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
           <StatCard label="Taxa de qualificação" value={summary?.qualification_rate !== null && summary?.qualification_rate !== undefined ? `${summary.qualification_rate}%` : "—"} />
           <StatCard label="Vendas" value={String(summary?.sales_count ?? 0)} />
           <StatCard label="Valor vendido" value={brl(summary?.sales_value_total ?? 0)} />
+        </div>
+      )}
+
+      {!leadsLoading && leads.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-3">
+          <Card className="p-4 md:col-span-2">
+            <p className="text-sm font-medium mb-3">Leads por dia (14 dias)</p>
+            <div className="h-56">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={trendData} margin={{ top: 5, right: 8, left: -16, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="leadsFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.28} />
+                      <stop offset="100%" stopColor="var(--primary)" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="label" stroke="var(--muted-foreground)" fontSize={11} tickLine={false} axisLine={false} />
+                  <YAxis stroke="var(--muted-foreground)" fontSize={11} allowDecimals={false} tickLine={false} axisLine={false} width={28} />
+                  <ChartTooltip
+                    contentStyle={CHART_TOOLTIP_STYLE}
+                    formatter={(v: number, name: string) => [v, name === "leads" ? "Leads" : "Qualificados"]}
+                  />
+                  <Area type="monotone" dataKey="leads" stroke="var(--primary)" strokeWidth={2} fill="url(#leadsFill)" />
+                  <Area type="monotone" dataKey="qualified" stroke="var(--chart-2)" strokeWidth={2} fill="transparent" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+          <Card className="p-4">
+            <p className="text-sm font-medium mb-3">Funil de status</p>
+            <div className="h-36">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={funnelData} dataKey="value" nameKey="name" innerRadius={40} outerRadius={62} paddingAngle={2} strokeWidth={0}>
+                    {funnelData.map((d) => (
+                      <Cell key={d.name} fill={d.color} />
+                    ))}
+                  </Pie>
+                  <ChartTooltip contentStyle={CHART_TOOLTIP_STYLE} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="flex flex-col gap-1.5 mt-2">
+              {funnelData.map((d) => (
+                <div key={d.name} className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="h-2 w-2 rounded-full shrink-0" style={{ background: d.color }} />
+                  <span className="flex-1">{d.name}</span>
+                  <span className="font-mono tabular-nums text-foreground">{d.value}</span>
+                </div>
+              ))}
+            </div>
+          </Card>
         </div>
       )}
 
