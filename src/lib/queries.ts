@@ -145,7 +145,7 @@ export type DashboardPeriod =
   | "maximum"
   | "custom";
 
-function periodDateRange(
+export function periodDateRange(
   period: DashboardPeriod,
   customRange?: { since: string; until: string },
 ): { start: string; end: string } {

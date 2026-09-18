@@ -33,10 +33,23 @@ import {
   Tooltip as ChartTooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Search, DollarSign, Check } from "lucide-react";
+import { Search, DollarSign, Check, CalendarRange } from "lucide-react";
 import { toast } from "sonner";
 import { fetchLeadAttributions, fetchLeadAttributionSummary, markLeadQualified, convertLeadToSale, type LeadAttributionRow } from "@/server/lead-attribution";
 import { brl } from "@/lib/mock-data";
+import type { DashboardPeriod } from "@/lib/queries";
+
+const PERIOD_OPTIONS: { value: DashboardPeriod; label: string }[] = [
+  { value: "today",      label: "Hoje" },
+  { value: "yesterday",  label: "Ontem" },
+  { value: "last_3d",    label: "3 dias" },
+  { value: "last_7d",    label: "7 dias" },
+  { value: "last_30d",   label: "30 dias" },
+  { value: "this_month", label: "Mês" },
+  { value: "last_month", label: "Mês passado" },
+  { value: "maximum",    label: "Máximo" },
+  { value: "custom",     label: "Período" },
+];
 
 const STATUS_LABEL: Record<string, string> = {
   pending: "Aguardando",
@@ -60,14 +73,22 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
   const [saleFor, setSaleFor] = useState<LeadAttributionRow | null>(null);
+  const [period, setPeriod] = useState<DashboardPeriod>("maximum");
+  const [customSince, setCustomSince] = useState("");
+  const [customUntil, setCustomUntil] = useState("");
+
+  const customRange = period === "custom" && customSince && customUntil ? { since: customSince, until: customUntil } : undefined;
+  const periodReady = period !== "custom" || !!customRange;
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ["lead-attribution-summary", clientId],
-    queryFn: () => fetchLeadAttributionSummary(clientId),
+    queryKey: ["lead-attribution-summary", clientId, period, customSince, customUntil],
+    queryFn: () => fetchLeadAttributionSummary(clientId, period, customRange),
+    enabled: periodReady,
   });
   const { data: leads = [], isLoading: leadsLoading } = useQuery({
-    queryKey: ["lead-attributions", clientId],
-    queryFn: () => fetchLeadAttributions(clientId),
+    queryKey: ["lead-attributions", clientId, period, customSince, customUntil],
+    queryFn: () => fetchLeadAttributions(clientId, period, customRange),
+    enabled: periodReady,
   });
 
   const qualifyMutation = useMutation({
@@ -131,6 +152,52 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
 
   return (
     <div className="space-y-5">
+      <div className="flex justify-end">
+        <div className="flex flex-col items-end gap-1.5">
+          <div
+            role="group"
+            aria-label="Selecionar período"
+            className="flex flex-wrap rounded-md border border-border overflow-hidden text-xs"
+          >
+            {PERIOD_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setPeriod(opt.value)}
+                aria-pressed={period === opt.value}
+                className={`flex items-center gap-1 px-3 py-1.5 touch-manipulation transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                  period === opt.value
+                    ? "bg-primary text-primary-foreground font-medium"
+                    : "text-muted-foreground hover:bg-muted"
+                }`}
+              >
+                {opt.value === "custom" && <CalendarRange className="h-3 w-3" />}
+                {opt.label}
+              </button>
+            ))}
+          </div>
+          {period === "custom" && (
+            <div className="flex items-center gap-1.5 text-xs">
+              <Input
+                type="date"
+                aria-label="Data inicial"
+                value={customSince}
+                onChange={(e) => setCustomSince(e.target.value)}
+                className="h-7 w-32 text-xs px-2"
+              />
+              <span className="text-muted-foreground">–</span>
+              <Input
+                type="date"
+                aria-label="Data final"
+                value={customUntil}
+                onChange={(e) => setCustomUntil(e.target.value)}
+                className="h-7 w-32 text-xs px-2"
+              />
+            </div>
+          )}
+        </div>
+      </div>
+
       {summaryLoading ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">{[1, 2, 3, 4, 5, 6, 7, 8].map((i) => <Skeleton key={i} className="h-20 w-full" />)}</div>
       ) : (

@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { clients, metaLeadAttributions, metricsDaily, sales } from "@/db/schema";
@@ -7,6 +7,26 @@ import { requireOrgContext } from "@/server/session";
 import { canAccessClient } from "@/lib/client-access";
 import { getMetaToken } from "@/lib/meta";
 import { sendQualifiedLeadEvent, sendPurchaseEvent } from "@/server/meta-capi";
+import { periodDateRange, type DashboardPeriod } from "@/lib/queries";
+
+const periodInputSchema = z.object({
+  clientId: z.string(),
+  period: z
+    .enum(["today", "yesterday", "last_3d", "last_7d", "last_30d", "this_month", "last_month", "maximum", "custom"])
+    .optional(),
+  customSince: z.string().optional(),
+  customUntil: z.string().optional(),
+});
+
+// Intervalo de datas em timestamps (o range vem em dias "YYYY-MM-DD", mas
+// first_message_at é timestamp — precisa cobrir o dia inteiro do fim).
+function periodTimestampRange(period: DashboardPeriod | undefined, customSince?: string, customUntil?: string) {
+  const { start, end } = periodDateRange(period ?? "maximum", customSince && customUntil ? { since: customSince, until: customUntil } : undefined);
+  return {
+    startTs: `${start}T00:00:00.000Z`,
+    endTsExclusive: new Date(new Date(`${end}T00:00:00.000Z`).getTime() + 86400000).toISOString(),
+  };
+}
 
 // Painel de rastreamento de leads do Meta Ads por cliente — a captura em si
 // (ctwa_clid, anúncio de origem) é gravada pelo webhook da Evolution API sem
@@ -42,9 +62,10 @@ async function assertAccessible(clientId: string) {
 }
 
 const _fetchLeadAttributions = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ clientId: z.string() }))
+  .inputValidator(periodInputSchema)
   .handler(async ({ data }): Promise<LeadAttributionRow[]> => {
     await assertAccessible(data.clientId);
+    const { startTs, endTsExclusive } = periodTimestampRange(data.period, data.customSince, data.customUntil);
     const rows = await db
       .select({
         id: metaLeadAttributions.id,
@@ -65,7 +86,11 @@ const _fetchLeadAttributions = createServerFn({ method: "GET" })
       })
       .from(metaLeadAttributions)
       .leftJoin(sales, eq(sales.id, metaLeadAttributions.saleId))
-      .where(eq(metaLeadAttributions.clientId, data.clientId))
+      .where(and(
+        eq(metaLeadAttributions.clientId, data.clientId),
+        gte(metaLeadAttributions.firstMessageAt, startTs),
+        lt(metaLeadAttributions.firstMessageAt, endTsExclusive),
+      ))
       .orderBy(desc(metaLeadAttributions.firstMessageAt))
       .limit(300);
     return rows.map((r) => ({
@@ -87,8 +112,12 @@ const _fetchLeadAttributions = createServerFn({ method: "GET" })
     }));
   });
 
-export async function fetchLeadAttributions(clientId: string): Promise<LeadAttributionRow[]> {
-  return _fetchLeadAttributions({ data: { clientId } });
+export async function fetchLeadAttributions(
+  clientId: string,
+  period?: DashboardPeriod,
+  customRange?: { since: string; until: string },
+): Promise<LeadAttributionRow[]> {
+  return _fetchLeadAttributions({ data: { clientId, period, customSince: customRange?.since, customUntil: customRange?.until } });
 }
 
 export interface CampaignAttributionStats {
@@ -115,9 +144,14 @@ export interface LeadAttributionSummary {
 const QUALIFIED_STATUSES = new Set(["qualified", "conversion_sent", "conversion_failed"]);
 
 const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ clientId: z.string() }))
+  .inputValidator(periodInputSchema)
   .handler(async ({ data }): Promise<LeadAttributionSummary> => {
     await assertAccessible(data.clientId);
+    const { start, end } = periodDateRange(
+      data.period ?? "maximum",
+      data.customSince && data.customUntil ? { since: data.customSince, until: data.customUntil } : undefined,
+    );
+    const { startTs, endTsExclusive } = periodTimestampRange(data.period, data.customSince, data.customUntil);
     const rows = await db
       .select({
         campaignId: metaLeadAttributions.campaignId,
@@ -129,7 +163,11 @@ const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
       })
       .from(metaLeadAttributions)
       .leftJoin(sales, eq(sales.id, metaLeadAttributions.saleId))
-      .where(eq(metaLeadAttributions.clientId, data.clientId));
+      .where(and(
+        eq(metaLeadAttributions.clientId, data.clientId),
+        gte(metaLeadAttributions.firstMessageAt, startTs),
+        lt(metaLeadAttributions.firstMessageAt, endTsExclusive),
+      ));
 
     // "Conversas iniciadas" que o Gerenciador de Anúncios da Meta contabiliza —
     // fica sincronizado diariamente em metricsDaily. Comparado com total_leads
@@ -143,7 +181,11 @@ const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
         spend: sql<number>`coalesce(sum(${metricsDaily.spend}), 0)`,
       })
       .from(metricsDaily)
-      .where(eq(metricsDaily.clientId, data.clientId));
+      .where(and(
+        eq(metricsDaily.clientId, data.clientId),
+        gte(metricsDaily.date, start),
+        lte(metricsDaily.date, end),
+      ));
 
     const byCampaign = new Map<string, CampaignAttributionStats>();
     let qualifiedTotal = 0;
@@ -188,8 +230,12 @@ const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
     };
   });
 
-export async function fetchLeadAttributionSummary(clientId: string): Promise<LeadAttributionSummary> {
-  return _fetchLeadAttributionSummary({ data: { clientId } });
+export async function fetchLeadAttributionSummary(
+  clientId: string,
+  period?: DashboardPeriod,
+  customRange?: { since: string; until: string },
+): Promise<LeadAttributionSummary> {
+  return _fetchLeadAttributionSummary({ data: { clientId, period, customSince: customRange?.since, customUntil: customRange?.until } });
 }
 
 async function loadLeadWithClient(leadId: string) {
