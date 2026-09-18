@@ -132,10 +132,19 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
   return (
     <div className="space-y-5">
       {summaryLoading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">{[1, 2, 3, 4, 5].map((i) => <Skeleton key={i} className="h-20 w-full" />)}</div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">{[1, 2, 3, 4, 5, 6].map((i) => <Skeleton key={i} className="h-20 w-full" />)}</div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
-          <StatCard label="Conversas iniciadas" value={String(summary?.total_leads ?? 0)} />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <StatCard
+            label="Conversas iniciadas"
+            value={String(summary?.meta_conversations_started ?? 0)}
+            hint="Contagem do Gerenciador de Anúncios"
+          />
+          <StatCard
+            label="Leads"
+            value={String(summary?.total_leads ?? 0)}
+            hint="O que chegou de fato no WhatsApp"
+          />
           <StatCard label="Qualificados" value={String(summary?.qualified_leads ?? 0)} />
           <StatCard label="Taxa de qualificação" value={summary?.qualification_rate !== null && summary?.qualification_rate !== undefined ? `${summary.qualification_rate}%` : "—"} />
           <StatCard label="Vendas" value={String(summary?.sales_count ?? 0)} />
@@ -268,11 +277,12 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
   );
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <Card className="p-3">
       <p className="text-xs text-muted-foreground mb-1">{label}</p>
       <p className="text-lg font-semibold tabular-nums truncate">{value}</p>
+      {hint && <p className="text-[11px] text-muted-foreground/70 mt-0.5 truncate">{hint}</p>}
     </Card>
   );
 }

@@ -1,8 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { desc, eq } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { clients, metaLeadAttributions, sales } from "@/db/schema";
+import { clients, metaLeadAttributions, metricsDaily, sales } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 import { canAccessClient } from "@/lib/client-access";
 import { getMetaToken } from "@/lib/meta";
@@ -100,6 +100,7 @@ export interface CampaignAttributionStats {
 
 export interface LeadAttributionSummary {
   total_leads: number;
+  meta_conversations_started: number;
   qualified_leads: number;
   qualification_rate: number | null;
   sales_count: number;
@@ -128,6 +129,15 @@ const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
       .leftJoin(sales, eq(sales.id, metaLeadAttributions.saleId))
       .where(eq(metaLeadAttributions.clientId, data.clientId));
 
+    // "Conversas iniciadas" que o Gerenciador de Anúncios da Meta contabiliza —
+    // fica sincronizado diariamente em metricsDaily. Comparado com total_leads
+    // (o que de fato chegou no WhatsApp via webhook) mostra a diferença entre
+    // cliques que a Meta conta como conversa e mensagens que realmente chegaram.
+    const [metaTotals] = await db
+      .select({ total: sql<number>`coalesce(sum(${metricsDaily.leads}), 0)` })
+      .from(metricsDaily)
+      .where(eq(metricsDaily.clientId, data.clientId));
+
     const byCampaign = new Map<string, CampaignAttributionStats>();
     let qualifiedTotal = 0;
     let salesCount = 0;
@@ -155,6 +165,7 @@ const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
 
     return {
       total_leads: rows.length,
+      meta_conversations_started: Number(metaTotals?.total ?? 0),
       qualified_leads: qualifiedTotal,
       qualification_rate: rows.length > 0 ? Math.round((qualifiedTotal / rows.length) * 1000) / 10 : null,
       sales_count: salesCount,

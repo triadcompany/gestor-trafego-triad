@@ -893,7 +893,7 @@ function ClientLeadAttribution({ clientId }: { clientId: string }) {
       ) : (
         <>
           <div className="grid grid-cols-3 gap-3 mb-4">
-            <TotalStat label="Conversas iniciadas" value={String(summary.total_leads)} />
+            <TotalStat label="Leads" value={String(summary.total_leads)} />
             <TotalStat label="Qualificados" value={String(summary.qualified_leads)} />
             <TotalStat label="Taxa de qualificação" value={summary.qualification_rate !== null ? `${summary.qualification_rate}%` : "—"} />
           </div>
