@@ -98,9 +98,11 @@ export function ClientFormDialog({
   useEffect(() => {
     if (!metaTokenId && metaTokens.length === 1) setMetaTokenId(metaTokens[0].id);
   }, [metaTokens, metaTokenId]);
-  useEffect(() => {
-    if (!whatsappInstanceId && whatsappInstances.length === 1) setWhatsappInstanceId(whatsappInstances[0].id);
-  }, [whatsappInstances, whatsappInstanceId]);
+  // Antes vinculava sozinho quando só havia 1 instância na organização — isso
+  // fez vários clientes ficarem presos numa instância "principal" só por
+  // coincidência de época, quebrando o rastreamento de leads (o cliente errado
+  // recebia a atribuição). Ligar a instância certa agora é sempre uma escolha
+  // deliberada, nunca automática.
 
   const { data: allTags = [] } = useQuery({ queryKey: ["tags"], queryFn: fetchTags });
   const { data: whatsappLabels = [] } = useQuery({
