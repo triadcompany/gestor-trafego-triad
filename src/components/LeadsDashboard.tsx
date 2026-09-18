@@ -70,6 +70,19 @@ const QUALIFIED_STATUSES = new Set(["qualified", "conversion_sent", "conversion_
 
 const CHART_TOOLTIP_STYLE = { background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 };
 
+// remote_jid vem tipo "5511987650009@s.whatsapp.net" — extrai só os dígitos e
+// formata como número BR (com DDI) quando reconhece o padrão; senão mostra
+// os dígitos crus com "+" na frente.
+function formatPhoneFromJid(remoteJid: string): string {
+  const digits = remoteJid.split("@")[0].replace(/\D/g, "");
+  const match = digits.match(/^55(\d{2})(\d{4,5})(\d{4})$/);
+  if (match) {
+    const [, ddd, prefix, suffix] = match;
+    return `+55 (${ddd}) ${prefix}-${suffix}`;
+  }
+  return digits ? `+${digits}` : remoteJid;
+}
+
 export function LeadsDashboard({ clientId }: { clientId: string }) {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState("");
@@ -336,6 +349,7 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
             <TableHeader>
               <TableRow>
                 <TableHead>Data</TableHead>
+                <TableHead>Nome</TableHead>
                 <TableHead>Contato</TableHead>
                 <TableHead>Campanha / Conjunto / Anúncio</TableHead>
                 <TableHead>Status</TableHead>
@@ -349,7 +363,8 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
                   <TableCell className="text-xs text-muted-foreground whitespace-nowrap">
                     {new Date(lead.first_message_at).toLocaleDateString("pt-BR")}
                   </TableCell>
-                  <TableCell className="text-sm">{lead.contact_name || lead.remote_jid.split("@")[0]}</TableCell>
+                  <TableCell className="text-sm">{lead.contact_name || "—"}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground font-mono whitespace-nowrap">{formatPhoneFromJid(lead.remote_jid)}</TableCell>
                   <TableCell className="text-xs text-muted-foreground max-w-[240px]">
                     <p className="truncate">{lead.campaign_name ?? "—"}</p>
                     <p className="truncate">{lead.adset_name ?? ""}</p>
