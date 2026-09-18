@@ -33,9 +33,9 @@ import {
   Tooltip as ChartTooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Search, DollarSign, Check, CalendarRange } from "lucide-react";
+import { Search, DollarSign, Check, CalendarRange, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
-import { fetchLeadAttributions, fetchLeadAttributionSummary, markLeadQualified, convertLeadToSale, type LeadAttributionRow } from "@/server/lead-attribution";
+import { fetchLeadAttributions, fetchLeadAttributionSummary, markLeadQualified, retryQualifiedLeadEvent, convertLeadToSale, type LeadAttributionRow } from "@/server/lead-attribution";
 import { fetchClientWhatsappInfo } from "@/lib/whatsapp-messages";
 import { brl } from "@/lib/mock-data";
 import type { DashboardPeriod } from "@/lib/queries";
@@ -105,6 +105,16 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
       queryClient.invalidateQueries({ queryKey: ["lead-attribution-summary", clientId] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao marcar qualificado"),
+  });
+
+  const retryMutation = useMutation({
+    mutationFn: retryQualifiedLeadEvent,
+    onSuccess: () => {
+      toast.success("Evento reenviado pra Meta com sucesso.");
+      queryClient.invalidateQueries({ queryKey: ["lead-attributions", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["lead-attribution-summary", clientId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao reenviar evento"),
   });
 
   const invalidateAfterSale = () => {
@@ -332,7 +342,13 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
                     <p className="truncate">{lead.ad_name ?? ""}</p>
                   </TableCell>
                   <TableCell>
-                    <Badge variant={STATUS_VARIANT[lead.status]} className="text-[10px]">{STATUS_LABEL[lead.status]}</Badge>
+                    <Badge
+                      variant={STATUS_VARIANT[lead.status]}
+                      className="text-[10px]"
+                      title={lead.status === "conversion_failed" ? lead.conversion_error ?? undefined : undefined}
+                    >
+                      {STATUS_LABEL[lead.status]}
+                    </Badge>
                   </TableCell>
                   <TableCell className="text-sm">
                     {lead.sale_id ? (
@@ -345,6 +361,18 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
                     {lead.status === "pending" && (
                       <Button size="sm" variant="outline" className="h-7 text-xs gap-1 mr-1.5" onClick={() => qualifyMutation.mutate(lead.id)} disabled={qualifyMutation.isPending}>
                         <Check className="h-3 w-3" /> Qualificar
+                      </Button>
+                    )}
+                    {lead.status === "conversion_failed" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 text-xs gap-1 mr-1.5"
+                        onClick={() => retryMutation.mutate(lead.id)}
+                        disabled={retryMutation.isPending}
+                        title={lead.conversion_error ?? undefined}
+                      >
+                        <RefreshCw className="h-3 w-3" /> Reenviar
                       </Button>
                     )}
                     {!lead.sale_id && (

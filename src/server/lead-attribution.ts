@@ -250,6 +250,33 @@ async function loadLeadWithClient(leadId: string) {
   return { lead, client };
 }
 
+// Tenta (de novo, se preciso) mandar o evento QualifiedLead pra Meta. Usada
+// tanto na primeira qualificação quanto no botão "Reenviar" de um lead que
+// ficou "conversion_failed" — mesma lógica, sem duplicar o try/catch.
+async function sendQualifiedLeadEventWithStatus(
+  leadId: string,
+  lead: { clientId: string; ctwaClid: string; remoteJid: string; leadEmail: string | null },
+  client: { metaCapiDatasetId: string | null; metaPageId: string | null },
+): Promise<void> {
+  if (!client.metaCapiDatasetId) return;
+  const token = await getMetaToken(lead.clientId);
+  if (!token) return;
+
+  try {
+    await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, phoneRemoteJid: lead.remoteJid, email: lead.leadEmail ?? undefined, pageId: client.metaPageId ?? undefined, token });
+    await db
+      .update(metaLeadAttributions)
+      .set({ status: "conversion_sent", conversionSentAt: new Date().toISOString(), conversionError: null })
+      .where(eq(metaLeadAttributions.id, leadId));
+  } catch (err) {
+    await db
+      .update(metaLeadAttributions)
+      .set({ status: "conversion_failed", conversionError: err instanceof Error ? err.message : String(err) })
+      .where(eq(metaLeadAttributions.id, leadId));
+    throw err;
+  }
+}
+
 const _markLeadQualified = createServerFn({ method: "POST" })
   .inputValidator(z.object({ leadId: z.string() }))
   .handler(async ({ data }) => {
@@ -260,27 +287,23 @@ const _markLeadQualified = createServerFn({ method: "POST" })
       .set({ status: "qualified", qualifiedAt: new Date().toISOString(), labelName: lead.labelName ?? "Marcado manualmente" })
       .where(eq(metaLeadAttributions.id, data.leadId));
 
-    if (!client.metaCapiDatasetId) return;
-    const token = await getMetaToken(lead.clientId);
-    if (!token) return;
-
-    try {
-      await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, phoneRemoteJid: lead.remoteJid, email: lead.leadEmail ?? undefined, pageId: client.metaPageId ?? undefined, token });
-      await db
-        .update(metaLeadAttributions)
-        .set({ status: "conversion_sent", conversionSentAt: new Date().toISOString() })
-        .where(eq(metaLeadAttributions.id, data.leadId));
-    } catch (err) {
-      await db
-        .update(metaLeadAttributions)
-        .set({ status: "conversion_failed", conversionError: err instanceof Error ? err.message : String(err) })
-        .where(eq(metaLeadAttributions.id, data.leadId));
-      throw err;
-    }
+    await sendQualifiedLeadEventWithStatus(data.leadId, lead, client);
   });
 
 export async function markLeadQualified(leadId: string): Promise<void> {
   await _markLeadQualified({ data: { leadId } });
+}
+
+const _retryQualifiedLeadEvent = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ leadId: z.string() }))
+  .handler(async ({ data }) => {
+    const { lead, client } = await loadLeadWithClient(data.leadId);
+    if (lead.status !== "conversion_failed") throw new Error("Esse lead não está com envio falhado.");
+    await sendQualifiedLeadEventWithStatus(data.leadId, lead, client);
+  });
+
+export async function retryQualifiedLeadEvent(leadId: string): Promise<void> {
+  await _retryQualifiedLeadEvent({ data: { leadId } });
 }
 
 const _convertLeadToSale = createServerFn({ method: "POST" })
