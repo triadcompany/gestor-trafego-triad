@@ -2,9 +2,10 @@
 @source "../src";
 @import "tw-animate-css";
 
-@import "@fontsource/dm-sans/400.css";
-@import "@fontsource/dm-sans/500.css";
-@import "@fontsource/dm-sans/700.css";
+@import "@fontsource/montserrat/400.css";
+@import "@fontsource/montserrat/500.css";
+@import "@fontsource/montserrat/600.css";
+@import "@fontsource/montserrat/700.css";
 @import "@fontsource/dm-mono/400.css";
 @import "@fontsource/dm-mono/500.css";
 
@@ -32,7 +33,7 @@ lovable-badge {
  */
 
 @theme inline {
-  --font-sans: "DM Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: "Montserrat", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "DM Mono", ui-monospace, monospace;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -48,6 +49,7 @@ lovable-badge {
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
+  --color-primary-2: var(--primary-2);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
@@ -78,30 +80,34 @@ lovable-badge {
   --color-status-attention: var(--status-attention);
   --color-status-critical: var(--status-critical);
   --color-status-no-data: var(--status-no-data);
+  --shadow-raised: var(--shadow-raised);
+  --shadow-brand: var(--shadow-brand);
 }
 
 :root {
   --radius: 0.625rem;
-  /* Cinza Escuro + Laranja — tema light */
+  /* Cinza Escuro + Azul-petróleo — tema light */
   --background: oklch(0.961 0.001 286.4);
   --foreground: oklch(0.269 0 0);
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.269 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.269 0 0);
-  --primary: oklch(0.658 0.177 47.1);
+  --primary: oklch(0.48 0.10 205);
+  --primary-2: oklch(0.42 0.11 208);
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.922 0.001 286.4);
   --secondary-foreground: oklch(0.269 0 0);
   --muted: oklch(0.922 0.001 286.4);
-  --muted-foreground: oklch(0.528 0 0);
-  --accent: oklch(0.943 0.032 61.4);
-  --accent-foreground: oklch(0.578 0.158 45.9);
+  /* Antes 0.528 — abaixo do contraste mínimo (4.5:1) em texto pequeno sobre fundo claro. */
+  --muted-foreground: oklch(0.44 0 0);
+  --accent: oklch(0.94 0.025 205);
+  --accent-foreground: oklch(0.38 0.09 205);
   --destructive: oklch(0.615 0.180 24.1);
   --destructive-foreground: oklch(1 0 0);
   --border: oklch(0.922 0.001 286.4);
   --input: oklch(0.922 0.001 286.4);
-  --ring: oklch(0.658 0.177 47.1);
+  --ring: oklch(0.48 0.10 205);
   --status-on-target: oklch(0.625 0.123 160.4);
   --status-attention: oklch(0.674 0.132 76.7);
   --status-critical: oklch(0.615 0.180 24.1);
@@ -113,35 +119,38 @@ lovable-badge {
   --chart-5: oklch(0.769 0.188 70.08);
   --sidebar: oklch(1 0 0);
   --sidebar-foreground: oklch(0.269 0 0);
-  --sidebar-primary: oklch(0.658 0.177 47.1);
+  --sidebar-primary: oklch(0.48 0.10 205);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.943 0.032 61.4);
-  --sidebar-accent-foreground: oklch(0.578 0.158 45.9);
+  --sidebar-accent: oklch(0.94 0.025 205);
+  --sidebar-accent-foreground: oklch(0.38 0.09 205);
   --sidebar-border: oklch(0.922 0.001 286.4);
-  --sidebar-ring: oklch(0.658 0.177 47.1);
+  --sidebar-ring: oklch(0.48 0.10 205);
+  --shadow-raised: 0 1px 1px oklch(0.2 0.01 260 / 0.03), 0 2px 4px oklch(0.2 0.01 260 / 0.04), 0 10px 24px oklch(0.2 0.02 260 / 0.08), 0 2px 6px oklch(0.2 0.02 260 / 0.05);
+  --shadow-brand: 0 2px 5px oklch(0.48 0.10 205 / 0.22), 0 8px 18px oklch(0.48 0.10 205 / 0.20);
 }
 
 .dark {
-  /* Cinza Escuro + Laranja — tema dark */
+  /* Cinza Escuro + Azul-petróleo — tema dark */
   --background: oklch(0.227 0.004 286.1);
   --foreground: oklch(0.943 0 0);
   --card: oklch(0.261 0.004 286.1);
   --card-foreground: oklch(0.943 0 0);
   --popover: oklch(0.261 0.004 286.1);
   --popover-foreground: oklch(0.943 0 0);
-  --primary: oklch(0.658 0.177 47.1);
-  --primary-foreground: oklch(1 0 0);
+  --primary: oklch(0.74 0.115 205);
+  --primary-2: oklch(0.64 0.12 205);
+  --primary-foreground: oklch(0.14 0.02 205);
   --secondary: oklch(0.261 0.004 286.1);
   --secondary-foreground: oklch(0.943 0 0);
   --muted: oklch(0.261 0.004 286.1);
-  --muted-foreground: oklch(0.651 0.006 286.2);
-  --accent: oklch(0.658 0.177 47.1 / 16%);
-  --accent-foreground: oklch(0.756 0.132 53.8);
+  --muted-foreground: oklch(0.68 0.006 286.2);
+  --accent: oklch(0.74 0.115 205 / 16%);
+  --accent-foreground: oklch(0.82 0.08 205);
   --destructive: oklch(0.725 0.138 21.0);
   --destructive-foreground: oklch(0.18 0.03 260);
   --border: oklch(0.286 0.005 286.1);
   --input: oklch(0.286 0.005 286.1);
-  --ring: oklch(0.658 0.177 47.1);
+  --ring: oklch(0.74 0.115 205);
   --status-on-target: oklch(0.767 0.108 163.4);
   --status-attention: oklch(0.788 0.119 81.8);
   --status-critical: oklch(0.725 0.138 21.0);
@@ -153,12 +162,14 @@ lovable-badge {
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.192 0.004 286.0);
   --sidebar-foreground: oklch(0.943 0 0);
-  --sidebar-primary: oklch(0.658 0.177 47.1);
-  --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.658 0.177 47.1 / 16%);
-  --sidebar-accent-foreground: oklch(0.756 0.132 53.8);
+  --sidebar-primary: oklch(0.74 0.115 205);
+  --sidebar-primary-foreground: oklch(0.14 0.02 205);
+  --sidebar-accent: oklch(0.74 0.115 205 / 16%);
+  --sidebar-accent-foreground: oklch(0.82 0.08 205);
   --sidebar-border: oklch(0.286 0.005 286.1);
-  --sidebar-ring: oklch(0.658 0.177 47.1);
+  --sidebar-ring: oklch(0.74 0.115 205);
+  --shadow-raised: 0 1px 1px oklch(0 0 0 / 0.3), 0 2px 4px oklch(0 0 0 / 0.25), 0 12px 28px oklch(0 0 0 / 0.45), 0 2px 8px oklch(0 0 0 / 0.3);
+  --shadow-brand: 0 1px 2px oklch(0 0 0 / 0.35), 0 6px 16px oklch(0 0 0 / 0.4);
 }
 
 @layer base {

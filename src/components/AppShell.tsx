@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X, AlertTriangle, Sun, Moon, MessageCircle, Target } from "lucide-react";
+import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X, AlertTriangle, Sun, Moon, MessageCircle, Target, ChevronsLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout } from "@/server/session";
 import { useQuery } from "@tanstack/react-query";
@@ -51,6 +51,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const path = location.pathname;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+
+  // Lê a preferência salva só depois de montar, pra não dar mismatch com o SSR.
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("sidebar-collapsed") === "1") setCollapsed(true);
+    } catch { /* ignore */ }
+  }, []);
+
+  const toggleCollapsed = () => {
+    setCollapsed((v) => {
+      const next = !v;
+      try { localStorage.setItem("sidebar-collapsed", next ? "1" : "0"); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const { data: profile } = useQuery({
     queryKey: ["current-profile"],
@@ -85,22 +101,45 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
       {/* ── Desktop sidebar ─────────────────────────────── */}
-      <aside className="hidden md:flex fixed inset-y-0 left-0 w-60 flex-col border-r border-sidebar-border bg-sidebar">
-        <div className="px-5 py-5 border-b border-sidebar-border">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center text-primary-foreground font-bold">G</div>
-            <div>
-              <div className="text-sm font-semibold leading-tight">Gestor de</div>
-              <div className="text-sm font-semibold leading-tight">Tráfego</div>
+      <aside
+        className={cn(
+          "hidden md:flex fixed inset-y-0 left-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 motion-reduce:transition-none",
+          collapsed ? "w-[68px]" : "w-60"
+        )}
+      >
+        <div className={cn("py-5 border-b border-sidebar-border", collapsed ? "px-3" : "px-5")}>
+          <div className={cn("flex items-center", collapsed ? "flex-col gap-2" : "gap-2")}>
+            <div className={cn("flex items-center min-w-0", collapsed ? "" : "gap-2 flex-1")}>
+              <div className="h-8 w-8 shrink-0 rounded-md bg-gradient-to-br from-primary to-primary-2 shadow-brand flex items-center justify-center text-primary-foreground font-bold">G</div>
+              {!collapsed && (
+                <div className="min-w-0">
+                  <div className="text-sm font-semibold leading-tight">Gestor de</div>
+                  <div className="text-sm font-semibold leading-tight">Tráfego</div>
+                </div>
+              )}
             </div>
+            <button
+              onClick={toggleCollapsed}
+              className={cn(
+                "shrink-0 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 transition-[background-color,color,transform] duration-200 motion-reduce:transition-none rounded-md p-1",
+                collapsed && "rotate-180"
+              )}
+              title={collapsed ? "Expandir menu" : "Recolher menu"}
+              aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
+              aria-expanded={!collapsed}
+            >
+              <ChevronsLeft className="h-4 w-4" />
+            </button>
           </div>
         </div>
-        <nav className="flex-1 p-3 space-y-4 overflow-y-auto">
+        <nav className="flex-1 p-3 space-y-4 overflow-y-auto overflow-x-hidden">
           {navGroups.map((group) => (
             <div key={group.label}>
-              <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                {group.label}
-              </div>
+              {!collapsed && (
+                <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 whitespace-nowrap">
+                  {group.label}
+                </div>
+              )}
               <div className="space-y-1">
                 {group.items.map((item) => {
                   const active = isActive(item.to, item.exact);
@@ -109,16 +148,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <Link
                       key={item.to}
                       to={item.to}
+                      title={collapsed ? item.label : undefined}
                       className={cn(
                         "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                        collapsed && "justify-center px-0",
                         active
                           ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                           : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
                       )}
                     >
-                      <Icon className="h-4 w-4" />
-                      {item.label}
-                      {item.to === "/visao-geral" && criticalCount > 0 && (
+                      <Icon className="h-4 w-4 shrink-0" />
+                      {!collapsed && <span className="truncate">{item.label}</span>}
+                      {!collapsed && item.to === "/visao-geral" && criticalCount > 0 && (
                         <span className="ml-auto text-[11px] font-mono font-semibold px-1.5 py-0.5 rounded-full bg-status-critical/10 text-status-critical border border-status-critical/20">
                           {criticalCount}
                         </span>
@@ -130,10 +171,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           ))}
         </nav>
-        <div className="p-3 border-t border-sidebar-border">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs text-muted-foreground truncate">{profile?.full_name ?? "—"}</span>
-            <div className="flex items-center gap-1 shrink-0">
+        <div className={cn("p-3 border-t border-sidebar-border", collapsed && "px-2")}>
+          <div className={cn("flex items-center gap-2", collapsed ? "flex-col" : "justify-between")}>
+            {!collapsed && <span className="text-xs text-muted-foreground truncate">{profile?.full_name ?? "—"}</span>}
+            <div className={cn("flex items-center gap-1 shrink-0", collapsed && "flex-col")}>
               <button
                 onClick={toggleTheme}
                 className="text-muted-foreground hover:text-foreground transition-colors p-1"
@@ -196,7 +237,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <nav className="flex-1 overflow-y-auto p-3 space-y-4">
               {navGroups.map((group) => (
                 <div key={group.label}>
-                  <div className="px-4 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                  <div className="px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                     {group.label}
                   </div>
                   <div className="space-y-1">
@@ -257,7 +298,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </>
       )}
 
-      <main className="md:pl-60 pt-14 md:pt-0">{children}</main>
+      <main className={cn("pt-14 md:pt-0 transition-[padding] duration-200 motion-reduce:transition-none", collapsed ? "md:pl-[68px]" : "md:pl-60")}>{children}</main>
 
       {/* Botão flutuante do agente */}
       {!isActive("/agente", false) && (
