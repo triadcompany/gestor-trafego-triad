@@ -138,12 +138,12 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
           <StatCard
             label="Conversas iniciadas"
             value={String(summary?.meta_conversations_started ?? 0)}
-            hint="Contagem do Gerenciador de Anúncios"
+            hint="Gerenciador de Anúncios"
           />
           <StatCard
             label="Leads"
             value={String(summary?.total_leads ?? 0)}
-            hint="O que chegou de fato no WhatsApp"
+            hint="Chegou no WhatsApp"
           />
           <StatCard label="Qualificados" value={String(summary?.qualified_leads ?? 0)} />
           <StatCard label="Taxa de qualificação" value={summary?.qualification_rate !== null && summary?.qualification_rate !== undefined ? `${summary.qualification_rate}%` : "—"} />
