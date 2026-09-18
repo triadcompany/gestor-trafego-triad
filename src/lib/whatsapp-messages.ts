@@ -72,6 +72,30 @@ export async function resolveWhatsappInstance(clientId?: string): Promise<{
 
 const EVOLUTION_URL = () => (process.env.EVOLUTION_API_URL || "https://triadcompany-evolution-api.upw28y.easypanel.host").replace(/\/+$/, "");
 const EVOLUTION_ADMIN_KEY = () => process.env.EVOLUTION_API_KEY || "429683C4C977415CAAFCCE10F7D57E11";
+const APP_URL = () => (process.env.APP_URL || "https://gestor.triadcomp4ny.com.br").replace(/\/+$/, "");
+
+// Liga o webhook da instância recém-criada no rastreamento de leads (ver
+// evolution-webhook.route.ts). Sem isso, a Evolution API nunca avisa o
+// sistema sobre mensagens novas — descoberto manualmente uma vez (instância
+// da Gama Veículos criada sem esse passo, zero leads capturados) e daí em
+// diante automatizado aqui pra nunca mais precisar configurar isso na mão.
+async function configureEvolutionWebhook(instanceName: string, apikey: string): Promise<void> {
+  const secret = process.env.EVOLUTION_WEBHOOK_SECRET;
+  if (!secret) return; // sem secret configurado no ambiente, não dá pra montar a URL com segurança
+  await evoFetch(`/webhook/set/${encodeURIComponent(instanceName)}`, {
+    method: "POST",
+    apikey,
+    body: JSON.stringify({
+      webhook: {
+        enabled: true,
+        url: `${APP_URL()}/api/webhooks/evolution?secret=${secret}`,
+        webhookByEvents: false,
+        webhookBase64: false,
+        events: ["MESSAGES_UPSERT", "LABELS_ASSOCIATION"],
+      },
+    }),
+  });
+}
 
 async function evoFetch(path: string, init: RequestInit & { apikey?: string } = {}) {
   const { apikey, ...rest } = init;
@@ -177,6 +201,14 @@ const _createWhatsappInstance = createServerFn({ method: "POST" })
       typeof created.hash === "string"
         ? created.hash
         : created.hash?.apikey || EVOLUTION_ADMIN_KEY();
+
+    try {
+      await configureEvolutionWebhook(instanceName, instanceKey);
+    } catch {
+      // não deixa falha ao configurar o webhook impedir a criação da instância —
+      // melhor ela existir sem rastreamento de leads (corrigível depois) do que
+      // travar o fluxo de conexão do WhatsApp por um problema à parte.
+    }
 
     const [row] = await db
       .insert(whatsappInstances)
