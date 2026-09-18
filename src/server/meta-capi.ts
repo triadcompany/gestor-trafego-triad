@@ -50,6 +50,33 @@ export async function sendQualifiedLeadEvent(params: {
   });
 }
 
+// Envio experimental com nome de evento arbitrário — usado pra testar se um
+// nome "clássico"/universal (ex: "Lead", "LeadSubmitted") ganha suporte nativo
+// de coluna no Gerenciador de Anúncios, ao contrário de "QualifiedLead" (que
+// funciona pra rastreamento mas não vira coluna, por não estar na lista de
+// eventos com otimização/relatório nativo documentada pra business_messaging).
+export async function sendCustomMessagingEvent(params: {
+  eventName: string;
+  datasetId: string;
+  ctwaClid: string;
+  phoneRemoteJid?: string;
+  email?: string;
+  pageId?: string;
+  token: string;
+}): Promise<void> {
+  await postMetaJson(`${params.datasetId}/events?access_token=${encodeURIComponent(params.token)}`, {
+    data: [
+      {
+        event_name: params.eventName,
+        event_time: Math.floor(Date.now() / 1000),
+        action_source: "business_messaging",
+        messaging_channel: "whatsapp",
+        user_data: buildMetaUserData(params.ctwaClid, params.phoneRemoteJid, params.email, params.pageId),
+      },
+    ],
+  });
+}
+
 /** Envia o evento de conversão "Purchase" pra Meta Conversions API, com valor da venda. */
 export async function sendPurchaseEvent(params: {
   datasetId: string;
