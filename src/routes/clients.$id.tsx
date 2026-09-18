@@ -556,7 +556,7 @@ function ClientDetail() {
                 value={periodCpl !== null ? brl(periodCpl) : "—"}
               />
               <Stat label="Gasto" value={periodSpend > 0 ? brl(periodSpend) : "—"} />
-              <Stat label="Leads" value={periodLeads > 0 ? String(periodLeads) : "—"} />
+              <Stat label="Conversas iniciadas" value={periodLeads > 0 ? String(periodLeads) : "—"} />
               {periodForms > 0 && (
                 <Stat label="Formulários" value={String(periodForms)} />
               )}
@@ -568,14 +568,14 @@ function ClientDetail() {
         <Card className="p-4 mb-6">
           <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
             <h2 className="text-sm font-medium">
-              {chartMetric === "cpl" ? "CPL" : chartMetric === "spend" ? "Gasto" : chartMetric === "leads" ? "Leads" : "Formulários"} — {periodLabel}
+              {chartMetric === "cpl" ? "CPL" : chartMetric === "spend" ? "Gasto" : chartMetric === "leads" ? "Conversas iniciadas" : "Formulários"} — {periodLabel}
               {compareEnabled && <span className="text-muted-foreground"> vs {periodLabelB}</span>}
             </h2>
             <div className="flex items-center gap-1 rounded-lg border border-border p-1 bg-muted/30">
               {(
                 [
                   { key: "cpl", icon: TrendingUp, label: "CPL" },
-                  { key: "leads", icon: UsersIcon, label: "Leads" },
+                  { key: "leads", icon: UsersIcon, label: "Conversas" },
                   { key: "forms", icon: ClipboardList, label: "Forms" },
                   { key: "spend", icon: DollarSign, label: "Gasto" },
                 ] as const
@@ -640,7 +640,7 @@ function ClientDetail() {
                     <TotalStat label="Gasto" value={p.spend > 0 ? brl(p.spend) : "—"} />
                     <Divider />
                     <TotalStat
-                      label="Leads"
+                      label="Conversas iniciadas"
                       value={p.leads > 0 || p.forms > 0 ? `${p.leads}${p.forms > 0 ? ` +${p.forms}f` : ""}` : "—"}
                       valueClass={isBest("leads", p.leads, idx) ? "text-status-on-target" : ""}
                     />
@@ -690,7 +690,7 @@ function ClientDetail() {
                   <YAxis stroke="var(--muted-foreground)" fontSize={11} tickFormatter={(chartMetric === "leads" || chartMetric === "forms") ? undefined : (v) => `R$${v}`} />
                   <ChartTooltip
                     contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-                    formatter={(v: number) => chartMetric === "leads" ? [v, "Leads"] : chartMetric === "forms" ? [v, "Formulários"] : [brl(v), chartMetric === "cpl" ? "CPL" : "Gasto"]}
+                    formatter={(v: number) => chartMetric === "leads" ? [v, "Conversas iniciadas"] : chartMetric === "forms" ? [v, "Formulários"] : [brl(v), chartMetric === "cpl" ? "CPL" : "Gasto"]}
                   />
                   {chartMetric === "cpl" && !compareEnabled && (
                     <ReferenceArea y1={client.cpl_min} y2={client.cpl_max} fill="var(--primary)" fillOpacity={0.08} />
@@ -1347,7 +1347,7 @@ function CampaignsTotals({ campaigns, cplMax }: { campaigns: MetaCampaign[]; cpl
         </span>
         <TotalStat label="Gasto" value={brl(totalSpend)} />
         <Divider />
-        <TotalStat label="Leads" value={totalLeads > 0 ? String(totalLeads) : "—"} />
+        <TotalStat label="Conversas iniciadas" value={totalLeads > 0 ? String(totalLeads) : "—"} />
         {totalForms > 0 && <><Divider /><TotalStat label="Forms" value={String(totalForms)} /></>}
         <Divider />
         <TotalStat label="CPL médio" value={totalCpl !== null ? brl(totalCpl) : "—"} valueClass={cplColor} />

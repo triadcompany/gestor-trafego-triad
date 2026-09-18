@@ -324,7 +324,7 @@ function Dashboard() {
                       <div className="text-sm font-medium tabular-nums">{brl(c.spendToday)}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-muted-foreground">Leads</div>
+                      <div className="text-xs text-muted-foreground">Conversas iniciadas</div>
                       <div className="text-sm font-medium tabular-nums">{c.leadsToday}</div>
                     </div>
                   </div>

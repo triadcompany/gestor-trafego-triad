@@ -960,7 +960,7 @@ function AssistantPromptDialog({ assistant }: { assistant: AssistantConfig }) {
           />
           {assistant.mode === "trafego" && (
             <p className="text-[11px] text-muted-foreground">
-              O bloco “Estado atual dos clientes” (CPL, gasto, leads, alertas) é anexado automaticamente no fim deste prompt a cada mensagem.
+              O bloco “Estado atual dos clientes” (CPL, gasto, conversas iniciadas, alertas) é anexado automaticamente no fim deste prompt a cada mensagem.
             </p>
           )}
           <p className="text-[11px] text-muted-foreground">

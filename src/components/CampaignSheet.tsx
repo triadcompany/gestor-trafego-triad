@@ -344,7 +344,7 @@ function CampaignSection({
         <MetricCell label="Objetivo" value={campaign.objective} small />
         <MetricCell label="Orçamento/dia" value={campaign.daily_budget !== null ? brl(campaign.daily_budget) : "—"} />
         <MetricCell label="Gasto" value={campaign.spend > 0 ? brl(campaign.spend) : "—"} />
-        <MetricCell label="Leads" value={campaign.leads > 0 ? String(campaign.leads) : "—"} />
+        <MetricCell label="Conversas iniciadas" value={campaign.leads > 0 ? String(campaign.leads) : "—"} />
         <MetricCell label="CPL" value={campaign.cpl !== null ? brl(campaign.cpl) : "—"} valueClass={cplColor} />
         <MetricCell label="Impressões" value={campaign.impressions > 0 ? campaign.impressions.toLocaleString("pt-BR") : "—"} />
       </div>

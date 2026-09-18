@@ -306,8 +306,8 @@ export function buildClientReportDoc(input: ClientReportInput): jsPDF {
   const cardColW = contentWidth / 3;
   const cards: Array<{ label: string; prefix?: string; value: string; caption: string }> = [
     { label: "TOTAL INVESTIDO", prefix: "R$", value: brlWhole(totalSpend), caption: `em ${campaigns.length} campanha${campaigns.length === 1 ? "" : "s"} no período` },
-    { label: "LEADS GERADOS", value: int(totalLeads), caption: "conversas iniciadas no WhatsApp" },
-    { label: "CUSTO POR LEAD MÉDIO", prefix: "R$", value: avgCpl != null ? brl(avgCpl) : "—", caption: "investido ÷ leads gerados" },
+    { label: "CONVERSAS INICIADAS", value: int(totalLeads), caption: "registradas pelo Gerenciador de Anúncios" },
+    { label: "CUSTO MÉDIO POR CONVERSA", prefix: "R$", value: avgCpl != null ? brl(avgCpl) : "—", caption: "investido ÷ conversas iniciadas" },
   ];
 
   cards.forEach((card, i) => {
@@ -408,8 +408,8 @@ export function buildClientReportDoc(input: ClientReportInput): jsPDF {
     const midY = y - 1;
     drawTracked(doc, "CAMPANHA", colName, midY, { size: 7.5, color: MUTED, bold: true, spacing: 0.5 });
     drawTracked(doc, "VALOR INVESTIDO", colInvestido, midY, { size: 7.5, color: MUTED, bold: true, spacing: 0.5, align: "right" });
-    drawTracked(doc, "LEADS", colLeads, midY, { size: 7.5, color: MUTED, bold: true, spacing: 0.5, align: "right" });
-    drawTracked(doc, "CUSTO POR LEAD", colCpl, midY, { size: 7.5, color: MUTED, bold: true, spacing: 0.5, align: "right" });
+    drawTracked(doc, "CONVERSAS", colLeads, midY, { size: 7.5, color: MUTED, bold: true, spacing: 0.5, align: "right" });
+    drawTracked(doc, "CUSTO/CONVERSA", colCpl, midY, { size: 7.5, color: MUTED, bold: true, spacing: 0.5, align: "right" });
     y += 26;
   };
 
@@ -509,9 +509,9 @@ export function buildClientReportDoc(input: ClientReportInput): jsPDF {
   const footnoteLines = wrapRich(
     doc,
     [
-      { text: '"Leads" considera conversas iniciadas no WhatsApp a partir do anúncio (métrica ' },
+      { text: '"Conversas iniciadas" considera as conversas iniciadas no WhatsApp a partir do anúncio (métrica ' },
       { text: "onsite_conversion.messaging_conversation_started_7d", mono: true },
-      { text: " da Meta), somado a leads de formulário quando houver. Custo por lead = valor investido ÷ leads gerados na campanha." + cplNote },
+      { text: " da Meta), somado a leads de formulário quando houver. Custo por conversa = valor investido ÷ conversas iniciadas na campanha." + cplNote },
     ],
     contentWidth * 0.6,
     8,
