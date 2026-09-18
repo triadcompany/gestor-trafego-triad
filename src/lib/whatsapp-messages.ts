@@ -14,9 +14,22 @@ const mediaItemSchema = z.object({
 });
 export type MediaItem = z.infer<typeof mediaItemSchema>;
 
-// Resolve qual instância Evolution usar: se clientId for dado, usa a do cliente
-// (clients.whatsappInstanceId); senão, resolve a "padrão" da organização — a
-// instância atribuída ao usuário logado, senão a mais antiga ativa.
+// Duas instâncias de propósitos DIFERENTES, que não podem se confundir:
+//
+// - Instância do GESTOR: usada por toda automação/mensagem interna do sistema
+//   (mensagens agendadas, busca de destinatários, lista de campanhas, relatório
+//   semanal quando o destino é o grupo operacional). Nunca depende de qual
+//   cliente está sendo visto na tela.
+// - Instância do CLIENTE: usada só pro rastreamento de leads (o número que
+//   recebe os cliques de anúncio Click-to-WhatsApp daquele cliente específico)
+//   e para mandar mensagem no grupo/número do PRÓPRIO cliente.
+//
+// Misturar as duas já causou bug real: uma automação/relatório saindo pela
+// instância do cliente (que não é membro do grupo interno da equipe) em vez
+// da instância do gestor — a mensagem "enviava com sucesso" mas nunca chegava
+// em lugar nenhum. Por isso duas funções com nomes que deixam a intenção
+// óbvia em cada lugar que usa, em vez de um parâmetro opcional ambíguo.
+//
 // Envolvida em createServerFn (como tudo mais neste arquivo) pra garantir que o
 // código que toca o Postgres nunca vaze pro bundle do navegador — este módulo é
 // importado por componentes de cliente (ex: ClientFormDialog), então qualquer
@@ -55,12 +68,13 @@ const _resolveWhatsappInstance = createServerFn({ method: "GET" })
     return { instanceId: chosen.id, url: chosen.evolutionUrl, apiKey: chosen.evolutionKey, instance: chosen.instanceName };
   });
 
-export async function resolveWhatsappInstance(clientId?: string): Promise<{
-  instanceId: string;
-  url: string;
-  apiKey: string;
-  instance: string;
-}> {
+/** Instância do GESTOR (padrão da organização) — pra automação/mensagem interna. Nunca usa a instância própria de um cliente. */
+export async function resolveGestorWhatsappInstance(): Promise<ResolvedWhatsappInstance> {
+  return _resolveWhatsappInstance({ data: {} });
+}
+
+/** Instância do CLIENTE — pra rastreamento de leads e mensagens no grupo/número do próprio cliente. Cai pra instância do gestor só se o cliente não tiver uma própria configurada. */
+export async function resolveClientWhatsappInstance(clientId: string): Promise<ResolvedWhatsappInstance> {
   return _resolveWhatsappInstance({ data: { clientId } });
 }
 
@@ -539,7 +553,7 @@ const _createScheduledMessage = createServerFn({ method: "POST" })
     if (data.whatsappInstanceId && (!resolved || resolved.organizationId !== organizationId)) {
       throw new Error("Instância de WhatsApp não encontrada.");
     }
-    const whatsappInstanceId = resolved?.id ?? (await resolveWhatsappInstance()).instanceId;
+    const whatsappInstanceId = resolved?.id ?? (await resolveGestorWhatsappInstance()).instanceId;
 
     await db.transaction(async (tx) => {
       const [message] = await tx
@@ -729,7 +743,7 @@ export interface EvolutionRecipient {
 const _searchEvolutionRecipients = createServerFn({ method: "GET" })
   .inputValidator(z.object({ query: z.string(), groupsOnly: z.boolean().optional() }))
   .handler(async ({ data }): Promise<EvolutionRecipient[]> => {
-    const { url, apiKey, instance } = await resolveWhatsappInstance();
+    const { url, apiKey, instance } = await resolveGestorWhatsappInstance();
     const headers = { apikey: apiKey, "Content-Type": "application/json" };
     const q = data.query.trim().toLowerCase();
 
@@ -809,7 +823,9 @@ const _sendActiveCampaignsList = createServerFn({ method: "POST" })
     // do gestor (padrão da organização), nunca pela instância própria do
     // cliente (que normalmente nem é membro desse grupo). Só quando o destino
     // é o grupo do PRÓPRIO cliente é que faz sentido usar a instância dele.
-    const { url, apiKey, instance } = await resolveWhatsappInstance(destination === "client_group" ? data.clientId : undefined);
+    const { url, apiKey, instance } = destination === "client_group"
+      ? await resolveClientWhatsappInstance(data.clientId)
+      : await resolveGestorWhatsappInstance();
 
     const text = `📋 ${data.campaignNames.length} Campanhas ativas — ${data.clientName}\n\n${data.campaignNames.map((n) => `• ${n}`).join("\n")}`;
 
@@ -848,7 +864,7 @@ const _fetchClientWhatsappLabels = createServerFn({ method: "GET" })
     });
     if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
 
-    const { url, apiKey, instance } = await resolveWhatsappInstance(data.clientId);
+    const { url, apiKey, instance } = await resolveClientWhatsappInstance(data.clientId);
     try {
       const res = await fetch(`${url}/label/findLabels/${instance}`, { headers: { apikey: apiKey } });
       const json = (await res.json()) as Array<{ id?: string; name?: string; color?: string }>;
