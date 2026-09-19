@@ -51,6 +51,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [autoCollapsed, setAutoCollapsed] = useState(false);
 
   // Lê a preferência salva só depois de montar, pra não dar mismatch com o SSR.
   useEffect(() => {
@@ -66,6 +67,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       return next;
     });
   };
+
+  // Reseta o auto-colapso sempre que a preferência manual muda, senão um
+  // auto-colapso antigo pode ficar "grudado" mesmo depois de reabrir manual.
+  useEffect(() => { setAutoCollapsed(false); }, [collapsed]);
+
+  // Menu some sozinho depois de 10s parado (mesmo com o mouse em cima, sem
+  // clicar em nada) quando a preferência manual é "aberto"; volta ao passar
+  // o mouse de novo (onMouseEnter no <aside> abaixo).
+  useEffect(() => {
+    if (collapsed || autoCollapsed) return;
+    const timer = setTimeout(() => setAutoCollapsed(true), 10000);
+    return () => clearTimeout(timer);
+  }, [collapsed, autoCollapsed]);
+
+  const effectiveCollapsed = collapsed || autoCollapsed;
 
   const { data: profile } = useQuery({
     queryKey: ["current-profile"],
@@ -96,16 +112,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen bg-background text-foreground">
       {/* ── Desktop sidebar ─────────────────────────────── */}
       <aside
+        onMouseEnter={() => setAutoCollapsed(false)}
         className={cn(
           "hidden md:flex fixed inset-y-0 left-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 motion-reduce:transition-none",
-          collapsed ? "w-[68px]" : "w-60"
+          effectiveCollapsed ? "w-[68px]" : "w-60"
         )}
       >
-        <div className={cn("py-5 border-b border-sidebar-border", collapsed ? "px-3" : "px-5")}>
-          <div className={cn("flex items-center", collapsed ? "flex-col gap-2" : "gap-2")}>
-            <div className={cn("flex items-center min-w-0", collapsed ? "" : "gap-2 flex-1")}>
+        <div className={cn("py-5 border-b border-sidebar-border", effectiveCollapsed ? "px-3" : "px-5")}>
+          <div className={cn("flex items-center", effectiveCollapsed ? "flex-col gap-2" : "gap-2")}>
+            <div className={cn("flex items-center min-w-0", effectiveCollapsed ? "" : "gap-2 flex-1")}>
               <div className="h-8 w-8 shrink-0 rounded-md bg-gradient-to-br from-primary to-primary-2 shadow-brand flex items-center justify-center text-primary-foreground font-bold">G</div>
-              {!collapsed && (
+              {!effectiveCollapsed && (
                 <div className="min-w-0">
                   <div className="text-sm font-semibold leading-tight">Gestor de</div>
                   <div className="text-sm font-semibold leading-tight">Tráfego</div>
@@ -116,11 +133,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               onClick={toggleCollapsed}
               className={cn(
                 "shrink-0 text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 transition-[background-color,color,transform] duration-200 motion-reduce:transition-none rounded-md p-1",
-                collapsed && "rotate-180"
+                effectiveCollapsed && "rotate-180"
               )}
-              title={collapsed ? "Expandir menu" : "Recolher menu"}
-              aria-label={collapsed ? "Expandir menu" : "Recolher menu"}
-              aria-expanded={!collapsed}
+              title={effectiveCollapsed ? "Expandir menu" : "Recolher menu"}
+              aria-label={effectiveCollapsed ? "Expandir menu" : "Recolher menu"}
+              aria-expanded={!effectiveCollapsed}
             >
               <ChevronsLeft className="h-4 w-4" />
             </button>
@@ -129,7 +146,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <nav className="flex-1 p-3 space-y-4 overflow-y-auto overflow-x-hidden">
           {navGroups.map((group) => (
             <div key={group.label}>
-              {!collapsed && (
+              {!effectiveCollapsed && (
                 <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 whitespace-nowrap">
                   {group.label}
                 </div>
@@ -142,17 +159,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <Link
                       key={item.to}
                       to={item.to}
-                      title={collapsed ? item.label : undefined}
+                      title={effectiveCollapsed ? item.label : undefined}
                       className={cn(
                         "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
-                        collapsed && "justify-center px-0",
+                        effectiveCollapsed && "justify-center px-0",
                         active
                           ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium"
                           : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
                       )}
                     >
                       <Icon className="h-4 w-4 shrink-0" />
-                      {!collapsed && <span className="truncate">{item.label}</span>}
+                      {!effectiveCollapsed && <span className="truncate">{item.label}</span>}
                     </Link>
                   );
                 })}
@@ -160,10 +177,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           ))}
         </nav>
-        <div className={cn("p-3 border-t border-sidebar-border", collapsed && "px-2")}>
-          <div className={cn("flex items-center gap-2", collapsed ? "flex-col" : "justify-between")}>
-            {!collapsed && <span className="text-xs text-muted-foreground truncate">{profile?.full_name ?? "—"}</span>}
-            <div className={cn("flex items-center gap-1 shrink-0", collapsed && "flex-col")}>
+        <div className={cn("p-3 border-t border-sidebar-border", effectiveCollapsed && "px-2")}>
+          <div className={cn("flex items-center gap-2", effectiveCollapsed ? "flex-col" : "justify-between")}>
+            {!effectiveCollapsed && <span className="text-xs text-muted-foreground truncate">{profile?.full_name ?? "—"}</span>}
+            <div className={cn("flex items-center gap-1 shrink-0", effectiveCollapsed && "flex-col")}>
               <button
                 onClick={toggleTheme}
                 className="text-muted-foreground hover:text-foreground transition-colors p-1"
@@ -282,7 +299,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </>
       )}
 
-      <main className={cn("pt-14 md:pt-0 transition-[padding] duration-200 motion-reduce:transition-none", collapsed ? "md:pl-[68px]" : "md:pl-60")}>{children}</main>
+      <main className={cn("pt-14 md:pt-0 transition-[padding] duration-200 motion-reduce:transition-none", effectiveCollapsed ? "md:pl-[68px]" : "md:pl-60")}>{children}</main>
 
       {/* Botão flutuante do agente */}
       {!isActive("/agente", false) && (
