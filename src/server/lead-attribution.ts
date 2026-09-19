@@ -1,12 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { clients, metaLeadAttributions, metricsDaily, sales, whatsappInstances } from "@/db/schema";
+import { clients, metaLeadAttributions, sales, whatsappInstances } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 import { canAccessClient } from "@/lib/client-access";
-import { getMetaToken, getMetaTokenForClient, fetchAdSpendByIds, fetchAdCreativeMedia } from "@/lib/meta";
+import { getMetaToken, getMetaTokenForClient, fetchAdSpendByIds, fetchAdCreativeMedia, fetchAccountInsightsForRange } from "@/lib/meta";
 import { sendQualifiedLeadEvent, sendPurchaseEvent, sendCustomMessagingEvent } from "@/server/meta-capi";
 import { periodDateRange, type DashboardPeriod } from "@/lib/queries";
 
@@ -460,6 +460,7 @@ async function getLeadAttributionSummaryCore(
   customSince: string | undefined,
   customUntil: string | undefined,
   minStartTs: string | undefined,
+  resolveToken: (clientId: string) => Promise<string | null>,
 ): Promise<LeadAttributionSummary> {
   let { start, end } = periodDateRange(
     period ?? "maximum",
@@ -488,22 +489,31 @@ async function getLeadAttributionSummaryCore(
     ));
 
   // "Conversas iniciadas" que o Gerenciador de Anúncios da Meta contabiliza —
-  // fica sincronizado diariamente em metricsDaily. Comparado com total_leads
-  // (o que de fato chegou no WhatsApp via webhook) mostra a diferença entre
-  // cliques que a Meta conta como conversa e mensagens que realmente chegaram.
-  // O mesmo gasto sincronizado dá dois custos: por lead real (chegou no
-  // WhatsApp) e por conversa iniciada (CCI, a métrica que a Meta reporta).
-  const [metaTotals] = await db
-    .select({
-      leads: sql<number>`coalesce(sum(${metricsDaily.leads}), 0)`,
-      spend: sql<number>`coalesce(sum(${metricsDaily.spend}), 0)`,
-    })
-    .from(metricsDaily)
-    .where(and(
-      eq(metricsDaily.clientId, clientId),
-      gte(metricsDaily.date, start),
-      lte(metricsDaily.date, end),
-    ));
+  // busca ao vivo (não do snapshot metricsDaily, que só sincroniza uma vez
+  // por dia e ficava divergindo da aba Campanhas, que sempre busca ao vivo).
+  // Comparado com total_leads (o que de fato chegou no WhatsApp via webhook)
+  // mostra a diferença entre cliques que a Meta conta como conversa e
+  // mensagens que realmente chegaram. O mesmo gasto dá dois custos: por lead
+  // real (chegou no WhatsApp) e por conversa iniciada (CCI, a métrica que a
+  // Meta reporta).
+  let metaLeadsTotal = 0;
+  let totalSpend = 0;
+  const client = await db.query.clients.findFirst({
+    where: eq(clients.id, clientId),
+    columns: { metaAdAccountId: true },
+  });
+  if (client) {
+    try {
+      const token = await resolveToken(clientId);
+      if (token) {
+        const insights = await fetchAccountInsightsForRange(client.metaAdAccountId, token, start, end);
+        metaLeadsTotal = insights.leads;
+        totalSpend = insights.spend;
+      }
+    } catch {
+      // sem dado ao vivo da Meta — mostra 0 em vez de quebrar o resto do painel
+    }
+  }
 
   const byCampaign = new Map<string, CampaignAttributionStats>();
   let qualifiedTotal = 0;
@@ -530,9 +540,6 @@ async function getLeadAttributionSummaryCore(
     byCampaign.set(key, entry);
   }
 
-  const metaLeadsTotal = Number(metaTotals?.leads ?? 0);
-  const totalSpend = Number(metaTotals?.spend ?? 0);
-
   return {
     total_leads: rows.length,
     meta_conversations_started: metaLeadsTotal,
@@ -552,7 +559,7 @@ const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
   .inputValidator(periodInputSchema)
   .handler(async ({ data }): Promise<LeadAttributionSummary> => {
     await assertAccessible(data.clientId);
-    return getLeadAttributionSummaryCore(data.clientId, data.period, data.customSince, data.customUntil, undefined);
+    return getLeadAttributionSummaryCore(data.clientId, data.period, data.customSince, data.customUntil, undefined, getMetaToken);
   });
 
 export async function fetchLeadAttributionSummary(
@@ -568,7 +575,7 @@ const _fetchPublicLeadAttributionSummary = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<LeadAttributionSummary> => {
     const clientId = await resolvePublicClientId(data.token);
     const minStartTs = await getPublicReportFloorTs(clientId);
-    return getLeadAttributionSummaryCore(clientId, data.period, data.customSince, data.customUntil, minStartTs);
+    return getLeadAttributionSummaryCore(clientId, data.period, data.customSince, data.customUntil, minStartTs, getMetaTokenForClient);
   });
 
 export async function fetchPublicLeadAttributionSummary(
