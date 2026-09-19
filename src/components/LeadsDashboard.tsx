@@ -339,7 +339,7 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
         </div>
       </div>
 
-      <Card className="overflow-x-auto">
+      <Card className="overflow-hidden">
         {leadsLoading ? (
           <div className="p-4 space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}</div>
         ) : filtered.length === 0 ? (
@@ -347,8 +347,11 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
             {leads.length === 0 ? "Nenhum lead atribuído ainda. Conversas novas do WhatsApp vindas de um anúncio Click-to-WhatsApp aparecem aqui." : `Nenhum lead encontrado para "${search}".`}
           </p>
         ) : (
+          // Altura fixa (~10 linhas) com rolagem interna — a tabela pode ter
+          // centenas de leads e não faz sentido esticar a página inteira.
+          <div className="overflow-auto max-h-[640px]">
           <Table>
-            <TableHeader>
+            <TableHeader className="sticky top-0 z-10 bg-card">
               <TableRow>
                 <TableHead>Data</TableHead>
                 <TableHead>Nome</TableHead>
@@ -416,6 +419,7 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
               ))}
             </TableBody>
           </Table>
+          </div>
         )}
       </Card>
 
