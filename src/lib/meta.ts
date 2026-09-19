@@ -174,6 +174,32 @@ export async function getMetaToken(clientId?: string): Promise<string | null> {
   return tokenInfoFromRow(row).token;
 }
 
+// Mesma resolução de token de _resolveMetaToken, mas sem exigir sessão/org —
+// usada pelo link público de rastreamento (/r/$token), onde o acesso já foi
+// validado pelo próprio token antes de chegar aqui, então checar sessão de
+// novo só quebraria o fluxo (não existe usuário logado nesse caso).
+// createServerOnlyFn (não createServerFn): chamada direto por outro código de
+// servidor, nunca pelo cliente — sem isso o acesso a `db` aqui vazava o driver
+// do Postgres pro bundle do navegador, já que meta.ts também é importado por
+// telas client-side.
+export const getMetaTokenForClient = createServerOnlyFn(async function getMetaTokenForClient(clientId: string): Promise<string | null> {
+  const client = await db.query.clients.findFirst({
+    where: eq(clientsTable.id, clientId),
+    columns: { organizationId: true, metaTokenId: true },
+  });
+  if (!client) return null;
+  if (client.metaTokenId) {
+    const row = await db.query.metaTokens.findFirst({ where: eq(metaTokens.id, client.metaTokenId) });
+    if (row?.active) return tokenInfoFromRow(row).token;
+  }
+  const candidates = await db
+    .select()
+    .from(metaTokens)
+    .where(and(eq(metaTokens.organizationId, client.organizationId), eq(metaTokens.active, true)))
+    .orderBy(metaTokens.createdAt);
+  return tokenInfoFromRow(candidates[0] ?? null).token;
+});
+
 export async function requireMetaToken(clientId?: string): Promise<string> {
   const row = await _resolveMetaToken({ data: { clientId } });
   const { token, expiresAt, daysUntilExpiry } = tokenInfoFromRow(row);

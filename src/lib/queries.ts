@@ -65,6 +65,7 @@ export interface ClientRow {
   owner_user_id: string | null;
   qualified_lead_label: string | null;
   meta_capi_dataset_id: string | null;
+  public_tracking_token: string | null;
   tags?: TagRow[];
 }
 
@@ -118,6 +119,7 @@ function toClientRow(c: typeof clients.$inferSelect): ClientRow {
     owner_user_id: c.ownerUserId,
     qualified_lead_label: c.qualifiedLeadLabel,
     meta_capi_dataset_id: c.metaCapiDatasetId,
+    public_tracking_token: c.publicTrackingToken,
   };
 }
 

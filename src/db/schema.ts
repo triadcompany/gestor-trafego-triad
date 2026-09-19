@@ -144,6 +144,10 @@ export const clients = pgTable("clients", {
   // onde o evento QualifiedLead é enviado via Conversions API. Sem isso
   // configurado, a atribuição de campanha funciona mas o evento não é enviado.
   metaCapiDatasetId: text("meta_capi_dataset_id"),
+  // Token da URL pública de rastreamento (/r/$token) que o próprio cliente
+  // (dono do negócio, não o gestor) usa pra ver os leads e marcar
+  // qualificado/venda sem precisar de login. Nulo = link nunca gerado.
+  publicTrackingToken: text("public_tracking_token").unique(),
 });
 
 export const metricsDaily = pgTable(

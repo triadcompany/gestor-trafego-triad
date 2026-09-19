@@ -54,7 +54,7 @@ export const Route = createRootRoute({
     links: [{ rel: "stylesheet", href: appCss }],
   }),
   beforeLoad: async ({ location }) => {
-    if (location.pathname === "/login" || location.pathname.startsWith("/auth/") || location.pathname.startsWith("/connect/")) {
+    if (location.pathname === "/login" || location.pathname.startsWith("/auth/") || location.pathname.startsWith("/connect/") || location.pathname.startsWith("/r/")) {
       return;
     }
     const user = await getCurrentUser();

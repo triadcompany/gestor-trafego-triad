@@ -35,7 +35,13 @@ import {
 } from "recharts";
 import { Search, DollarSign, Check, CalendarRange, RefreshCw, ChevronRight, Play, Expand } from "lucide-react";
 import { toast } from "sonner";
-import { fetchLeadAttributions, fetchLeadAttributionSummary, fetchLeadTimeHeatmap, fetchTopQualifiedLeadAds, markLeadQualified, retryQualifiedLeadEvent, convertLeadToSale, type LeadAttributionRow, type TopQualifiedLeadAd } from "@/server/lead-attribution";
+import {
+  fetchLeadAttributions, fetchLeadAttributionSummary, fetchLeadTimeHeatmap, fetchTopQualifiedLeadAds,
+  markLeadQualified, retryQualifiedLeadEvent, convertLeadToSale,
+  fetchPublicLeadAttributions, fetchPublicLeadAttributionSummary, fetchPublicLeadTimeHeatmap, fetchPublicTopQualifiedLeadAds,
+  publicMarkLeadQualified, publicRetryQualifiedLeadEvent, publicConvertLeadToSale,
+  type LeadAttributionRow, type TopQualifiedLeadAd, type LeadTimeHeatmap,
+} from "@/server/lead-attribution";
 import { fetchClientWhatsappInfo } from "@/lib/whatsapp-messages";
 import { brl } from "@/lib/mock-data";
 import type { DashboardPeriod } from "@/lib/queries";
@@ -83,8 +89,12 @@ function formatPhoneFromJid(remoteJid: string): string {
   return digits ? `+${digits}` : remoteJid;
 }
 
-export function LeadsDashboard({ clientId }: { clientId: string }) {
+// clientId = uso normal (gestor logado); token = link público de rastreamento
+// (/r/$token, sem login) — nunca os dois ao mesmo tempo. Todas as chamadas ao
+// servidor abaixo escolhem a variante certa com base em qual foi passado.
+export function LeadsDashboard({ clientId, token }: { clientId?: string; token?: string }) {
   const queryClient = useQueryClient();
+  const identity = token ?? clientId!;
   const [search, setSearch] = useState("");
   const [saleFor, setSaleFor] = useState<LeadAttributionRow | null>(null);
   const [period, setPeriod] = useState<DashboardPeriod>("maximum");
@@ -94,48 +104,62 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
   const customRange = period === "custom" && customSince && customUntil ? { since: customSince, until: customUntil } : undefined;
   const periodReady = period !== "custom" || !!customRange;
 
+  const fetchAttributions = (p?: DashboardPeriod, r?: { since: string; until: string }) =>
+    token ? fetchPublicLeadAttributions(token, p, r) : fetchLeadAttributions(clientId!, p, r);
+  const fetchSummary = (p?: DashboardPeriod, r?: { since: string; until: string }) =>
+    token ? fetchPublicLeadAttributionSummary(token, p, r) : fetchLeadAttributionSummary(clientId!, p, r);
+  const fetchHeatmap = (p?: DashboardPeriod, r?: { since: string; until: string }): Promise<LeadTimeHeatmap> =>
+    token ? fetchPublicLeadTimeHeatmap(token, p, r) : fetchLeadTimeHeatmap(clientId!, p, r);
+  const fetchTopAds = (p?: DashboardPeriod, r?: { since: string; until: string }) =>
+    token ? fetchPublicTopQualifiedLeadAds(token, p, r) : fetchTopQualifiedLeadAds(clientId!, p, r);
+  const doQualify = (leadId: string) => (token ? publicMarkLeadQualified(token, leadId) : markLeadQualified(leadId));
+  const doRetry = (leadId: string) => (token ? publicRetryQualifiedLeadEvent(token, leadId) : retryQualifiedLeadEvent(leadId));
+  const doConvert = (leadId: string, value: number | null, obs?: string, email?: string) =>
+    token ? publicConvertLeadToSale(token, leadId, value, obs, email) : convertLeadToSale(leadId, value, obs, email);
+
   const { data: whatsappInfo } = useQuery({
     queryKey: ["client-whatsapp-info", clientId],
-    queryFn: () => fetchClientWhatsappInfo(clientId),
+    queryFn: () => fetchClientWhatsappInfo(clientId!),
+    enabled: !token,
   });
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ["lead-attribution-summary", clientId, period, customSince, customUntil],
-    queryFn: () => fetchLeadAttributionSummary(clientId, period, customRange),
+    queryKey: ["lead-attribution-summary", identity, period, customSince, customUntil],
+    queryFn: () => fetchSummary(period, customRange),
     enabled: periodReady,
   });
   const { data: leads = [], isLoading: leadsLoading } = useQuery({
-    queryKey: ["lead-attributions", clientId, period, customSince, customUntil],
-    queryFn: () => fetchLeadAttributions(clientId, period, customRange),
+    queryKey: ["lead-attributions", identity, period, customSince, customUntil],
+    queryFn: () => fetchAttributions(period, customRange),
     enabled: periodReady,
   });
 
   const qualifyMutation = useMutation({
-    mutationFn: markLeadQualified,
+    mutationFn: doQualify,
     onSuccess: () => toast.success("Lead marcado como qualificado."),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao marcar qualificado"),
     // Mesmo quando o envio pra Meta falha, o lead já foi marcado "qualified" ou
     // "conversion_failed" no banco — precisa recarregar pra mostrar isso e
     // liberar o botão "Reenviar", não só quando dá tudo certo.
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["lead-attributions", clientId] });
-      queryClient.invalidateQueries({ queryKey: ["lead-attribution-summary", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["lead-attributions", identity] });
+      queryClient.invalidateQueries({ queryKey: ["lead-attribution-summary", identity] });
     },
   });
 
   const retryMutation = useMutation({
-    mutationFn: retryQualifiedLeadEvent,
+    mutationFn: doRetry,
     onSuccess: () => toast.success("Evento reenviado pra Meta com sucesso."),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao reenviar evento"),
     onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: ["lead-attributions", clientId] });
-      queryClient.invalidateQueries({ queryKey: ["lead-attribution-summary", clientId] });
+      queryClient.invalidateQueries({ queryKey: ["lead-attributions", identity] });
+      queryClient.invalidateQueries({ queryKey: ["lead-attribution-summary", identity] });
     },
   });
 
   const invalidateAfterSale = () => {
-    queryClient.invalidateQueries({ queryKey: ["lead-attributions", clientId] });
-    queryClient.invalidateQueries({ queryKey: ["lead-attribution-summary", clientId] });
+    queryClient.invalidateQueries({ queryKey: ["lead-attributions", identity] });
+    queryClient.invalidateQueries({ queryKey: ["lead-attribution-summary", identity] });
     queryClient.invalidateQueries({ queryKey: ["sales"] });
   };
 
@@ -186,9 +210,11 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <p className="text-xs text-muted-foreground pt-1.5">
-          {whatsappInfo?.connectedAt
-            ? `WhatsApp conectado em ${new Date(whatsappInfo.connectedAt).toLocaleDateString("pt-BR")}${whatsappInfo.instanceLabel ? ` (${whatsappInfo.instanceLabel})` : ""}`
-            : "Nenhuma instância de WhatsApp vinculada a este cliente."}
+          {token
+            ? ""
+            : whatsappInfo?.connectedAt
+              ? `WhatsApp conectado em ${new Date(whatsappInfo.connectedAt).toLocaleDateString("pt-BR")}${whatsappInfo.instanceLabel ? ` (${whatsappInfo.instanceLabel})` : ""}`
+              : "Nenhuma instância de WhatsApp vinculada a este cliente."}
         </p>
         <div className="flex flex-col items-end gap-1.5">
           <div
@@ -277,7 +303,7 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
         />
       )}
 
-      <TimeHeatmap clientId={clientId} period={period} customRange={customRange} enabled={periodReady} />
+      <TimeHeatmap queryKeyId={identity} fetchHeatmap={fetchHeatmap} period={period} customRange={customRange} enabled={periodReady} />
 
       {!leadsLoading && leads.length > 0 && (
         <div className="grid gap-3 md:grid-cols-3">
@@ -423,9 +449,9 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
         )}
       </Card>
 
-      <TopQualifiedAdsCard clientId={clientId} period={period} customRange={customRange} enabled={periodReady} />
+      <TopQualifiedAdsCard queryKeyId={identity} fetchTopAds={fetchTopAds} period={period} customRange={customRange} enabled={periodReady} />
 
-      <ConvertToSaleDialog lead={saleFor} onClose={() => setSaleFor(null)} onSuccess={invalidateAfterSale} />
+      <ConvertToSaleDialog lead={saleFor} onClose={() => setSaleFor(null)} onSuccess={invalidateAfterSale} onConvert={doConvert} />
     </div>
   );
 }
@@ -505,12 +531,14 @@ const WEEKDAY_LABELS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sex
 // visíveis de uma vez (sem truncar em "Mais", como na versão mobile
 // original) e os dias da semana como cabeçalho de linha.
 function TimeHeatmap({
-  clientId,
+  queryKeyId,
+  fetchHeatmap,
   period,
   customRange,
   enabled,
 }: {
-  clientId: string;
+  queryKeyId: string;
+  fetchHeatmap: (period?: DashboardPeriod, customRange?: { since: string; until: string }) => Promise<LeadTimeHeatmap>;
   period: DashboardPeriod;
   customRange?: { since: string; until: string };
   enabled: boolean;
@@ -518,8 +546,8 @@ function TimeHeatmap({
   const [tab, setTab] = useState<"leads" | "sales">("leads");
 
   const { data: heatmap, isLoading } = useQuery({
-    queryKey: ["lead-time-heatmap", clientId, period, customRange?.since, customRange?.until],
-    queryFn: () => fetchLeadTimeHeatmap(clientId, period, customRange),
+    queryKey: ["lead-time-heatmap", queryKeyId, period, customRange?.since, customRange?.until],
+    queryFn: () => fetchHeatmap(period, customRange),
     enabled,
   });
 
@@ -636,12 +664,14 @@ function embedAspectRatio(embedHtml: string): number {
 // custo). O vídeo do criativo (quando existe) abre num modal; anúncio de
 // imagem ou sem mídia recuperável cai no link "Ver no Facebook".
 function TopQualifiedAdsCard({
-  clientId,
+  queryKeyId,
+  fetchTopAds,
   period,
   customRange,
   enabled,
 }: {
-  clientId: string;
+  queryKeyId: string;
+  fetchTopAds: (period?: DashboardPeriod, customRange?: { since: string; until: string }) => Promise<TopQualifiedLeadAd[]>;
   period: DashboardPeriod;
   customRange?: { since: string; until: string };
   enabled: boolean;
@@ -649,8 +679,8 @@ function TopQualifiedAdsCard({
   const [previewAd, setPreviewAd] = useState<TopQualifiedLeadAd | null>(null);
 
   const { data: ads, isLoading } = useQuery({
-    queryKey: ["top-qualified-lead-ads", clientId, period, customRange?.since, customRange?.until],
-    queryFn: () => fetchTopQualifiedLeadAds(clientId, period, customRange),
+    queryKey: ["top-qualified-lead-ads", queryKeyId, period, customRange?.since, customRange?.until],
+    queryFn: () => fetchTopAds(period, customRange),
     enabled,
   });
 
@@ -749,13 +779,23 @@ function TopQualifiedAdsCard({
   );
 }
 
-function ConvertToSaleDialog({ lead, onClose, onSuccess }: { lead: LeadAttributionRow | null; onClose: () => void; onSuccess: () => void }) {
+function ConvertToSaleDialog({
+  lead,
+  onClose,
+  onSuccess,
+  onConvert,
+}: {
+  lead: LeadAttributionRow | null;
+  onClose: () => void;
+  onSuccess: () => void;
+  onConvert: (leadId: string, value: number | null, obs?: string, email?: string) => Promise<void>;
+}) {
   const [value, setValue] = useState("");
   const [obs, setObs] = useState("");
   const [email, setEmail] = useState("");
 
   const mutation = useMutation({
-    mutationFn: () => convertLeadToSale(lead!.id, value.trim() ? Number(value) : null, obs, email),
+    mutationFn: () => onConvert(lead!.id, value.trim() ? Number(value) : null, obs, email),
     onSuccess: () => {
       toast.success("Venda registrada.");
       setValue("");

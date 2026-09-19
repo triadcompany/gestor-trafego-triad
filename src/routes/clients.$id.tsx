@@ -23,7 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3, Target, AlertTriangle } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3, Target, AlertTriangle, Copy, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { sendActiveCampaignsList } from "@/lib/whatsapp-messages";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
@@ -62,7 +62,7 @@ import {
   type CustomDateRange,
 } from "@/lib/meta";
 import { brl } from "@/lib/mock-data";
-import { fetchLeadAttributions, fetchLeadAttributionSummary } from "@/server/lead-attribution";
+import { fetchLeadAttributions, fetchLeadAttributionSummary, generatePublicTrackingLink, revokePublicTrackingLink } from "@/server/lead-attribution";
 
 export const Route = createFileRoute("/clients/$id")({
   head: () => ({
@@ -806,7 +806,7 @@ function ClientDetail() {
           }}
         />
 
-        <ClientLeadAttribution clientId={id} />
+        <ClientLeadAttribution clientId={id} publicTrackingToken={client.public_tracking_token} />
 
         {/* Tarefas + Anotações lado a lado */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
@@ -847,7 +847,8 @@ const LEAD_STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive
   conversion_failed: "destructive",
 };
 
-function ClientLeadAttribution({ clientId }: { clientId: string }) {
+function ClientLeadAttribution({ clientId, publicTrackingToken }: { clientId: string; publicTrackingToken: string | null }) {
+  const queryClient = useQueryClient();
   const { data: summary, isLoading: summaryLoading } = useQuery({
     queryKey: ["lead-attribution-summary", clientId],
     queryFn: () => fetchLeadAttributionSummary(clientId),
@@ -863,9 +864,32 @@ function ClientLeadAttribution({ clientId }: { clientId: string }) {
     : null;
   const showHealthWarning = !!summary && summary.total_leads > 0 && daysSinceLastAttribution !== null && daysSinceLastAttribution >= 7;
 
+  const copyLink = (t: string) => {
+    navigator.clipboard.writeText(`${window.location.origin}/r/${t}`);
+    toast.success("Link copiado!");
+  };
+
+  const generateLinkMutation = useMutation({
+    mutationFn: () => generatePublicTrackingLink(clientId),
+    onSuccess: (t) => {
+      copyLink(t);
+      queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao gerar link"),
+  });
+
+  const revokeLinkMutation = useMutation({
+    mutationFn: () => revokePublicTrackingLink(clientId),
+    onSuccess: () => {
+      toast.success("Link revogado — quem tinha o link antigo não acessa mais.");
+      queryClient.invalidateQueries({ queryKey: ["client", clientId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao revogar link"),
+  });
+
   return (
     <Card className="p-4 mb-6">
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
         <h2 className="text-base font-semibold flex items-center gap-2">
           <Target className="h-4 w-4 text-muted-foreground" />
           Rastreamento de leads (Meta Ads → WhatsApp)
@@ -873,6 +897,49 @@ function ClientLeadAttribution({ clientId }: { clientId: string }) {
         <a href={`/clients/${clientId}/leads`} className="text-xs text-primary hover:underline shrink-0">
           Ver todos os leads →
         </a>
+      </div>
+
+      <div className="flex items-center justify-between gap-2 flex-wrap rounded-lg border border-border px-3 py-2.5 mb-4">
+        <div className="flex items-center gap-2 min-w-0">
+          <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />
+          <p className="text-xs text-muted-foreground truncate">
+            {publicTrackingToken
+              ? "Link pra esse cliente acompanhar os leads e marcar qualificado/venda, sem precisar de login."
+              : "Gere um link pra esse cliente acompanhar os leads e marcar qualificado/venda, sem precisar de login."}
+          </p>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {publicTrackingToken && (
+            <Button variant="outline" size="sm" className="h-7 text-xs gap-1" onClick={() => copyLink(publicTrackingToken)}>
+              <Copy className="h-3.5 w-3.5" /> Copiar link
+            </Button>
+          )}
+          <Button
+            variant={publicTrackingToken ? "outline" : "default"}
+            size="sm"
+            className="h-7 text-xs gap-1"
+            onClick={() => {
+              if (publicTrackingToken && !confirm("Gerar um novo link invalida o link atual — quem já tem o link antigo perde acesso. Continuar?")) return;
+              generateLinkMutation.mutate();
+            }}
+            disabled={generateLinkMutation.isPending}
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> {publicTrackingToken ? "Gerar novo" : "Gerar link"}
+          </Button>
+          {publicTrackingToken && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-destructive hover:text-destructive"
+              onClick={() => {
+                if (confirm("Revogar o link? Quem já tem o link atual perde acesso imediatamente.")) revokeLinkMutation.mutate();
+              }}
+              disabled={revokeLinkMutation.isPending}
+            >
+              Revogar
+            </Button>
+          )}
+        </div>
       </div>
 
       {showHealthWarning && (
