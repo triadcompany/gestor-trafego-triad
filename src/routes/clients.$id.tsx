@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, TrendingUp, DollarSign, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3 } from "lucide-react";
 import { toast } from "sonner";
 import { sendActiveCampaignsList } from "@/lib/whatsapp-messages";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
@@ -32,6 +32,7 @@ import {
   YAxis,
   CartesianGrid,
   Tooltip as ChartTooltip,
+  Legend,
   ResponsiveContainer,
   ReferenceArea,
 } from "recharts";
@@ -95,23 +96,35 @@ const PERIOD_LABELS: Record<DatePreset | "custom", string> = {
   custom: "período personalizado",
 };
 
-// Métricas do gráfico da aba Campanhas: as 4 primeiras são "volume" (contagem),
-// as 4 seguintes são o custo correspondente (gasto ÷ volume daquele dia).
-// "conversas"/"cci" vêm da Meta (conversas iniciadas — o clique conta antes de
-// chegar mensagem de verdade); "leads"/"qualified" vêm do que realmente
-// chegou no WhatsApp (meta_lead_attributions), buscado à parte via
-// fetchDailyLeadCounts.
-const CHART_METRICS = [
-  { key: "conversas", shortLabel: "Conversas", label: "Conversas iniciadas", icon: UsersIcon, currency: false, color: "var(--chart-3)" },
-  { key: "cci", shortLabel: "CCI", label: "CCI — Custo por conversa iniciada", icon: TrendingUp, currency: true, color: "var(--primary)" },
-  { key: "leads", shortLabel: "Leads", label: "Leads", icon: MessageCircle, currency: false, color: "var(--chart-1)" },
-  { key: "cpl", shortLabel: "CPL", label: "CPL — Custo por lead", icon: DollarSign, currency: true, color: "var(--chart-2)" },
-  { key: "qualified", shortLabel: "Qualificado", label: "Lead Qualificado", icon: Check, currency: false, color: "var(--status-on-target)" },
-  { key: "cplq", shortLabel: "CPLQ", label: "CPLQ — Custo por Lead Qualificado", icon: DollarSign, currency: true, color: "var(--chart-2)" },
-  { key: "forms", shortLabel: "Forms", label: "Forms", icon: ClipboardList, currency: false, color: "var(--chart-4)" },
-  { key: "cpf", shortLabel: "CPF", label: "CPF — Custo por Formulário", icon: DollarSign, currency: true, color: "var(--chart-2)" },
+// Gráfico da aba Campanhas: cada aba junta um par quantidade+custo (ex:
+// Conversas iniciadas + CCI) no mesmo gráfico, com dois eixos — quantidade à
+// esquerda, custo à direita. "conversas"/"cci" vêm da Meta (conversas
+// iniciadas — o clique conta antes de chegar mensagem de verdade);
+// "leads"/"qualified" vêm do que realmente chegou no WhatsApp
+// (meta_lead_attributions), buscado à parte via fetchDailyLeadCounts.
+const PAIR_METRICS = [
+  {
+    key: "conversas", label: "Conversas iniciadas", icon: UsersIcon,
+    volumeField: "conversas", volumeLabel: "Conversas iniciadas", volumeColor: "var(--chart-3)",
+    costField: "cci", costLabel: "CCI", costColor: "var(--primary)",
+  },
+  {
+    key: "leads", label: "Leads", icon: MessageCircle,
+    volumeField: "leads", volumeLabel: "Leads", volumeColor: "var(--chart-1)",
+    costField: "cpl", costLabel: "CPL", costColor: "var(--chart-2)",
+  },
+  {
+    key: "qualified", label: "Lead Qualificado", icon: Check,
+    volumeField: "qualified", volumeLabel: "Lead Qualificado", volumeColor: "var(--status-on-target)",
+    costField: "cplq", costLabel: "CPLQ", costColor: "var(--chart-2)",
+  },
+  {
+    key: "forms", label: "Forms", icon: ClipboardList,
+    volumeField: "forms", volumeLabel: "Forms", volumeColor: "var(--chart-4)",
+    costField: "cpf", costLabel: "CPF", costColor: "var(--chart-2)",
+  },
 ] as const;
-type ChartMetricKey = typeof CHART_METRICS[number]["key"];
+type PairMetricKey = typeof PAIR_METRICS[number]["key"];
 
 // Uma linha por dia com todas as métricas já calculadas — mistura o que a
 // Meta reportou (spend/conversas/forms) com o que realmente chegou/qualificou
@@ -207,7 +220,7 @@ function ClientDetail() {
   const { openCampaignId } = useSearch({ from: "/clients/$id" });
   const queryClient = useQueryClient();
   const [editClientOpen, setEditClientOpen] = useState(false);
-  const [chartMetric, setChartMetric] = useState<ChartMetricKey>("cci");
+  const [chartMetric, setChartMetric] = useState<PairMetricKey>("conversas");
   const [selectedCampaign, setSelectedCampaign] = useState<MetaCampaign | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetInitialAdSetId, setSheetInitialAdSetId] = useState<string | undefined>(undefined);
@@ -416,7 +429,7 @@ function ClientDetail() {
   const metaAdsUrl = `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${client.meta_ad_account_id.replace("act_", "")}`;
   const periodLabel = PERIOD_LABELS[datePreset];
   const periodLabelB = PERIOD_LABELS[datePresetB];
-  const activeMetric = CHART_METRICS.find((m) => m.key === chartMetric)!;
+  const activePair = PAIR_METRICS.find((m) => m.key === chartMetric)!;
 
   const seriesA = buildDailySeries(insights, realByDate);
   const seriesB = buildDailySeries(insightsB, realByDateB);
@@ -424,8 +437,10 @@ function ClientDetail() {
   const chartData = compareEnabled
     ? Array.from({ length: Math.max(seriesA.length, seriesB.length) }, (_, i) => ({
         dayIndex: `Dia ${i + 1}`,
-        [chartMetric]: seriesA[i]?.[chartMetric] ?? null,
-        [`${chartMetric}B`]: seriesB[i]?.[chartMetric] ?? null,
+        [activePair.volumeField]: seriesA[i]?.[activePair.volumeField] ?? null,
+        [activePair.costField]: seriesA[i]?.[activePair.costField] ?? null,
+        [`${activePair.volumeField}B`]: seriesB[i]?.[activePair.volumeField] ?? null,
+        [`${activePair.costField}B`]: seriesB[i]?.[activePair.costField] ?? null,
       }))
     : seriesA.map((h) => ({ ...h, date: h.date.slice(5) }));
 
@@ -640,11 +655,11 @@ function ClientDetail() {
         <Card className="p-4 mb-6">
           <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
             <h2 className="text-sm font-medium">
-              {activeMetric.label} — {periodLabel}
+              {activePair.volumeLabel} <span className="text-muted-foreground">e</span> {activePair.costLabel} — {periodLabel}
               {compareEnabled && <span className="text-muted-foreground"> vs {periodLabelB}</span>}
             </h2>
             <div className="flex items-center gap-1 rounded-lg border border-border p-1 bg-muted/30 flex-wrap">
-              {CHART_METRICS.map(({ key, icon: Icon, label, shortLabel }) => (
+              {PAIR_METRICS.map(({ key, icon: Icon, label }) => (
                 <button
                   key={key}
                   onClick={() => setChartMetric(key)}
@@ -656,7 +671,7 @@ function ClientDetail() {
                   }`}
                 >
                   <Icon className="h-3 w-3" />
-                  {shortLabel}
+                  {label}
                 </button>
               ))}
             </div>
@@ -753,34 +768,74 @@ function ClientDetail() {
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey={compareEnabled ? "dayIndex" : "date"} stroke="var(--muted-foreground)" fontSize={11} />
-                  <YAxis stroke="var(--muted-foreground)" fontSize={11} tickFormatter={activeMetric.currency ? (v) => `R$${v}` : undefined} />
+                  <YAxis yAxisId="volume" stroke="var(--muted-foreground)" fontSize={11} allowDecimals={false} />
+                  <YAxis yAxisId="cost" orientation="right" stroke="var(--muted-foreground)" fontSize={11} tickFormatter={(v) => `R$${v}`} />
                   <ChartTooltip
                     contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-                    formatter={(v: number) => activeMetric.currency ? [brl(v), activeMetric.shortLabel] : [v, activeMetric.shortLabel]}
+                    formatter={(v: number, name: string) => {
+                      const isCost = name === activePair.costField || name === `${activePair.costField}B`;
+                      const isB = name.endsWith("B");
+                      const label = `${isCost ? activePair.costLabel : activePair.volumeLabel}${isB ? ` (${periodLabelB})` : ""}`;
+                      return [isCost ? brl(v) : v, label];
+                    }}
                   />
-                  {chartMetric === "cci" && !compareEnabled && (
-                    <ReferenceArea y1={client.cpl_min} y2={client.cpl_max} fill="var(--primary)" fillOpacity={0.08} />
+                  <Legend
+                    formatter={(name: string) => {
+                      const isCost = name === activePair.costField || name === `${activePair.costField}B`;
+                      const isB = name.endsWith("B");
+                      return `${isCost ? activePair.costLabel : activePair.volumeLabel}${isB ? ` (${periodLabelB})` : ""}`;
+                    }}
+                  />
+                  {chartMetric === "conversas" && !compareEnabled && (
+                    <ReferenceArea yAxisId="cost" y1={client.cpl_min} y2={client.cpl_max} fill="var(--primary)" fillOpacity={0.08} />
                   )}
                   <Line
+                    yAxisId="volume"
                     type="monotone"
-                    dataKey={chartMetric}
-                    stroke={activeMetric.color}
+                    dataKey={activePair.volumeField}
+                    stroke={activePair.volumeColor}
+                    strokeWidth={2}
+                    dot={{ r: 2 }}
+                    activeDot={{ r: 5 }}
+                    connectNulls
+                  />
+                  <Line
+                    yAxisId="cost"
+                    type="monotone"
+                    dataKey={activePair.costField}
+                    stroke={activePair.costColor}
                     strokeWidth={2}
                     dot={{ r: 2 }}
                     activeDot={{ r: 5 }}
                     connectNulls
                   />
                   {compareEnabled && (
-                    <Line
-                      type="monotone"
-                      dataKey={`${chartMetric}B`}
-                      stroke="var(--muted-foreground)"
-                      strokeWidth={2}
-                      strokeDasharray="5 4"
-                      dot={{ r: 2 }}
-                      activeDot={{ r: 5 }}
-                      connectNulls
-                    />
+                    <>
+                      <Line
+                        yAxisId="volume"
+                        type="monotone"
+                        dataKey={`${activePair.volumeField}B`}
+                        stroke={activePair.volumeColor}
+                        strokeOpacity={0.5}
+                        strokeWidth={2}
+                        strokeDasharray="5 4"
+                        dot={{ r: 2 }}
+                        activeDot={{ r: 5 }}
+                        connectNulls
+                      />
+                      <Line
+                        yAxisId="cost"
+                        type="monotone"
+                        dataKey={`${activePair.costField}B`}
+                        stroke={activePair.costColor}
+                        strokeOpacity={0.5}
+                        strokeWidth={2}
+                        strokeDasharray="5 4"
+                        dot={{ r: 2 }}
+                        activeDot={{ r: 5 }}
+                        connectNulls
+                      />
+                    </>
                   )}
                 </LineChart>
               </ResponsiveContainer>
