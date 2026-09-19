@@ -811,10 +811,16 @@ export async function fetchAdSpendByIds(
 export interface AdCreativeMedia {
   thumbnailUrl: string | null;
   videoUrl: string | null;
+  embedHtml: string | null;
   permalinkUrl: string | null;
 }
 
-/** Mídia do criativo de um anúncio — thumbnail sempre, vídeo (source jogável + link do post) só quando o anúncio é em vídeo. */
+/**
+ * Mídia do criativo de um anúncio — thumbnail sempre, vídeo só quando o
+ * anúncio é em vídeo. A Meta não libera o arquivo bruto (`source`) pra vídeos
+ * do tipo Reels — nesse caso cai pro `embed_html` (player oficial embedado),
+ * que funciona pra Reels e vídeo de feed igual.
+ */
 export async function fetchAdCreativeMedia(adId: string, token: string): Promise<AdCreativeMedia> {
   const params = new URLSearchParams({
     fields: "creative{thumbnail_url,video_id,object_story_spec,effective_object_story_id}",
@@ -832,20 +838,21 @@ export async function fetchAdCreativeMedia(adId: string, token: string): Promise
   const creative = json.creative;
   const thumbnailUrl = creative?.thumbnail_url ?? null;
   const videoId = creative?.video_id ?? creative?.object_story_spec?.video_data?.video_id ?? null;
-  if (!videoId) return { thumbnailUrl, videoUrl: null, permalinkUrl: null };
+  if (!videoId) return { thumbnailUrl, videoUrl: null, embedHtml: null, permalinkUrl: null };
 
   try {
-    const videoParams = new URLSearchParams({ fields: "source,picture,permalink_url", access_token: token });
-    const videoJson = await fetchMetaJson<{ source?: string; picture?: string; permalink_url?: string }>(
+    const videoParams = new URLSearchParams({ fields: "source,picture,permalink_url,embed_html", access_token: token });
+    const videoJson = await fetchMetaJson<{ source?: string; picture?: string; permalink_url?: string; embed_html?: string }>(
       `${BASE_URL}/${videoId}?${videoParams}`
     );
     return {
       thumbnailUrl: thumbnailUrl ?? videoJson.picture ?? null,
       videoUrl: videoJson.source ?? null,
+      embedHtml: videoJson.embed_html ?? null,
       permalinkUrl: videoJson.permalink_url ?? null,
     };
   } catch {
-    return { thumbnailUrl, videoUrl: null, permalinkUrl: null };
+    return { thumbnailUrl, videoUrl: null, embedHtml: null, permalinkUrl: null };
   }
 }
 

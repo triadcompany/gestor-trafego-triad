@@ -110,6 +110,7 @@ export interface TopQualifiedLeadAd {
   cost_per_qualified_lead: number;
   thumbnail_url: string | null;
   video_url: string | null;
+  embed_html: string | null;
   permalink_url: string | null;
 }
 
@@ -182,7 +183,7 @@ const _fetchTopQualifiedLeadAds = createServerFn({ method: "GET" })
 
     const withMedia = await Promise.all(
       ranked.map(async (g) => {
-        const media = await fetchAdCreativeMedia(g.adId, token).catch(() => ({ thumbnailUrl: null, videoUrl: null, permalinkUrl: null }));
+        const media = await fetchAdCreativeMedia(g.adId, token).catch(() => ({ thumbnailUrl: null, videoUrl: null, embedHtml: null, permalinkUrl: null }));
         return {
           ad_id: g.adId,
           ad_name: g.adName,
@@ -193,6 +194,7 @@ const _fetchTopQualifiedLeadAds = createServerFn({ method: "GET" })
           cost_per_qualified_lead: Math.round(g.costPerQualifiedLead * 100) / 100,
           thumbnail_url: media.thumbnailUrl,
           video_url: media.videoUrl,
+          embed_html: media.embedHtml,
           permalink_url: media.permalinkUrl,
         };
       })

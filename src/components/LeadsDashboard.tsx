@@ -673,7 +673,7 @@ function TopQualifiedAdsCard({
               <button
                 type="button"
                 onClick={() => setPreviewAd(ad)}
-                disabled={!ad.video_url && !ad.thumbnail_url}
+                disabled={!ad.video_url && !ad.embed_html && !ad.thumbnail_url}
                 className="relative aspect-video bg-muted flex items-center justify-center group disabled:cursor-default"
               >
                 {ad.thumbnail_url ? (
@@ -681,10 +681,10 @@ function TopQualifiedAdsCard({
                 ) : (
                   <span className="text-xs text-muted-foreground">Sem prévia</span>
                 )}
-                {(ad.video_url || ad.thumbnail_url) && (
+                {(ad.video_url || ad.embed_html || ad.thumbnail_url) && (
                   <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
                     <span className="h-9 w-9 rounded-full bg-white/90 flex items-center justify-center opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-transform">
-                      {ad.video_url ? <Play className="h-4 w-4 text-black ml-0.5" fill="currentColor" /> : <Expand className="h-4 w-4 text-black" />}
+                      {ad.video_url || ad.embed_html ? <Play className="h-4 w-4 text-black ml-0.5" fill="currentColor" /> : <Expand className="h-4 w-4 text-black" />}
                     </span>
                   </span>
                 )}
@@ -720,6 +720,14 @@ function TopQualifiedAdsCard({
           </DialogHeader>
           {previewAd?.video_url ? (
             <video src={previewAd.video_url} controls autoPlay className="w-full rounded-md max-h-[70vh]" />
+          ) : previewAd?.embed_html ? (
+            // Vídeos do tipo Reels não liberam o arquivo bruto (source) pela
+            // API — o embed_html é o player oficial do Facebook, funciona
+            // igual pra Reels e vídeo de feed.
+            <div
+              className="w-full [&_iframe]:w-full [&_iframe]:h-[70vh] [&_iframe]:rounded-md [&_iframe]:border-0"
+              dangerouslySetInnerHTML={{ __html: previewAd.embed_html }}
+            />
           ) : previewAd?.thumbnail_url ? (
             <img src={previewAd.thumbnail_url} alt={previewAd.ad_name ?? "Anúncio"} className="w-full rounded-md max-h-[70vh] object-contain" />
           ) : null}
