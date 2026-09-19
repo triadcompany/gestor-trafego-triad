@@ -841,14 +841,28 @@ export async function fetchAdCreativeMedia(adId: string, token: string): Promise
   if (!videoId) return { thumbnailUrl, videoUrl: null, embedHtml: null, permalinkUrl: null };
 
   try {
-    const videoParams = new URLSearchParams({ fields: "source,picture,permalink_url,embed_html", access_token: token });
-    const videoJson = await fetchMetaJson<{ source?: string; picture?: string; permalink_url?: string; embed_html?: string }>(
+    const videoParams = new URLSearchParams({ fields: "source,picture,permalink_url", access_token: token });
+    const videoJson = await fetchMetaJson<{ source?: string; picture?: string; permalink_url?: string }>(
       `${BASE_URL}/${videoId}?${videoParams}`
     );
+
+    // embed_html numa chamada separada: alguns vídeos (Reels, principalmente)
+    // recusam esse campo com erro — se viesse junto com source/picture/permalink_url
+    // acima, um erro nele derrubava a chamada inteira e perdia até o permalink,
+    // que sozinho já funciona.
+    let embedHtml: string | null = null;
+    try {
+      const embedParams = new URLSearchParams({ fields: "embed_html", access_token: token });
+      const embedJson = await fetchMetaJson<{ embed_html?: string }>(`${BASE_URL}/${videoId}?${embedParams}`);
+      embedHtml = embedJson.embed_html ?? null;
+    } catch {
+      // sem embed_html pra esse vídeo — segue só com o que já temos
+    }
+
     return {
       thumbnailUrl: thumbnailUrl ?? videoJson.picture ?? null,
       videoUrl: videoJson.source ?? null,
-      embedHtml: videoJson.embed_html ?? null,
+      embedHtml,
       permalinkUrl: videoJson.permalink_url ?? null,
     };
   } catch {
