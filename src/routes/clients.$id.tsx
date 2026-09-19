@@ -97,6 +97,13 @@ function defaultComparisonPeriod(preset: DatePreset | "custom"): { preset: DateP
     case "last_3d": return { preset: "custom", since: daysAgo(5), until: daysAgo(3) };
     case "last_7d": return { preset: "custom", since: daysAgo(13), until: daysAgo(7) };
     case "this_week_mon_today": return { preset: "last_week_mon_sun" };
+    case "this_month": return { preset: "last_month" };
+    case "last_month": {
+      const now = new Date();
+      const first = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+      const last = new Date(now.getFullYear(), now.getMonth() - 1, 0);
+      return { preset: "custom", since: iso(first), until: iso(last) };
+    }
     default: return null;
   }
 }
