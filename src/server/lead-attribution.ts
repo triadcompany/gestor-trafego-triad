@@ -5,7 +5,7 @@ import { db } from "@/db/client";
 import { clients, metaLeadAttributions, metricsDaily, sales } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 import { canAccessClient } from "@/lib/client-access";
-import { getMetaToken } from "@/lib/meta";
+import { getMetaToken, fetchAdSpendByIds, fetchAdCreativeMedia } from "@/lib/meta";
 import { sendQualifiedLeadEvent, sendPurchaseEvent, sendCustomMessagingEvent } from "@/server/meta-capi";
 import { periodDateRange, type DashboardPeriod } from "@/lib/queries";
 
@@ -98,6 +98,115 @@ export async function fetchLeadTimeHeatmap(
   customRange?: { since: string; until: string },
 ): Promise<LeadTimeHeatmap> {
   return _fetchLeadTimeHeatmap({ data: { clientId, period, customSince: customRange?.since, customUntil: customRange?.until } });
+}
+
+export interface TopQualifiedLeadAd {
+  ad_id: string;
+  ad_name: string | null;
+  adset_name: string | null;
+  campaign_name: string | null;
+  qualified_count: number;
+  spend: number;
+  cost_per_qualified_lead: number;
+  thumbnail_url: string | null;
+  video_url: string | null;
+  permalink_url: string | null;
+}
+
+// Ranking dos 3 anúncios com lead qualificado mais barato no período: agrupa
+// os leads já qualificados (status != pending) por anúncio, busca o gasto de
+// cada um na Meta (só dos anúncios candidatos, não da conta toda) e ordena
+// pelo custo por lead qualificado — não por custo por lead simples, que não
+// diz nada sobre qualidade.
+const _fetchTopQualifiedLeadAds = createServerFn({ method: "GET" })
+  .inputValidator(periodInputSchema)
+  .handler(async ({ data }): Promise<TopQualifiedLeadAd[]> => {
+    await assertAccessible(data.clientId);
+    const client = await db.query.clients.findFirst({
+      where: eq(clients.id, data.clientId),
+      columns: { metaAdAccountId: true },
+    });
+    if (!client) return [];
+
+    const { start, end } = periodDateRange(
+      data.period ?? "maximum",
+      data.customSince && data.customUntil ? { since: data.customSince, until: data.customUntil } : undefined,
+    );
+    const { startTs, endTsExclusive } = periodTimestampRange(data.period, data.customSince, data.customUntil);
+
+    const groups = await db
+      .select({
+        adId: metaLeadAttributions.adId,
+        adName: metaLeadAttributions.adName,
+        adsetName: metaLeadAttributions.adsetName,
+        campaignName: metaLeadAttributions.campaignName,
+        qualifiedCount: sql<number>`count(*)::int`,
+      })
+      .from(metaLeadAttributions)
+      .where(and(
+        eq(metaLeadAttributions.clientId, data.clientId),
+        gte(metaLeadAttributions.firstMessageAt, startTs),
+        lt(metaLeadAttributions.firstMessageAt, endTsExclusive),
+        sql`${metaLeadAttributions.status} != 'pending'`,
+      ))
+      .groupBy(metaLeadAttributions.adId, metaLeadAttributions.adName, metaLeadAttributions.adsetName, metaLeadAttributions.campaignName);
+
+    if (groups.length === 0) return [];
+
+    const token = await getMetaToken(data.clientId);
+    if (!token) return [];
+
+    let spendByAdId: Record<string, number> = {};
+    try {
+      spendByAdId = await fetchAdSpendByIds(client.metaAdAccountId, token, groups.map((g) => g.adId), start, end);
+    } catch {
+      return []; // sem gasto não dá pra rankear por custo — evita mostrar dado incompleto/errado
+    }
+
+    const ranked = groups
+      .map((g) => {
+        const spend = spendByAdId[g.adId] ?? 0;
+        return {
+          adId: g.adId,
+          adName: g.adName,
+          adsetName: g.adsetName,
+          campaignName: g.campaignName,
+          qualifiedCount: g.qualifiedCount,
+          spend,
+          costPerQualifiedLead: spend / g.qualifiedCount,
+        };
+      })
+      .filter((g) => g.spend > 0)
+      .sort((a, b) => a.costPerQualifiedLead - b.costPerQualifiedLead)
+      .slice(0, 3);
+
+    const withMedia = await Promise.all(
+      ranked.map(async (g) => {
+        const media = await fetchAdCreativeMedia(g.adId, token).catch(() => ({ thumbnailUrl: null, videoUrl: null, permalinkUrl: null }));
+        return {
+          ad_id: g.adId,
+          ad_name: g.adName,
+          adset_name: g.adsetName,
+          campaign_name: g.campaignName,
+          qualified_count: g.qualifiedCount,
+          spend: g.spend,
+          cost_per_qualified_lead: Math.round(g.costPerQualifiedLead * 100) / 100,
+          thumbnail_url: media.thumbnailUrl,
+          video_url: media.videoUrl,
+          permalink_url: media.permalinkUrl,
+        };
+      })
+    );
+
+    return withMedia;
+  });
+
+export async function fetchTopQualifiedLeadAds(
+  clientId: string,
+  period?: DashboardPeriod,
+  customRange?: { since: string; until: string },
+): Promise<TopQualifiedLeadAd[]> {
+  return _fetchTopQualifiedLeadAds({ data: { clientId, period, customSince: customRange?.since, customUntil: customRange?.until } });
 }
 
 // Painel de rastreamento de leads do Meta Ads por cliente — a captura em si

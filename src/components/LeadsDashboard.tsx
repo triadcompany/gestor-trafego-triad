@@ -33,9 +33,9 @@ import {
   Tooltip as ChartTooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Search, DollarSign, Check, CalendarRange, RefreshCw, ChevronRight } from "lucide-react";
+import { Search, DollarSign, Check, CalendarRange, RefreshCw, ChevronRight, Play, ExternalLink } from "lucide-react";
 import { toast } from "sonner";
-import { fetchLeadAttributions, fetchLeadAttributionSummary, fetchLeadTimeHeatmap, markLeadQualified, retryQualifiedLeadEvent, convertLeadToSale, type LeadAttributionRow } from "@/server/lead-attribution";
+import { fetchLeadAttributions, fetchLeadAttributionSummary, fetchLeadTimeHeatmap, fetchTopQualifiedLeadAds, markLeadQualified, retryQualifiedLeadEvent, convertLeadToSale, type LeadAttributionRow, type TopQualifiedLeadAd } from "@/server/lead-attribution";
 import { fetchClientWhatsappInfo } from "@/lib/whatsapp-messages";
 import { brl } from "@/lib/mock-data";
 import type { DashboardPeriod } from "@/lib/queries";
@@ -419,6 +419,8 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
         )}
       </Card>
 
+      <TopQualifiedAdsCard clientId={clientId} period={period} customRange={customRange} enabled={periodReady} />
+
       <ConvertToSaleDialog lead={saleFor} onClose={() => setSaleFor(null)} onSuccess={invalidateAfterSale} />
     </div>
   );
@@ -610,6 +612,116 @@ function TimeHeatmap({
           {tab === "leads" ? `Total leads: ${total.toLocaleString("pt-BR")}` : `Total vendas: ${total.toLocaleString("pt-BR")}`}
         </p>
       )}
+    </Card>
+  );
+}
+
+const RANK_LABEL = ["#1", "#2", "#3"];
+
+// Ranking dos anúncios com lead qualificado mais barato — só entram anúncios
+// com gasto registrado na Meta no período (sem gasto não dá pra calcular
+// custo). O vídeo do criativo (quando existe) abre num modal; anúncio de
+// imagem ou sem mídia recuperável cai no link "Ver no Facebook".
+function TopQualifiedAdsCard({
+  clientId,
+  period,
+  customRange,
+  enabled,
+}: {
+  clientId: string;
+  period: DashboardPeriod;
+  customRange?: { since: string; until: string };
+  enabled: boolean;
+}) {
+  const [videoAd, setVideoAd] = useState<TopQualifiedLeadAd | null>(null);
+
+  const { data: ads, isLoading } = useQuery({
+    queryKey: ["top-qualified-lead-ads", clientId, period, customRange?.since, customRange?.until],
+    queryFn: () => fetchTopQualifiedLeadAds(clientId, period, customRange),
+    enabled,
+  });
+
+  return (
+    <Card className="p-4">
+      <p className="text-sm font-medium">Top 3 anúncios — lead qualificado mais barato</p>
+      <p className="text-xs text-muted-foreground mt-0.5 mb-4">
+        Ranking pelo custo por lead qualificado (gasto do anúncio ÷ leads qualificados), não pelo custo por lead simples
+      </p>
+
+      {isLoading && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-56 w-full" />
+          ))}
+        </div>
+      )}
+
+      {!isLoading && (!ads || ads.length === 0) && (
+        <p className="text-sm text-muted-foreground py-8 text-center">
+          Nenhum anúncio com lead qualificado e gasto registrado no período.
+        </p>
+      )}
+
+      {!isLoading && ads && ads.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-3">
+          {ads.map((ad, i) => (
+            <div key={ad.ad_id} className="rounded-lg border border-border overflow-hidden flex flex-col">
+              <button
+                type="button"
+                onClick={() => {
+                  if (ad.video_url) setVideoAd(ad);
+                  else if (ad.permalink_url) window.open(ad.permalink_url, "_blank", "noopener,noreferrer");
+                }}
+                disabled={!ad.video_url && !ad.permalink_url}
+                className="relative aspect-video bg-muted flex items-center justify-center group disabled:cursor-default"
+              >
+                {ad.thumbnail_url ? (
+                  <img src={ad.thumbnail_url} alt={ad.ad_name ?? "Anúncio"} className="h-full w-full object-cover" />
+                ) : (
+                  <span className="text-xs text-muted-foreground">Sem prévia</span>
+                )}
+                {(ad.video_url || ad.permalink_url) && (
+                  <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
+                    <span className="h-9 w-9 rounded-full bg-white/90 flex items-center justify-center opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-transform">
+                      {ad.video_url ? <Play className="h-4 w-4 text-black ml-0.5" fill="currentColor" /> : <ExternalLink className="h-4 w-4 text-black" />}
+                    </span>
+                  </span>
+                )}
+                <span className="absolute top-2 left-2 rounded-full bg-primary text-primary-foreground text-[11px] font-semibold px-2 py-0.5">
+                  {RANK_LABEL[i]}
+                </span>
+              </button>
+              <div className="p-3 flex flex-col gap-1 flex-1">
+                <p className="text-sm font-medium truncate" title={ad.ad_name ?? undefined}>{ad.ad_name ?? "Anúncio sem nome"}</p>
+                <p className="text-[11px] text-muted-foreground truncate">
+                  {ad.campaign_name ?? "—"}{ad.adset_name ? ` · ${ad.adset_name}` : ""}
+                </p>
+                <div className="mt-auto pt-2 flex items-end justify-between gap-2">
+                  <div>
+                    <p className="text-[11px] text-muted-foreground">Custo por lead qualificado</p>
+                    <p className="text-base font-semibold tabular-nums">{brl(ad.cost_per_qualified_lead)}</p>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground text-right">
+                    {ad.qualified_count} qualificado{ad.qualified_count !== 1 ? "s" : ""}<br />
+                    {brl(ad.spend)} gasto
+                  </p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <Dialog open={!!videoAd} onOpenChange={(open) => !open && setVideoAd(null)}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>{videoAd?.ad_name ?? "Anúncio"}</DialogTitle>
+          </DialogHeader>
+          {videoAd?.video_url && (
+            <video src={videoAd.video_url} controls autoPlay className="w-full rounded-md max-h-[70vh]" />
+          )}
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }

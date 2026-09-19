@@ -781,6 +781,74 @@ export async function fetchAdContext(adId: string, token: string): Promise<AdCon
   };
 }
 
+/** Gasto de cada anúncio (por ad_id) num intervalo de datas — usado no ranking de custo por lead qualificado. */
+export async function fetchAdSpendByIds(
+  adAccountId: string,
+  token: string,
+  adIds: string[],
+  since: string,
+  until: string
+): Promise<Record<string, number>> {
+  if (adIds.length === 0) return {};
+  const params = new URLSearchParams({
+    fields: "ad_id,spend",
+    level: "ad",
+    time_range: JSON.stringify({ since, until }),
+    filtering: JSON.stringify([{ field: "ad.id", operator: "IN", value: adIds }]),
+    limit: String(adIds.length),
+    access_token: token,
+  });
+  const json = await fetchMetaJson<{ data?: Array<{ ad_id: string; spend?: string }> }>(
+    `${BASE_URL}/${adAccountId}/insights?${params}`
+  );
+  const result: Record<string, number> = {};
+  for (const row of json.data ?? []) {
+    result[row.ad_id] = parseFloat(row.spend ?? "0");
+  }
+  return result;
+}
+
+export interface AdCreativeMedia {
+  thumbnailUrl: string | null;
+  videoUrl: string | null;
+  permalinkUrl: string | null;
+}
+
+/** Mídia do criativo de um anúncio — thumbnail sempre, vídeo (source jogável + link do post) só quando o anúncio é em vídeo. */
+export async function fetchAdCreativeMedia(adId: string, token: string): Promise<AdCreativeMedia> {
+  const params = new URLSearchParams({
+    fields: "creative{thumbnail_url,video_id,object_story_spec,effective_object_story_id}",
+    access_token: token,
+  });
+  const json = await fetchMetaJson<{
+    creative?: {
+      thumbnail_url?: string;
+      video_id?: string;
+      object_story_spec?: { video_data?: { video_id?: string } };
+      effective_object_story_id?: string;
+    };
+  }>(`${BASE_URL}/${adId}?${params}`);
+
+  const creative = json.creative;
+  const thumbnailUrl = creative?.thumbnail_url ?? null;
+  const videoId = creative?.video_id ?? creative?.object_story_spec?.video_data?.video_id ?? null;
+  if (!videoId) return { thumbnailUrl, videoUrl: null, permalinkUrl: null };
+
+  try {
+    const videoParams = new URLSearchParams({ fields: "source,picture,permalink_url", access_token: token });
+    const videoJson = await fetchMetaJson<{ source?: string; picture?: string; permalink_url?: string }>(
+      `${BASE_URL}/${videoId}?${videoParams}`
+    );
+    return {
+      thumbnailUrl: thumbnailUrl ?? videoJson.picture ?? null,
+      videoUrl: videoJson.source ?? null,
+      permalinkUrl: videoJson.permalink_url ?? null,
+    };
+  } catch {
+    return { thumbnailUrl, videoUrl: null, permalinkUrl: null };
+  }
+}
+
 export async function fetchCampaigns(
   adAccountId: string,
   token: string,
