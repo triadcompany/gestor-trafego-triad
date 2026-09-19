@@ -33,7 +33,7 @@ import {
   Tooltip as ChartTooltip,
   ResponsiveContainer,
 } from "recharts";
-import { Search, DollarSign, Check, CalendarRange, RefreshCw, ChevronRight, Play, ExternalLink } from "lucide-react";
+import { Search, DollarSign, Check, CalendarRange, RefreshCw, ChevronRight, Play, Expand } from "lucide-react";
 import { toast } from "sonner";
 import { fetchLeadAttributions, fetchLeadAttributionSummary, fetchLeadTimeHeatmap, fetchTopQualifiedLeadAds, markLeadQualified, retryQualifiedLeadEvent, convertLeadToSale, type LeadAttributionRow, type TopQualifiedLeadAd } from "@/server/lead-attribution";
 import { fetchClientWhatsappInfo } from "@/lib/whatsapp-messages";
@@ -637,7 +637,7 @@ function TopQualifiedAdsCard({
   customRange?: { since: string; until: string };
   enabled: boolean;
 }) {
-  const [videoAd, setVideoAd] = useState<TopQualifiedLeadAd | null>(null);
+  const [previewAd, setPreviewAd] = useState<TopQualifiedLeadAd | null>(null);
 
   const { data: ads, isLoading } = useQuery({
     queryKey: ["top-qualified-lead-ads", clientId, period, customRange?.since, customRange?.until],
@@ -672,11 +672,8 @@ function TopQualifiedAdsCard({
             <div key={ad.ad_id} className="rounded-lg border border-border overflow-hidden flex flex-col">
               <button
                 type="button"
-                onClick={() => {
-                  if (ad.video_url) setVideoAd(ad);
-                  else if (ad.permalink_url) window.open(ad.permalink_url, "_blank", "noopener,noreferrer");
-                }}
-                disabled={!ad.video_url && !ad.permalink_url}
+                onClick={() => setPreviewAd(ad)}
+                disabled={!ad.video_url && !ad.thumbnail_url}
                 className="relative aspect-video bg-muted flex items-center justify-center group disabled:cursor-default"
               >
                 {ad.thumbnail_url ? (
@@ -684,10 +681,10 @@ function TopQualifiedAdsCard({
                 ) : (
                   <span className="text-xs text-muted-foreground">Sem prévia</span>
                 )}
-                {(ad.video_url || ad.permalink_url) && (
+                {(ad.video_url || ad.thumbnail_url) && (
                   <span className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/30 transition-colors">
                     <span className="h-9 w-9 rounded-full bg-white/90 flex items-center justify-center opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-transform">
-                      {ad.video_url ? <Play className="h-4 w-4 text-black ml-0.5" fill="currentColor" /> : <ExternalLink className="h-4 w-4 text-black" />}
+                      {ad.video_url ? <Play className="h-4 w-4 text-black ml-0.5" fill="currentColor" /> : <Expand className="h-4 w-4 text-black" />}
                     </span>
                   </span>
                 )}
@@ -716,14 +713,16 @@ function TopQualifiedAdsCard({
         </div>
       )}
 
-      <Dialog open={!!videoAd} onOpenChange={(open) => !open && setVideoAd(null)}>
+      <Dialog open={!!previewAd} onOpenChange={(open) => !open && setPreviewAd(null)}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>{videoAd?.ad_name ?? "Anúncio"}</DialogTitle>
+            <DialogTitle>{previewAd?.ad_name ?? "Anúncio"}</DialogTitle>
           </DialogHeader>
-          {videoAd?.video_url && (
-            <video src={videoAd.video_url} controls autoPlay className="w-full rounded-md max-h-[70vh]" />
-          )}
+          {previewAd?.video_url ? (
+            <video src={previewAd.video_url} controls autoPlay className="w-full rounded-md max-h-[70vh]" />
+          ) : previewAd?.thumbnail_url ? (
+            <img src={previewAd.thumbnail_url} alt={previewAd.ad_name ?? "Anúncio"} className="w-full rounded-md max-h-[70vh] object-contain" />
+          ) : null}
         </DialogContent>
       </Dialog>
     </Card>
