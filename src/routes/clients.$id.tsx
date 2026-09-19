@@ -56,6 +56,7 @@ import {
 import { brl } from "@/lib/mock-data";
 import { PublicTrackingLinkControl } from "@/components/PublicTrackingLinkControl";
 import { LeadsDashboard } from "@/components/LeadsDashboard";
+import { fetchDailyLeadCounts } from "@/server/lead-attribution";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/clients/$id")({
@@ -93,6 +94,48 @@ const PERIOD_LABELS: Record<DatePreset | "custom", string> = {
   maximum: "todo o período",
   custom: "período personalizado",
 };
+
+// Métricas do gráfico da aba Campanhas: as 4 primeiras são "volume" (contagem),
+// as 4 seguintes são o custo correspondente (gasto ÷ volume daquele dia).
+// "conversas"/"cci" vêm da Meta (conversas iniciadas — o clique conta antes de
+// chegar mensagem de verdade); "leads"/"qualified" vêm do que realmente
+// chegou no WhatsApp (meta_lead_attributions), buscado à parte via
+// fetchDailyLeadCounts.
+const CHART_METRICS = [
+  { key: "conversas", shortLabel: "Conversas", label: "Conversas iniciadas", icon: UsersIcon, currency: false, color: "var(--chart-3)" },
+  { key: "cci", shortLabel: "CCI", label: "CCI — Custo por conversa iniciada", icon: TrendingUp, currency: true, color: "var(--primary)" },
+  { key: "leads", shortLabel: "Leads", label: "Leads", icon: MessageCircle, currency: false, color: "var(--chart-1)" },
+  { key: "cpl", shortLabel: "CPL", label: "CPL — Custo por lead", icon: DollarSign, currency: true, color: "var(--chart-2)" },
+  { key: "qualified", shortLabel: "Qualificado", label: "Lead Qualificado", icon: Check, currency: false, color: "var(--status-on-target)" },
+  { key: "cplq", shortLabel: "CPLQ", label: "CPLQ — Custo por Lead Qualificado", icon: DollarSign, currency: true, color: "var(--chart-2)" },
+  { key: "forms", shortLabel: "Forms", label: "Forms", icon: ClipboardList, currency: false, color: "var(--chart-4)" },
+  { key: "cpf", shortLabel: "CPF", label: "CPF — Custo por Formulário", icon: DollarSign, currency: true, color: "var(--chart-2)" },
+] as const;
+type ChartMetricKey = typeof CHART_METRICS[number]["key"];
+
+// Uma linha por dia com todas as métricas já calculadas — mistura o que a
+// Meta reportou (spend/conversas/forms) com o que realmente chegou/qualificou
+// no WhatsApp (realByDate), pra qualquer aba do gráfico ler direto.
+function buildDailySeries(
+  insights: { date: string; spend: number; leads: number; forms: number; cpl: number | null }[],
+  realByDate: Map<string, { leads: number; qualified: number }>,
+) {
+  return insights.map((h) => {
+    const real = realByDate.get(h.date) ?? { leads: 0, qualified: 0 };
+    return {
+      date: h.date,
+      spend: h.spend,
+      conversas: h.leads,
+      cci: h.cpl,
+      forms: h.forms,
+      cpf: h.forms > 0 ? Math.round((h.spend / h.forms) * 100) / 100 : null,
+      leads: real.leads,
+      cpl: real.leads > 0 ? Math.round((h.spend / real.leads) * 100) / 100 : null,
+      qualified: real.qualified,
+      cplq: real.qualified > 0 ? Math.round((h.spend / real.qualified) * 100) / 100 : null,
+    };
+  });
+}
 
 function fmt(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -164,7 +207,7 @@ function ClientDetail() {
   const { openCampaignId } = useSearch({ from: "/clients/$id" });
   const queryClient = useQueryClient();
   const [editClientOpen, setEditClientOpen] = useState(false);
-  const [chartMetric, setChartMetric] = useState<"cpl" | "spend" | "leads" | "forms">("cpl");
+  const [chartMetric, setChartMetric] = useState<ChartMetricKey>("cci");
   const [selectedCampaign, setSelectedCampaign] = useState<MetaCampaign | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetInitialAdSetId, setSheetInitialAdSetId] = useState<string | undefined>(undefined);
@@ -255,6 +298,26 @@ function ClientDetail() {
   const periodClicksB = insightsB.reduce((s, h) => s + (h.link_clicks ?? 0), 0);
   const periodCtrB = periodImpressionsB > 0 ? (periodClicksB / periodImpressionsB) * 100 : null;
   const periodCpmB = periodImpressionsB > 0 ? (periodSpendB / periodImpressionsB) * 1000 : null;
+
+  // Leads/qualificados reais por dia — mesmo intervalo que a Meta já devolveu
+  // em `insights`, só que buscado do nosso banco em vez da API da Meta.
+  const realSince = insights[0]?.date;
+  const realUntil = insights[insights.length - 1]?.date;
+  const { data: dailyLeadCounts = [] } = useQuery({
+    queryKey: ["daily-lead-counts", id, realSince, realUntil],
+    queryFn: () => fetchDailyLeadCounts(id, realSince!, realUntil!),
+    enabled: !!realSince && !!realUntil,
+  });
+  const realByDate = new Map(dailyLeadCounts.map((r) => [r.date, r]));
+
+  const realSinceB = insightsB[0]?.date;
+  const realUntilB = insightsB[insightsB.length - 1]?.date;
+  const { data: dailyLeadCountsB = [] } = useQuery({
+    queryKey: ["daily-lead-counts-b", id, realSinceB, realUntilB],
+    queryFn: () => fetchDailyLeadCounts(id, realSinceB!, realUntilB!),
+    enabled: !!realSinceB && !!realUntilB && compareEnabled,
+  });
+  const realByDateB = new Map(dailyLeadCountsB.map((r) => [r.date, r]));
 
   const {
     data: campaigns,
@@ -353,14 +416,18 @@ function ClientDetail() {
   const metaAdsUrl = `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${client.meta_ad_account_id.replace("act_", "")}`;
   const periodLabel = PERIOD_LABELS[datePreset];
   const periodLabelB = PERIOD_LABELS[datePresetB];
+  const activeMetric = CHART_METRICS.find((m) => m.key === chartMetric)!;
+
+  const seriesA = buildDailySeries(insights, realByDate);
+  const seriesB = buildDailySeries(insightsB, realByDateB);
 
   const chartData = compareEnabled
-    ? Array.from({ length: Math.max(insights.length, insightsB.length) }, (_, i) => ({
+    ? Array.from({ length: Math.max(seriesA.length, seriesB.length) }, (_, i) => ({
         dayIndex: `Dia ${i + 1}`,
-        [chartMetric]: insights[i]?.[chartMetric] ?? null,
-        [`${chartMetric}B`]: insightsB[i]?.[chartMetric] ?? null,
+        [chartMetric]: seriesA[i]?.[chartMetric] ?? null,
+        [`${chartMetric}B`]: seriesB[i]?.[chartMetric] ?? null,
       }))
-    : insights.map((h) => ({ ...h, date: h.date.slice(5) }));
+    : seriesA.map((h) => ({ ...h, date: h.date.slice(5) }));
 
   return (
     <AppShell>
@@ -573,21 +640,15 @@ function ClientDetail() {
         <Card className="p-4 mb-6">
           <div className="flex items-center justify-between mb-4 gap-2 flex-wrap">
             <h2 className="text-sm font-medium">
-              {chartMetric === "cpl" ? "CCI" : chartMetric === "spend" ? "Gasto" : chartMetric === "leads" ? "Conversas iniciadas" : "Formulários"} — {periodLabel}
+              {activeMetric.label} — {periodLabel}
               {compareEnabled && <span className="text-muted-foreground"> vs {periodLabelB}</span>}
             </h2>
-            <div className="flex items-center gap-1 rounded-lg border border-border p-1 bg-muted/30">
-              {(
-                [
-                  { key: "cpl", icon: TrendingUp, label: "CCI" },
-                  { key: "leads", icon: UsersIcon, label: "Conversas" },
-                  { key: "forms", icon: ClipboardList, label: "Forms" },
-                  { key: "spend", icon: DollarSign, label: "Gasto" },
-                ] as const
-              ).map(({ key, icon: Icon, label }) => (
+            <div className="flex items-center gap-1 rounded-lg border border-border p-1 bg-muted/30 flex-wrap">
+              {CHART_METRICS.map(({ key, icon: Icon, label, shortLabel }) => (
                 <button
                   key={key}
                   onClick={() => setChartMetric(key)}
+                  title={label}
                   className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
                     chartMetric === key
                       ? "bg-background text-foreground shadow-sm"
@@ -595,7 +656,7 @@ function ClientDetail() {
                   }`}
                 >
                   <Icon className="h-3 w-3" />
-                  {label}
+                  {shortLabel}
                 </button>
               ))}
             </div>
@@ -692,18 +753,18 @@ function ClientDetail() {
                 >
                   <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                   <XAxis dataKey={compareEnabled ? "dayIndex" : "date"} stroke="var(--muted-foreground)" fontSize={11} />
-                  <YAxis stroke="var(--muted-foreground)" fontSize={11} tickFormatter={(chartMetric === "leads" || chartMetric === "forms") ? undefined : (v) => `R$${v}`} />
+                  <YAxis stroke="var(--muted-foreground)" fontSize={11} tickFormatter={activeMetric.currency ? (v) => `R$${v}` : undefined} />
                   <ChartTooltip
                     contentStyle={{ background: "var(--popover)", border: "1px solid var(--border)", borderRadius: 8, fontSize: 12 }}
-                    formatter={(v: number) => chartMetric === "leads" ? [v, "Conversas iniciadas"] : chartMetric === "forms" ? [v, "Formulários"] : [brl(v), chartMetric === "cpl" ? "CCI" : "Gasto"]}
+                    formatter={(v: number) => activeMetric.currency ? [brl(v), activeMetric.shortLabel] : [v, activeMetric.shortLabel]}
                   />
-                  {chartMetric === "cpl" && !compareEnabled && (
+                  {chartMetric === "cci" && !compareEnabled && (
                     <ReferenceArea y1={client.cpl_min} y2={client.cpl_max} fill="var(--primary)" fillOpacity={0.08} />
                   )}
                   <Line
                     type="monotone"
                     dataKey={chartMetric}
-                    stroke={chartMetric === "cpl" ? "var(--primary)" : chartMetric === "spend" ? "var(--chart-2)" : chartMetric === "leads" ? "var(--chart-3)" : "var(--chart-4)"}
+                    stroke={activeMetric.color}
                     strokeWidth={2}
                     dot={{ r: 2 }}
                     activeDot={{ r: 5 }}

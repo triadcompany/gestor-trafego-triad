@@ -539,6 +539,57 @@ export async function fetchPublicLeadAttributionSummary(
   return _fetchPublicLeadAttributionSummary({ data: { token, period, customSince: customRange?.since, customUntil: customRange?.until } });
 }
 
+// Data (YYYY-MM-DD) no horário de Brasília, a partir de um timestamp UTC —
+// usado pra casar a contagem diária de leads reais com as datas que a Meta
+// já devolve no gráfico de CCI/Conversas da aba Campanhas.
+function dateInSaoPaulo(input: string | Date): string {
+  const date = typeof input === "string" ? new Date(input) : input;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Sao_Paulo", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
+export interface DailyLeadCount {
+  date: string; // YYYY-MM-DD
+  leads: number;
+  qualified: number;
+}
+
+// Contagem diária de leads reais (chegaram no WhatsApp) e qualificados, pra
+// alimentar o gráfico "CCI — período" da aba Campanhas com Leads/CPL/Lead
+// Qualificado/CPLQ de verdade, ao lado das métricas que a Meta reporta.
+const _fetchDailyLeadCounts = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string(), since: z.string(), until: z.string() }))
+  .handler(async ({ data }): Promise<DailyLeadCount[]> => {
+    await assertAccessible(data.clientId);
+    const startTs = `${data.since}T00:00:00.000Z`;
+    const endTsExclusive = new Date(new Date(`${data.until}T00:00:00.000Z`).getTime() + 86400000).toISOString();
+
+    const rows = await db
+      .select({ firstMessageAt: metaLeadAttributions.firstMessageAt, status: metaLeadAttributions.status })
+      .from(metaLeadAttributions)
+      .where(and(
+        eq(metaLeadAttributions.clientId, data.clientId),
+        gte(metaLeadAttributions.firstMessageAt, startTs),
+        lt(metaLeadAttributions.firstMessageAt, endTsExclusive),
+      ));
+
+    const byDate = new Map<string, { leads: number; qualified: number }>();
+    for (const r of rows) {
+      const date = dateInSaoPaulo(r.firstMessageAt);
+      const entry = byDate.get(date) ?? { leads: 0, qualified: 0 };
+      entry.leads++;
+      if (QUALIFIED_STATUSES.has(r.status)) entry.qualified++;
+      byDate.set(date, entry);
+    }
+
+    return Array.from(byDate.entries())
+      .map(([date, v]) => ({ date, ...v }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  });
+
+export async function fetchDailyLeadCounts(clientId: string, since: string, until: string): Promise<DailyLeadCount[]> {
+  return _fetchDailyLeadCounts({ data: { clientId, since, until } });
+}
+
 export interface PublicClientInfo {
   client_id: string;
   client_name: string;
