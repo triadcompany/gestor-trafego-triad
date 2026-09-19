@@ -50,6 +50,7 @@ import {
   fetchDailyInsights,
   getMetaToken,
   sendWeeklyMetricsReport,
+  resolveDatePresetRange,
   type MetaCampaign,
   type DatePreset,
   type CustomDateRange,
@@ -57,7 +58,7 @@ import {
 import { brl } from "@/lib/mock-data";
 import { PublicTrackingLinkControl } from "@/components/PublicTrackingLinkControl";
 import { LeadsDashboard } from "@/components/LeadsDashboard";
-import { fetchDailyLeadCounts } from "@/server/lead-attribution";
+import { fetchDailyLeadCounts, fetchEntityLeadStats } from "@/server/lead-attribution";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/clients/$id")({
@@ -907,7 +908,7 @@ function ClientDetail() {
         </div>
 
         {campaigns && campaigns.length > 0 && (
-          <CampaignsTotals campaigns={campaigns} cplMax={client.cpl_max} />
+          <CampaignsTotals campaigns={campaigns} cplMax={client.cpl_max} clientId={id} datePreset={metaPreset} customRange={customRange} />
         )}
 
         <CampaignsExplorer
@@ -1329,7 +1330,19 @@ function ClientNotes({ clientId, clientName }: { clientId: string; clientName: s
   );
 }
 
-function CampaignsTotals({ campaigns, cplMax }: { campaigns: MetaCampaign[]; cplMax: number }) {
+function CampaignsTotals({
+  campaigns,
+  cplMax,
+  clientId,
+  datePreset,
+  customRange,
+}: {
+  campaigns: MetaCampaign[];
+  cplMax: number;
+  clientId: string;
+  datePreset: DatePreset;
+  customRange?: CustomDateRange;
+}) {
   const totalSpend = campaigns.reduce((s, c) => s + c.spend, 0);
   const totalLeads = campaigns.reduce((s, c) => s + c.leads, 0);
   const totalForms = campaigns.reduce((s, c) => s + (c.forms ?? 0), 0);
@@ -1350,6 +1363,22 @@ function CampaignsTotals({ campaigns, cplMax }: { campaigns: MetaCampaign[]; cpl
       ? statusTextClass.attention
       : statusTextClass.critical;
 
+  // Mesmas métricas reais (leads/qualificado/venda) que aparecem na tabela de
+  // campanhas — aqui somadas em todas as campanhas do período.
+  const { since, until } = resolveDatePresetRange(datePreset, customRange);
+  const { data: leadStats = [] } = useQuery({
+    queryKey: ["campaigns-totals-lead-stats", clientId, since, until],
+    queryFn: () => fetchEntityLeadStats(clientId, "campaign", since, until),
+  });
+  const realLeads = leadStats.reduce((s, r) => s + r.leads, 0);
+  const qualified = leadStats.reduce((s, r) => s + r.qualified, 0);
+  const salesCount = leadStats.reduce((s, r) => s + r.sales, 0);
+  const salesValue = leadStats.reduce((s, r) => s + r.salesValue, 0);
+  const realCpl = realLeads > 0 ? totalSpend / realLeads : null;
+  const cplq = qualified > 0 ? totalSpend / qualified : null;
+  const cps = salesCount > 0 ? totalSpend / salesCount : null;
+  const roas = totalSpend > 0 ? salesValue / totalSpend : null;
+
   return (
     <Card className="p-3 mb-3 overflow-x-auto">
       <div className="flex items-center gap-1 min-w-max">
@@ -1362,6 +1391,22 @@ function CampaignsTotals({ campaigns, cplMax }: { campaigns: MetaCampaign[]; cpl
         {totalForms > 0 && <><Divider /><TotalStat label="Forms" value={String(totalForms)} /></>}
         <Divider />
         <TotalStat label="CCI médio" value={totalCpl !== null ? brl(totalCpl) : "—"} valueClass={cplColor} />
+        <Divider />
+        <TotalStat label="Leads" value={realLeads > 0 ? String(realLeads) : "—"} />
+        <Divider />
+        <TotalStat label="CPL" value={realCpl !== null ? brl(realCpl) : "—"} />
+        <Divider />
+        <TotalStat label="Lead Qualificado" value={qualified > 0 ? String(qualified) : "—"} />
+        <Divider />
+        <TotalStat label="CPLQ" value={cplq !== null ? brl(cplq) : "—"} />
+        <Divider />
+        <TotalStat label="Vendas" value={salesCount > 0 ? String(salesCount) : "—"} />
+        <Divider />
+        <TotalStat label="Custo por Venda" value={cps !== null ? brl(cps) : "—"} />
+        <Divider />
+        <TotalStat label="Valor de Conversão" value={salesValue > 0 ? brl(salesValue) : "—"} />
+        <Divider />
+        <TotalStat label="ROAS" value={roas !== null ? `${roas.toFixed(2)}x` : "—"} valueClass={roas !== null ? (roas >= 1 ? statusTextClass["on-target"] : statusTextClass.critical) : ""} />
         <Divider />
         <TotalStat label="Impressões" value={totalImpressions > 0 ? totalImpressions.toLocaleString("pt-BR") : "—"} />
         <Divider />

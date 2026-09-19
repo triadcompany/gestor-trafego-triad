@@ -20,6 +20,7 @@ import {
   duplicateAdSet,
   duplicateAd,
   duplicateCampaign,
+  resolveDatePresetRange,
   type MetaCampaign,
   type MetaAdSet,
   type MetaAd,
@@ -81,48 +82,6 @@ const METRIC_DIRECTION: Partial<Record<ColumnKey, "higher" | "lower">> = {
   sales_value: "higher",
   roas: "higher",
 };
-
-// Datas exatas (YYYY-MM-DD) de um DatePreset da Meta — só usado pra buscar os
-// leads/vendas reais no nosso banco (a Meta resolve o preset sozinha do lado
-// dela, mas a nossa consulta precisa do intervalo explícito).
-function resolveDatePresetRange(preset: DatePreset, customRange?: CustomDateRange): { since: string; until: string } {
-  if (customRange) return customRange;
-  const now = new Date();
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const today = iso(now);
-  const daysAgo = (n: number) => iso(new Date(Date.now() - n * 86400000));
-  switch (preset) {
-    case "today": return { since: today, until: today };
-    case "yesterday": return { since: daysAgo(1), until: daysAgo(1) };
-    case "last_3d": return { since: daysAgo(2), until: today };
-    case "last_7d": return { since: daysAgo(6), until: today };
-    case "this_week_mon_today": {
-      const day = now.getDay();
-      const diffToMonday = day === 0 ? 6 : day - 1;
-      const monday = new Date(now);
-      monday.setDate(now.getDate() - diffToMonday);
-      return { since: iso(monday), until: today };
-    }
-    case "last_week_mon_sun": {
-      const day = now.getDay();
-      const diffToMonday = day === 0 ? 6 : day - 1;
-      const thisMonday = new Date(now);
-      thisMonday.setDate(now.getDate() - diffToMonday);
-      const lastMonday = new Date(thisMonday);
-      lastMonday.setDate(thisMonday.getDate() - 7);
-      const lastSunday = new Date(thisMonday);
-      lastSunday.setDate(thisMonday.getDate() - 1);
-      return { since: iso(lastMonday), until: iso(lastSunday) };
-    }
-    case "this_month": return { since: iso(new Date(now.getFullYear(), now.getMonth(), 1)), until: today };
-    case "last_month": {
-      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const last = new Date(now.getFullYear(), now.getMonth(), 0);
-      return { since: iso(first), until: iso(last) };
-    }
-    case "maximum": return { since: "2000-01-01", until: today };
-  }
-}
 
 // Mistura o que a Meta reportou com o que realmente chegou/qualificou/comprou
 // no WhatsApp (meta_lead_attributions/sales) — sem stats ainda carregadas,
