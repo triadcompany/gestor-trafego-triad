@@ -28,6 +28,78 @@ function periodTimestampRange(period: DashboardPeriod | undefined, customSince?:
   };
 }
 
+// Dia da semana (0=domingo) e hora (0-23) no horário de Brasília, a partir de
+// um timestamp UTC — usado pra montar o mapa de calor de horários.
+function dayHourInSaoPaulo(input: string | Date): { day: number; hour: number } {
+  const date = typeof input === "string" ? new Date(input) : input;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Sao_Paulo",
+    weekday: "short",
+    hour: "2-digit",
+    hour12: false,
+  }).formatToParts(date);
+  const weekdayStr = parts.find((p) => p.type === "weekday")?.value ?? "Sun";
+  const hourStr = parts.find((p) => p.type === "hour")?.value ?? "00";
+  const dayMap: Record<string, number> = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+  const hour = parseInt(hourStr, 10) % 24; // meia-noite pode vir como "24" dependendo do runtime
+  return { day: dayMap[weekdayStr] ?? 0, hour };
+}
+
+export interface LeadTimeHeatmap {
+  leads: number[][]; // [dia 0-6][hora 0-23]
+  sales: number[][];
+  totalLeads: number;
+  totalSales: number;
+}
+
+const _fetchLeadTimeHeatmap = createServerFn({ method: "GET" })
+  .inputValidator(periodInputSchema)
+  .handler(async ({ data }): Promise<LeadTimeHeatmap> => {
+    await assertAccessible(data.clientId);
+    const { startTs, endTsExclusive } = periodTimestampRange(data.period, data.customSince, data.customUntil);
+
+    const leadRows = await db
+      .select({ firstMessageAt: metaLeadAttributions.firstMessageAt })
+      .from(metaLeadAttributions)
+      .where(and(
+        eq(metaLeadAttributions.clientId, data.clientId),
+        gte(metaLeadAttributions.firstMessageAt, startTs),
+        lt(metaLeadAttributions.firstMessageAt, endTsExclusive),
+      ));
+
+    const saleRows = await db
+      .select({ createdAt: sales.createdAt })
+      .from(sales)
+      .innerJoin(metaLeadAttributions, eq(metaLeadAttributions.saleId, sales.id))
+      .where(and(
+        eq(metaLeadAttributions.clientId, data.clientId),
+        gte(sales.createdAt, startTs),
+        lt(sales.createdAt, endTsExclusive),
+      ));
+
+    const leads = Array.from({ length: 7 }, () => Array(24).fill(0));
+    const salesGrid = Array.from({ length: 7 }, () => Array(24).fill(0));
+
+    for (const r of leadRows) {
+      const { day, hour } = dayHourInSaoPaulo(r.firstMessageAt);
+      leads[day][hour]++;
+    }
+    for (const r of saleRows) {
+      const { day, hour } = dayHourInSaoPaulo(r.createdAt);
+      salesGrid[day][hour]++;
+    }
+
+    return { leads, sales: salesGrid, totalLeads: leadRows.length, totalSales: saleRows.length };
+  });
+
+export async function fetchLeadTimeHeatmap(
+  clientId: string,
+  period?: DashboardPeriod,
+  customRange?: { since: string; until: string },
+): Promise<LeadTimeHeatmap> {
+  return _fetchLeadTimeHeatmap({ data: { clientId, period, customSince: customRange?.since, customUntil: customRange?.until } });
+}
+
 // Painel de rastreamento de leads do Meta Ads por cliente — a captura em si
 // (ctwa_clid, anúncio de origem) é gravada pelo webhook da Evolution API sem
 // sessão (ver evolution-webhook.ts). Aqui: leitura pro painel + as duas ações

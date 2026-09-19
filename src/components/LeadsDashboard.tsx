@@ -35,7 +35,7 @@ import {
 } from "recharts";
 import { Search, DollarSign, Check, CalendarRange, RefreshCw, ChevronRight } from "lucide-react";
 import { toast } from "sonner";
-import { fetchLeadAttributions, fetchLeadAttributionSummary, markLeadQualified, retryQualifiedLeadEvent, convertLeadToSale, type LeadAttributionRow } from "@/server/lead-attribution";
+import { fetchLeadAttributions, fetchLeadAttributionSummary, fetchLeadTimeHeatmap, markLeadQualified, retryQualifiedLeadEvent, convertLeadToSale, type LeadAttributionRow } from "@/server/lead-attribution";
 import { fetchClientWhatsappInfo } from "@/lib/whatsapp-messages";
 import { brl } from "@/lib/mock-data";
 import type { DashboardPeriod } from "@/lib/queries";
@@ -277,6 +277,8 @@ export function LeadsDashboard({ clientId }: { clientId: string }) {
         />
       )}
 
+      <TimeHeatmap clientId={clientId} period={period} customRange={customRange} enabled={periodReady} />
+
       {!leadsLoading && leads.length > 0 && (
         <div className="grid gap-3 md:grid-cols-3">
           <Card className="p-4 md:col-span-2">
@@ -487,6 +489,127 @@ function ConversionFunnel({ stages }: { stages: { label: string; value: number }
           </div>
         ))}
       </div>
+    </Card>
+  );
+}
+
+const WEEKDAY_LABELS = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+
+// Mapa de calor dia-da-semana x hora, versão desktop: todas as 24 colunas
+// visíveis de uma vez (sem truncar em "Mais", como na versão mobile
+// original) e os dias da semana como cabeçalho de linha.
+function TimeHeatmap({
+  clientId,
+  period,
+  customRange,
+  enabled,
+}: {
+  clientId: string;
+  period: DashboardPeriod;
+  customRange?: { since: string; until: string };
+  enabled: boolean;
+}) {
+  const [tab, setTab] = useState<"leads" | "sales">("leads");
+
+  const { data: heatmap, isLoading } = useQuery({
+    queryKey: ["lead-time-heatmap", clientId, period, customRange?.since, customRange?.until],
+    queryFn: () => fetchLeadTimeHeatmap(clientId, period, customRange),
+    enabled,
+  });
+
+  const grid = tab === "leads" ? heatmap?.leads : heatmap?.sales;
+  const total = tab === "leads" ? heatmap?.totalLeads : heatmap?.totalSales;
+  const maxCount = useMemo(() => {
+    if (!grid) return 0;
+    let max = 0;
+    for (const row of grid) for (const v of row) if (v > max) max = v;
+    return max;
+  }, [grid]);
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-start justify-between gap-3 flex-wrap mb-4">
+        <div>
+          <p className="text-sm font-medium">
+            {tab === "leads" ? "Horários que os leads mais entram em contato" : "Horários que as vendas mais acontecem"}
+          </p>
+          <p className="text-xs text-muted-foreground mt-0.5">Dia da semana x horário, horário de Brasília</p>
+        </div>
+        <div
+          role="group"
+          aria-label="Selecionar dado do mapa de calor"
+          className="flex rounded-md border border-border overflow-hidden text-xs"
+        >
+          {(["leads", "sales"] as const).map((opt) => (
+            <button
+              key={opt}
+              type="button"
+              onClick={() => setTab(opt)}
+              aria-pressed={tab === opt}
+              className={`px-3 py-1.5 touch-manipulation transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
+                tab === opt
+                  ? "bg-primary text-primary-foreground font-medium"
+                  : "text-muted-foreground hover:bg-muted"
+              }`}
+            >
+              {opt === "leads" ? "Leads" : "Vendas"}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {isLoading && <Skeleton className="h-72 w-full" />}
+
+      {!isLoading && (!grid || total === 0) && (
+        <p className="text-sm text-muted-foreground py-8 text-center">Nenhum dado no período selecionado.</p>
+      )}
+
+      {!isLoading && grid && total !== undefined && total > 0 && (
+        <div className="overflow-x-auto">
+          <div className="min-w-[900px]">
+            <div className="grid grid-cols-[90px_repeat(24,minmax(0,1fr))] gap-[3px] mb-1">
+              <div />
+              {Array.from({ length: 24 }, (_, h) => (
+                <div key={h} className="text-center text-[10px] text-muted-foreground tabular-nums">
+                  {h}
+                </div>
+              ))}
+            </div>
+            {grid.map((row, day) => (
+              <div key={day} className="grid grid-cols-[90px_repeat(24,minmax(0,1fr))] gap-[3px] mb-[3px]">
+                <div className="text-xs text-muted-foreground flex items-center pr-2 truncate">
+                  {WEEKDAY_LABELS[day]}
+                </div>
+                {row.map((count, hour) => {
+                  const intensity = maxCount > 0 ? count / maxCount : 0;
+                  return (
+                    <div
+                      key={hour}
+                      title={`${WEEKDAY_LABELS[day]}, ${hour}h: ${count}`}
+                      className="aspect-square rounded-[3px] flex items-center justify-center text-[10px] font-medium tabular-nums"
+                      style={{
+                        backgroundColor:
+                          count > 0
+                            ? `color-mix(in oklch, var(--primary) ${Math.round(15 + intensity * 75)}%, var(--card))`
+                            : "var(--muted)",
+                        color: intensity > 0.5 ? "var(--primary-foreground)" : "var(--foreground)",
+                      }}
+                    >
+                      {count > 0 ? count : ""}
+                    </div>
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {!isLoading && total !== undefined && total > 0 && (
+        <p className="text-[11px] text-muted-foreground/70 mt-3">
+          {tab === "leads" ? `Total leads: ${total.toLocaleString("pt-BR")}` : `Total vendas: ${total.toLocaleString("pt-BR")}`}
+        </p>
+      )}
     </Card>
   );
 }
