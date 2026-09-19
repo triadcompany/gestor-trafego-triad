@@ -84,6 +84,23 @@ const DATE_PRESETS: { value: DatePreset | "custom"; label: string }[] = [
   { value: "custom", label: "Personalizado" },
 ];
 
+// Período B (comparação) sugerido automaticamente quando o período A muda —
+// o "período equivalente anterior" de cada um. Não existe preset da Meta pra
+// "anteontem" nem pra "3/7 dias antes dos últimos 3/7 dias", então esses
+// casos viram período personalizado com a data exata calculada aqui.
+function defaultComparisonPeriod(preset: DatePreset | "custom"): { preset: DatePreset | "custom"; since?: string; until?: string } | null {
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const daysAgo = (n: number) => iso(new Date(Date.now() - n * 86400000));
+  switch (preset) {
+    case "today": return { preset: "yesterday" };
+    case "yesterday": return { preset: "custom", since: daysAgo(2), until: daysAgo(2) };
+    case "last_3d": return { preset: "custom", since: daysAgo(5), until: daysAgo(3) };
+    case "last_7d": return { preset: "custom", since: daysAgo(13), until: daysAgo(7) };
+    case "this_week_mon_today": return { preset: "last_week_mon_sun" };
+    default: return null;
+  }
+}
+
 const PERIOD_LABELS: Record<DatePreset | "custom", string> = {
   today: "hoje",
   yesterday: "ontem",
@@ -235,6 +252,17 @@ function ClientDetail() {
   const [datePresetB, setDatePresetB] = useState<DatePreset | "custom">("yesterday");
   const [customSinceB, setCustomSinceB] = useState("");
   const [customUntilB, setCustomUntilB] = useState("");
+
+  // Sempre que o período A muda, sugere sozinho o "equivalente anterior" pro
+  // período B — o usuário ainda pode trocar manualmente depois, isso só
+  // preenche um ponto de partida melhor que ficar sempre em "Ontem".
+  useEffect(() => {
+    const suggestion = defaultComparisonPeriod(datePreset);
+    if (!suggestion) return;
+    setDatePresetB(suggestion.preset);
+    setCustomSinceB(suggestion.since ?? "");
+    setCustomUntilB(suggestion.until ?? "");
+  }, [datePreset]);
 
   const navigate = useNavigate();
   const [switcherOpen, setSwitcherOpen] = useState(false);
