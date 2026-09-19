@@ -369,7 +369,12 @@ function extractMetrics(actions?: Array<{ action_type: string; value: string }>)
     // como "Resultados" para campanhas de WhatsApp. "total_messaging_connection" e
     // "messaging_first_reply" incluem reconexões/respostas e inflam a contagem.
     leads: find(["onsite_conversion.messaging_conversation_started_7d"]),
-    forms: find(["lead", "onsite_conversion.lead_grouped"]),
+    // Só "onsite_conversion.lead_grouped" é exclusivo de campanha de Formulário
+    // Instantâneo. O action_type genérico "lead" também conta qualquer evento
+    // equivalente ao padrão "Lead" — inclusive o nosso próprio "LeadSubmitted"
+    // (mandado quando um lead do WhatsApp vira qualificado, pra aparecer na
+    // coluna nativa da Meta) — e inflava "Forms" em clientes sem formulário.
+    forms: find(["onsite_conversion.lead_grouped"]),
   };
 }
 
