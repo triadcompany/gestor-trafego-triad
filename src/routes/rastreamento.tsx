@@ -12,6 +12,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { fetchAllClients } from "@/lib/queries";
+import { PublicTrackingLinkControl } from "@/components/PublicTrackingLinkControl";
 
 export const Route = createFileRoute("/rastreamento")({
   head: () => ({
@@ -23,6 +24,7 @@ export const Route = createFileRoute("/rastreamento")({
 function RastreamentoPage() {
   const [clientId, setClientId] = useState<string>("");
   const { data: clients = [], isLoading } = useQuery({ queryKey: ["all-clients"], queryFn: fetchAllClients });
+  const selectedClient = clients.find((c) => c.id === clientId);
 
   useEffect(() => {
     if (!clientId && clients.length > 0) setClientId(clients[0].id);
@@ -36,16 +38,26 @@ function RastreamentoPage() {
             <Target className="h-5 w-5 text-muted-foreground" />
             Rastreamento de leads
           </h1>
-          <Select value={clientId} onValueChange={setClientId}>
-            <SelectTrigger className="w-64">
-              <SelectValue placeholder="Selecionar cliente" />
-            </SelectTrigger>
-            <SelectContent>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2 flex-wrap">
+            {selectedClient && (
+              <PublicTrackingLinkControl
+                clientId={selectedClient.id}
+                publicTrackingToken={selectedClient.public_tracking_token}
+                invalidateQueryKey={["all-clients"]}
+                compact
+              />
+            )}
+            <Select value={clientId} onValueChange={setClientId}>
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Selecionar cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {isLoading ? (
