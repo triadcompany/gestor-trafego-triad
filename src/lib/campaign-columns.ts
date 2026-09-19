@@ -97,6 +97,50 @@ export const AVAILABLE_COLUMNS: Record<ExplorerLevel, ColumnKey[]> = {
   ad: AD_COLUMNS,
 };
 
+// Padrão pra quem nunca personalizou (gestor novo, ou limpou o navegador) —
+// Cliques/CTR/CPC/Seguidores Instagram ficam disponíveis mas ocultos até o
+// gestor decidir ativar. Cada um continua livre pra personalizar depois.
+const CAMPAIGN_ADSET_DEFAULT_VISIBLE: ColumnKey[] = [
+  "status",
+  "daily_budget",
+  "spend",
+  "leads",
+  "cpl",
+  "real_leads",
+  "real_cpl",
+  "qualified",
+  "cplq",
+  "sales",
+  "cps",
+  "sales_value",
+  "roas",
+  "impressions",
+  "cpm",
+];
+
+const AD_DEFAULT_VISIBLE: ColumnKey[] = [
+  "status",
+  "spend",
+  "leads",
+  "cpl",
+  "real_leads",
+  "real_cpl",
+  "qualified",
+  "cplq",
+  "sales",
+  "cps",
+  "sales_value",
+  "roas",
+  "impressions",
+  "cpm",
+];
+
+export const DEFAULT_VISIBLE_COLUMNS: Record<ExplorerLevel, ColumnKey[]> = {
+  campaign: CAMPAIGN_ADSET_DEFAULT_VISIBLE,
+  adset: CAMPAIGN_ADSET_DEFAULT_VISIBLE,
+  ad: AD_DEFAULT_VISIBLE,
+};
+
 const STORAGE_KEY_PREFIX = "campaigns-explorer-columns-";
 
 function loadStoredColumns(level: ExplorerLevel): ColumnKey[] | null {
@@ -115,11 +159,11 @@ function loadStoredColumns(level: ExplorerLevel): ColumnKey[] | null {
 
 export function useColumnPrefs(level: ExplorerLevel) {
   const [columns, setColumns] = useState<ColumnKey[]>(
-    () => loadStoredColumns(level) ?? AVAILABLE_COLUMNS[level]
+    () => loadStoredColumns(level) ?? DEFAULT_VISIBLE_COLUMNS[level]
   );
 
   useEffect(() => {
-    setColumns(loadStoredColumns(level) ?? AVAILABLE_COLUMNS[level]);
+    setColumns(loadStoredColumns(level) ?? DEFAULT_VISIBLE_COLUMNS[level]);
   }, [level]);
 
   useEffect(() => {
