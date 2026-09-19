@@ -3,7 +3,7 @@ import { and, desc, eq, gte, lt, lte, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { clients, metaLeadAttributions, metricsDaily, sales } from "@/db/schema";
+import { clients, metaLeadAttributions, metricsDaily, sales, whatsappInstances } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 import { canAccessClient } from "@/lib/client-access";
 import { getMetaToken, getMetaTokenForClient, fetchAdSpendByIds, fetchAdCreativeMedia } from "@/lib/meta";
@@ -30,12 +30,36 @@ const publicPeriodInputSchema = z.object({
 
 // Intervalo de datas em timestamps (o range vem em dias "YYYY-MM-DD", mas
 // first_message_at é timestamp — precisa cobrir o dia inteiro do fim).
-function periodTimestampRange(period: DashboardPeriod | undefined, customSince?: string, customUntil?: string) {
+// minStartTs (só usado no link público) empurra o início pra frente quando o
+// período pedido começa antes dele — nunca deixa ver antes disso.
+function periodTimestampRange(period: DashboardPeriod | undefined, customSince?: string, customUntil?: string, minStartTs?: string) {
   const { start, end } = periodDateRange(period ?? "maximum", customSince && customUntil ? { since: customSince, until: customUntil } : undefined);
+  let startTs = `${start}T00:00:00.000Z`;
+  if (minStartTs && minStartTs > startTs) startTs = minStartTs;
   return {
-    startTs: `${start}T00:00:00.000Z`,
+    startTs,
     endTsExclusive: new Date(new Date(`${end}T00:00:00.000Z`).getTime() + 86400000).toISOString(),
   };
+}
+
+// Piso de data pro link público de rastreamento: o gestor vê o histórico
+// inteiro, mas o cliente só vê a partir de 1 dia depois de conectar o
+// WhatsApp. Sem isso, se o WhatsApp foi conectado depois de campanhas já
+// estarem ativas, o cliente veria "muitas conversas iniciadas" (a Meta já
+// contava antes) e "poucos leads" (rastreamento só começou depois) sem
+// entender que não é um problema — só que o rastreamento chegou atrasado.
+async function getPublicReportFloorTs(clientId: string): Promise<string | undefined> {
+  const client = await db.query.clients.findFirst({
+    where: eq(clients.id, clientId),
+    columns: { whatsappInstanceId: true },
+  });
+  if (!client?.whatsappInstanceId) return undefined;
+  const instance = await db.query.whatsappInstances.findFirst({
+    where: eq(whatsappInstances.id, client.whatsappInstanceId),
+    columns: { createdAt: true },
+  });
+  if (!instance) return undefined;
+  return new Date(new Date(instance.createdAt).getTime() + 86400000).toISOString();
 }
 
 // Dia da semana (0=domingo) e hora (0-23) no horário de Brasília, a partir de
@@ -78,8 +102,9 @@ async function getLeadTimeHeatmapCore(
   period: DashboardPeriod | undefined,
   customSince: string | undefined,
   customUntil: string | undefined,
+  minStartTs: string | undefined,
 ): Promise<LeadTimeHeatmap> {
-  const { startTs, endTsExclusive } = periodTimestampRange(period, customSince, customUntil);
+  const { startTs, endTsExclusive } = periodTimestampRange(period, customSince, customUntil, minStartTs);
 
   const leadRows = await db
     .select({ firstMessageAt: metaLeadAttributions.firstMessageAt })
@@ -119,7 +144,7 @@ const _fetchLeadTimeHeatmap = createServerFn({ method: "GET" })
   .inputValidator(periodInputSchema)
   .handler(async ({ data }): Promise<LeadTimeHeatmap> => {
     await assertAccessible(data.clientId);
-    return getLeadTimeHeatmapCore(data.clientId, data.period, data.customSince, data.customUntil);
+    return getLeadTimeHeatmapCore(data.clientId, data.period, data.customSince, data.customUntil, undefined);
   });
 
 export async function fetchLeadTimeHeatmap(
@@ -134,7 +159,8 @@ const _fetchPublicLeadTimeHeatmap = createServerFn({ method: "GET" })
   .inputValidator(publicPeriodInputSchema)
   .handler(async ({ data }): Promise<LeadTimeHeatmap> => {
     const clientId = await resolvePublicClientId(data.token);
-    return getLeadTimeHeatmapCore(clientId, data.period, data.customSince, data.customUntil);
+    const minStartTs = await getPublicReportFloorTs(clientId);
+    return getLeadTimeHeatmapCore(clientId, data.period, data.customSince, data.customUntil, minStartTs);
   });
 
 export async function fetchPublicLeadTimeHeatmap(
@@ -169,6 +195,7 @@ async function getTopQualifiedLeadAdsCore(
   period: DashboardPeriod | undefined,
   customSince: string | undefined,
   customUntil: string | undefined,
+  minStartTs: string | undefined,
   resolveToken: (clientId: string) => Promise<string | null>,
 ): Promise<TopQualifiedLeadAd[]> {
   const client = await db.query.clients.findFirst({
@@ -177,11 +204,15 @@ async function getTopQualifiedLeadAdsCore(
   });
   if (!client) return [];
 
-  const { start, end } = periodDateRange(
+  let { start, end } = periodDateRange(
     period ?? "maximum",
     customSince && customUntil ? { since: customSince, until: customUntil } : undefined,
   );
-  const { startTs, endTsExclusive } = periodTimestampRange(period, customSince, customUntil);
+  if (minStartTs) {
+    const minDate = minStartTs.slice(0, 10);
+    if (minDate > start) start = minDate;
+  }
+  const { startTs, endTsExclusive } = periodTimestampRange(period, customSince, customUntil, minStartTs);
 
   const groups = await db
     .select({
@@ -255,7 +286,7 @@ const _fetchTopQualifiedLeadAds = createServerFn({ method: "GET" })
   .inputValidator(periodInputSchema)
   .handler(async ({ data }): Promise<TopQualifiedLeadAd[]> => {
     await assertAccessible(data.clientId);
-    return getTopQualifiedLeadAdsCore(data.clientId, data.period, data.customSince, data.customUntil, getMetaToken);
+    return getTopQualifiedLeadAdsCore(data.clientId, data.period, data.customSince, data.customUntil, undefined, getMetaToken);
   });
 
 export async function fetchTopQualifiedLeadAds(
@@ -270,7 +301,8 @@ const _fetchPublicTopQualifiedLeadAds = createServerFn({ method: "GET" })
   .inputValidator(publicPeriodInputSchema)
   .handler(async ({ data }): Promise<TopQualifiedLeadAd[]> => {
     const clientId = await resolvePublicClientId(data.token);
-    return getTopQualifiedLeadAdsCore(clientId, data.period, data.customSince, data.customUntil, getMetaTokenForClient);
+    const minStartTs = await getPublicReportFloorTs(clientId);
+    return getTopQualifiedLeadAdsCore(clientId, data.period, data.customSince, data.customUntil, minStartTs, getMetaTokenForClient);
   });
 
 export async function fetchPublicTopQualifiedLeadAds(
@@ -319,8 +351,9 @@ async function getLeadAttributionsCore(
   period: DashboardPeriod | undefined,
   customSince: string | undefined,
   customUntil: string | undefined,
+  minStartTs: string | undefined,
 ): Promise<LeadAttributionRow[]> {
-  const { startTs, endTsExclusive } = periodTimestampRange(period, customSince, customUntil);
+  const { startTs, endTsExclusive } = periodTimestampRange(period, customSince, customUntil, minStartTs);
   const rows = await db
     .select({
       id: metaLeadAttributions.id,
@@ -371,7 +404,7 @@ const _fetchLeadAttributions = createServerFn({ method: "GET" })
   .inputValidator(periodInputSchema)
   .handler(async ({ data }): Promise<LeadAttributionRow[]> => {
     await assertAccessible(data.clientId);
-    return getLeadAttributionsCore(data.clientId, data.period, data.customSince, data.customUntil);
+    return getLeadAttributionsCore(data.clientId, data.period, data.customSince, data.customUntil, undefined);
   });
 
 export async function fetchLeadAttributions(
@@ -386,7 +419,8 @@ const _fetchPublicLeadAttributions = createServerFn({ method: "GET" })
   .inputValidator(publicPeriodInputSchema)
   .handler(async ({ data }): Promise<LeadAttributionRow[]> => {
     const clientId = await resolvePublicClientId(data.token);
-    return getLeadAttributionsCore(clientId, data.period, data.customSince, data.customUntil);
+    const minStartTs = await getPublicReportFloorTs(clientId);
+    return getLeadAttributionsCore(clientId, data.period, data.customSince, data.customUntil, minStartTs);
   });
 
 export async function fetchPublicLeadAttributions(
@@ -425,12 +459,17 @@ async function getLeadAttributionSummaryCore(
   period: DashboardPeriod | undefined,
   customSince: string | undefined,
   customUntil: string | undefined,
+  minStartTs: string | undefined,
 ): Promise<LeadAttributionSummary> {
-  const { start, end } = periodDateRange(
+  let { start, end } = periodDateRange(
     period ?? "maximum",
     customSince && customUntil ? { since: customSince, until: customUntil } : undefined,
   );
-  const { startTs, endTsExclusive } = periodTimestampRange(period, customSince, customUntil);
+  if (minStartTs) {
+    const minDate = minStartTs.slice(0, 10);
+    if (minDate > start) start = minDate;
+  }
+  const { startTs, endTsExclusive } = periodTimestampRange(period, customSince, customUntil, minStartTs);
   const rows = await db
     .select({
       campaignId: metaLeadAttributions.campaignId,
@@ -513,7 +552,7 @@ const _fetchLeadAttributionSummary = createServerFn({ method: "GET" })
   .inputValidator(periodInputSchema)
   .handler(async ({ data }): Promise<LeadAttributionSummary> => {
     await assertAccessible(data.clientId);
-    return getLeadAttributionSummaryCore(data.clientId, data.period, data.customSince, data.customUntil);
+    return getLeadAttributionSummaryCore(data.clientId, data.period, data.customSince, data.customUntil, undefined);
   });
 
 export async function fetchLeadAttributionSummary(
@@ -528,7 +567,8 @@ const _fetchPublicLeadAttributionSummary = createServerFn({ method: "GET" })
   .inputValidator(publicPeriodInputSchema)
   .handler(async ({ data }): Promise<LeadAttributionSummary> => {
     const clientId = await resolvePublicClientId(data.token);
-    return getLeadAttributionSummaryCore(clientId, data.period, data.customSince, data.customUntil);
+    const minStartTs = await getPublicReportFloorTs(clientId);
+    return getLeadAttributionSummaryCore(clientId, data.period, data.customSince, data.customUntil, minStartTs);
   });
 
 export async function fetchPublicLeadAttributionSummary(
