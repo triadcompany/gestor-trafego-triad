@@ -590,6 +590,68 @@ export async function fetchDailyLeadCounts(clientId: string, since: string, unti
   return _fetchDailyLeadCounts({ data: { clientId, since, until } });
 }
 
+export interface EntityLeadStats {
+  id: string; // campaign_id, adset_id ou ad_id, dependendo de `level`
+  leads: number;
+  qualified: number;
+  sales: number;
+  salesValue: number;
+}
+
+// Leads/qualificados/vendas reais por campanha, conjunto ou anúncio — pra
+// colocar ao lado das métricas que a Meta reporta na tabela de campanhas.
+const _fetchEntityLeadStats = createServerFn({ method: "GET" })
+  .inputValidator(z.object({
+    clientId: z.string(),
+    level: z.enum(["campaign", "adset", "ad"]),
+    since: z.string(),
+    until: z.string(),
+  }))
+  .handler(async ({ data }): Promise<EntityLeadStats[]> => {
+    await assertAccessible(data.clientId);
+    const startTs = `${data.since}T00:00:00.000Z`;
+    const endTsExclusive = new Date(new Date(`${data.until}T00:00:00.000Z`).getTime() + 86400000).toISOString();
+
+    const idColumn = data.level === "campaign"
+      ? metaLeadAttributions.campaignId
+      : data.level === "adset"
+      ? metaLeadAttributions.adsetId
+      : metaLeadAttributions.adId;
+
+    const rows = await db
+      .select({ entityId: idColumn, status: metaLeadAttributions.status, saleId: metaLeadAttributions.saleId, saleValue: sales.value })
+      .from(metaLeadAttributions)
+      .leftJoin(sales, eq(sales.id, metaLeadAttributions.saleId))
+      .where(and(
+        eq(metaLeadAttributions.clientId, data.clientId),
+        gte(metaLeadAttributions.firstMessageAt, startTs),
+        lt(metaLeadAttributions.firstMessageAt, endTsExclusive),
+      ));
+
+    const byEntity = new Map<string, EntityLeadStats>();
+    for (const r of rows) {
+      if (!r.entityId) continue;
+      const entry = byEntity.get(r.entityId) ?? { id: r.entityId, leads: 0, qualified: 0, sales: 0, salesValue: 0 };
+      entry.leads++;
+      if (QUALIFIED_STATUSES.has(r.status)) entry.qualified++;
+      if (r.saleId) {
+        entry.sales++;
+        entry.salesValue += r.saleValue ?? 0;
+      }
+      byEntity.set(r.entityId, entry);
+    }
+    return Array.from(byEntity.values());
+  });
+
+export async function fetchEntityLeadStats(
+  clientId: string,
+  level: "campaign" | "adset" | "ad",
+  since: string,
+  until: string,
+): Promise<EntityLeadStats[]> {
+  return _fetchEntityLeadStats({ data: { clientId, level, since, until } });
+}
+
 export interface PublicClientInfo {
   client_id: string;
   client_name: string;

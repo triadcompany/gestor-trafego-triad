@@ -8,6 +8,14 @@ export type ColumnKey =
   | "spend"
   | "leads"
   | "cpl"
+  | "real_leads"
+  | "real_cpl"
+  | "qualified"
+  | "cplq"
+  | "sales"
+  | "cps"
+  | "sales_value"
+  | "roas"
   | "impressions"
   | "link_clicks"
   | "ctr"
@@ -21,6 +29,14 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
   spend: "Gasto",
   leads: "Conversas",
   cpl: "CCI",
+  real_leads: "Leads",
+  real_cpl: "CPL",
+  qualified: "Lead Qualificado",
+  cplq: "CPLQ",
+  sales: "Vendas",
+  cps: "Custo por Venda",
+  sales_value: "Valor de Conversão",
+  roas: "ROAS",
   impressions: "Impressões",
   link_clicks: "Cliques",
   ctr: "CTR",
@@ -29,12 +45,23 @@ export const COLUMN_LABELS: Record<ColumnKey, string> = {
   instagram_followers: "Seguidores Instagram",
 };
 
+// "real_*"/qualified/vendas vêm do nosso banco (quem realmente chegou/comprou
+// no WhatsApp), não da Meta — por isso ficam ao lado de leads/cpl (que são a
+// visão da Meta, "conversas iniciadas"/CCI).
 const CAMPAIGN_ADSET_COLUMNS: ColumnKey[] = [
   "status",
   "daily_budget",
   "spend",
   "leads",
   "cpl",
+  "real_leads",
+  "real_cpl",
+  "qualified",
+  "cplq",
+  "sales",
+  "cps",
+  "sales_value",
+  "roas",
   "impressions",
   "link_clicks",
   "ctr",
@@ -48,6 +75,14 @@ const AD_COLUMNS: ColumnKey[] = [
   "spend",
   "leads",
   "cpl",
+  "real_leads",
+  "real_cpl",
+  "qualified",
+  "cplq",
+  "sales",
+  "cps",
+  "sales_value",
+  "roas",
   "impressions",
   "link_clicks",
   "ctr",

@@ -28,6 +28,7 @@ import {
 } from "@/lib/meta";
 import { brl } from "@/lib/mock-data";
 import { statusTextClass } from "@/lib/status-colors";
+import { fetchEntityLeadStats, type EntityLeadStats } from "@/server/lead-attribution";
 import {
   AVAILABLE_COLUMNS,
   COLUMN_LABELS,
@@ -47,6 +48,15 @@ interface Row {
   leads: number;
   forms: number;
   cpl: number | null;
+  // Reais (meta_lead_attributions/sales) — não vêm da Meta, entram depois via withLeadStats().
+  real_leads: number;
+  real_cpl: number | null;
+  qualified: number;
+  cplq: number | null;
+  sales: number;
+  cps: number | null;
+  sales_value: number;
+  roas: number | null;
   impressions: number;
   link_clicks: number;
   ctr: number | null;
@@ -62,7 +72,78 @@ const METRIC_DIRECTION: Partial<Record<ColumnKey, "higher" | "lower">> = {
   leads: "higher",
   ctr: "higher",
   instagram_followers: "higher",
+  real_leads: "higher",
+  real_cpl: "lower",
+  qualified: "higher",
+  cplq: "lower",
+  sales: "higher",
+  cps: "lower",
+  sales_value: "higher",
+  roas: "higher",
 };
+
+// Datas exatas (YYYY-MM-DD) de um DatePreset da Meta — só usado pra buscar os
+// leads/vendas reais no nosso banco (a Meta resolve o preset sozinha do lado
+// dela, mas a nossa consulta precisa do intervalo explícito).
+function resolveDatePresetRange(preset: DatePreset, customRange?: CustomDateRange): { since: string; until: string } {
+  if (customRange) return customRange;
+  const now = new Date();
+  const iso = (d: Date) => d.toISOString().slice(0, 10);
+  const today = iso(now);
+  const daysAgo = (n: number) => iso(new Date(Date.now() - n * 86400000));
+  switch (preset) {
+    case "today": return { since: today, until: today };
+    case "yesterday": return { since: daysAgo(1), until: daysAgo(1) };
+    case "last_3d": return { since: daysAgo(2), until: today };
+    case "last_7d": return { since: daysAgo(6), until: today };
+    case "this_week_mon_today": {
+      const day = now.getDay();
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      const monday = new Date(now);
+      monday.setDate(now.getDate() - diffToMonday);
+      return { since: iso(monday), until: today };
+    }
+    case "last_week_mon_sun": {
+      const day = now.getDay();
+      const diffToMonday = day === 0 ? 6 : day - 1;
+      const thisMonday = new Date(now);
+      thisMonday.setDate(now.getDate() - diffToMonday);
+      const lastMonday = new Date(thisMonday);
+      lastMonday.setDate(thisMonday.getDate() - 7);
+      const lastSunday = new Date(thisMonday);
+      lastSunday.setDate(thisMonday.getDate() - 1);
+      return { since: iso(lastMonday), until: iso(lastSunday) };
+    }
+    case "this_month": return { since: iso(new Date(now.getFullYear(), now.getMonth(), 1)), until: today };
+    case "last_month": {
+      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const last = new Date(now.getFullYear(), now.getMonth(), 0);
+      return { since: iso(first), until: iso(last) };
+    }
+    case "maximum": return { since: "2000-01-01", until: today };
+  }
+}
+
+// Mistura o que a Meta reportou com o que realmente chegou/qualificou/comprou
+// no WhatsApp (meta_lead_attributions/sales) — sem stats ainda carregadas,
+// fica tudo zerado em vez de quebrar a linha.
+function withLeadStats(row: Row, stats: EntityLeadStats | undefined): Row {
+  const leads = stats?.leads ?? 0;
+  const qualified = stats?.qualified ?? 0;
+  const salesCount = stats?.sales ?? 0;
+  const salesValue = stats?.salesValue ?? 0;
+  return {
+    ...row,
+    real_leads: leads,
+    real_cpl: leads > 0 ? row.spend / leads : null,
+    qualified,
+    cplq: qualified > 0 ? row.spend / qualified : null,
+    sales: salesCount,
+    cps: salesCount > 0 ? row.spend / salesCount : null,
+    sales_value: salesValue,
+    roas: row.spend > 0 ? salesValue / row.spend : null,
+  };
+}
 
 // CPC calculado localmente (gasto ÷ cliques no link) pra bater com a coluna
 // "Cliques" já exibida — o cpc nativo da Meta considera todo tipo de clique,
@@ -82,6 +163,7 @@ function campaignToRow(c: MetaCampaign): Row {
     leads: c.leads,
     forms: c.forms,
     cpl: c.cpl,
+    real_leads: 0, real_cpl: null, qualified: 0, cplq: null, sales: 0, cps: null, sales_value: 0, roas: null,
     impressions: c.impressions,
     link_clicks: c.link_clicks,
     ctr: c.ctr,
@@ -102,6 +184,7 @@ function adSetToRow(a: MetaAdSet): Row {
     leads: a.leads ?? 0,
     forms: a.forms ?? 0,
     cpl: a.cpl ?? null,
+    real_leads: 0, real_cpl: null, qualified: 0, cplq: null, sales: 0, cps: null, sales_value: 0, roas: null,
     impressions: a.impressions ?? 0,
     link_clicks: a.link_clicks ?? 0,
     ctr: a.ctr ?? null,
@@ -123,6 +206,7 @@ function adToRow(a: MetaAd): Row {
     leads: a.leads ?? 0,
     forms: a.forms ?? 0,
     cpl: a.cpl ?? null,
+    real_leads: 0, real_cpl: null, qualified: 0, cplq: null, sales: 0, cps: null, sales_value: 0, roas: null,
     impressions: a.impressions ?? 0,
     link_clicks: a.link_clicks ?? 0,
     ctr: a.ctr ?? null,
@@ -194,6 +278,13 @@ export function CampaignsExplorer({
 
   const hasFilter = selectedCampaignIds.size > 0;
 
+  const { since: leadStatsSince, until: leadStatsUntil } = resolveDatePresetRange(datePreset, customRange);
+  const { data: leadStats = [] } = useQuery({
+    queryKey: ["explorer-lead-stats", clientId, level, leadStatsSince, leadStatsUntil],
+    queryFn: () => fetchEntityLeadStats(clientId, level, leadStatsSince, leadStatsUntil),
+  });
+  const leadStatsById = useMemo(() => new Map(leadStats.map((s) => [s.id, s])), [leadStats]);
+
   const rows: Row[] = useMemo(() => {
     let result: Row[];
     if (level === "campaign") {
@@ -205,10 +296,11 @@ export function CampaignsExplorer({
       const filtered = hasFilter ? ads.filter((a) => a.campaign_id && selectedCampaignIds.has(a.campaign_id)) : ads;
       result = filtered.map(adToRow);
     }
+    result = result.map((r) => withLeadStats(r, leadStatsById.get(r.id)));
     const q = search.trim().toLowerCase();
     if (q) result = result.filter((r) => r.name.toLowerCase().includes(q));
     return result;
-  }, [level, campaigns, adSets, ads, hasFilter, selectedCampaignIds, search]);
+  }, [level, campaigns, adSets, ads, hasFilter, selectedCampaignIds, search, leadStatsById]);
 
   const sortedRows = useMemo(() => {
     if (!sortColumn) return rows;
@@ -581,6 +673,22 @@ function formatMetricValue(col: ColumnKey, row: Row): string {
       return row.leads > 0 || row.forms > 0 ? `${row.leads}${row.forms > 0 ? ` +${row.forms}f` : ""}` : "—";
     case "cpl":
       return row.cpl !== null ? brl(row.cpl) : "—";
+    case "real_leads":
+      return row.real_leads > 0 ? String(row.real_leads) : "—";
+    case "real_cpl":
+      return row.real_cpl !== null ? brl(row.real_cpl) : "—";
+    case "qualified":
+      return row.qualified > 0 ? String(row.qualified) : "—";
+    case "cplq":
+      return row.cplq !== null ? brl(row.cplq) : "—";
+    case "sales":
+      return row.sales > 0 ? String(row.sales) : "—";
+    case "cps":
+      return row.cps !== null ? brl(row.cps) : "—";
+    case "sales_value":
+      return row.sales_value > 0 ? brl(row.sales_value) : "—";
+    case "roas":
+      return row.roas !== null ? `${row.roas.toFixed(2)}x` : "—";
     case "impressions":
       return row.impressions > 0 ? row.impressions.toLocaleString("pt-BR") : "—";
     case "link_clicks":
@@ -770,6 +878,24 @@ function ExplorerRow({
         ) : "—";
       case "cpl":
         return <span className={`font-medium ${cplColor}`}>{row.cpl !== null ? brl(row.cpl) : "—"}</span>;
+      case "real_leads":
+        return row.real_leads > 0 ? row.real_leads : "—";
+      case "real_cpl":
+        return row.real_cpl !== null ? brl(row.real_cpl) : "—";
+      case "qualified":
+        return row.qualified > 0 ? row.qualified : "—";
+      case "cplq":
+        return row.cplq !== null ? brl(row.cplq) : "—";
+      case "sales":
+        return row.sales > 0 ? row.sales : "—";
+      case "cps":
+        return row.cps !== null ? brl(row.cps) : "—";
+      case "sales_value":
+        return row.sales_value > 0 ? brl(row.sales_value) : "—";
+      case "roas":
+        return row.roas !== null ? (
+          <span className={row.roas >= 1 ? statusTextClass["on-target"] : statusTextClass.critical}>{row.roas.toFixed(2)}x</span>
+        ) : "—";
       case "impressions":
         return row.impressions > 0 ? row.impressions.toLocaleString("pt-BR") : "—";
       case "link_clicks":
