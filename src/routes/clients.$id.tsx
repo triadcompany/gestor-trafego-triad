@@ -935,14 +935,18 @@ function ClientDetail() {
           </TabsContent>
         </Tabs>
 
-        {/* Tarefas + Anotações lado a lado */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-          <ClientTasks clientId={id} />
-          <ClientNotes clientId={id} clientName={client.name} />
-        </div>
+        {activeTab === "campanhas" && (
+          <>
+            {/* Tarefas + Anotações lado a lado */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+              <ClientTasks clientId={id} />
+              <ClientNotes clientId={id} clientName={client.name} />
+            </div>
 
-        {/* PIX */}
-        <ClientPixSettings client={client} />
+            {/* PIX */}
+            <ClientPixSettings client={client} />
+          </>
+        )}
       </div>
 
       <CampaignSheet
