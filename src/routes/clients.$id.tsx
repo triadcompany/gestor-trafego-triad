@@ -44,6 +44,7 @@ import { NoteComposer } from "@/components/NoteComposer";
 import type { TaskStatus } from "@/lib/database.types";
 import { CampaignSheet } from "@/components/CampaignSheet";
 import { CampaignsExplorer } from "@/components/CampaignsExplorer";
+import { useColumnPrefs, type ExplorerLevel, type ColumnKey } from "@/lib/campaign-columns";
 import {
   fetchCampaigns,
   fetchCampaignById,
@@ -246,6 +247,12 @@ function ClientDetail() {
   const queryClient = useQueryClient();
   const [editClientOpen, setEditClientOpen] = useState(false);
   const [chartMetric, setChartMetric] = useState<PairMetricKey>("conversas");
+
+  // Nível/colunas da tabela de campanhas — mora aqui (não dentro do
+  // CampaignsExplorer) porque o resumo de "Comparar período" também precisa
+  // saber quais métricas estão ativas, pra mostrar só essas.
+  const [explorerLevel, setExplorerLevel] = useState<ExplorerLevel>("campaign");
+  const { columns: explorerColumns, toggleColumn: toggleExplorerColumn, moveColumn: moveExplorerColumn } = useColumnPrefs(explorerLevel);
   const [selectedCampaign, setSelectedCampaign] = useState<MetaCampaign | null>(null);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [sheetInitialAdSetId, setSheetInitialAdSetId] = useState<string | undefined>(undefined);
@@ -347,6 +354,30 @@ function ClientDetail() {
   const periodClicksB = insightsB.reduce((s, h) => s + (h.link_clicks ?? 0), 0);
   const periodCtrB = periodImpressionsB > 0 ? (periodClicksB / periodImpressionsB) * 100 : null;
   const periodCpmB = periodImpressionsB > 0 ? (periodSpendB / periodImpressionsB) * 1000 : null;
+
+  // Leads/qualificados/vendas reais por campanha, somados aqui — mesma fonte
+  // e mesma chave de período que o card "58 campanhas" já usa (cache
+  // compartilhado), só que também pro período B pra alimentar o resumo de
+  // "Comparar período" com as métricas reais também.
+  const { since: leadStatsSinceA, until: leadStatsUntilA } = resolveDatePresetRange(metaPreset, customRange);
+  const { data: leadStatsA = [] } = useQuery({
+    queryKey: ["campaigns-totals-lead-stats", id, leadStatsSinceA, leadStatsUntilA],
+    queryFn: () => fetchEntityLeadStats(id, "campaign", leadStatsSinceA, leadStatsUntilA),
+  });
+  const { since: leadStatsSinceB, until: leadStatsUntilB } = resolveDatePresetRange(metaPresetB, customRangeB);
+  const { data: leadStatsB = [] } = useQuery({
+    queryKey: ["campaigns-totals-lead-stats", id, leadStatsSinceB, leadStatsUntilB],
+    queryFn: () => fetchEntityLeadStats(id, "campaign", leadStatsSinceB, leadStatsUntilB),
+    enabled: compareEnabled,
+  });
+  const sumLeadStats = (rows: typeof leadStatsA) => ({
+    real_leads: rows.reduce((s, r) => s + r.leads, 0),
+    qualified: rows.reduce((s, r) => s + r.qualified, 0),
+    sales: rows.reduce((s, r) => s + r.sales, 0),
+    sales_value: rows.reduce((s, r) => s + r.salesValue, 0),
+  });
+  const leadTotalsA = sumLeadStats(leadStatsA);
+  const leadTotalsB = sumLeadStats(leadStatsB);
 
   // Leads/qualificados reais por dia — mesmo intervalo que a Meta já devolveu
   // em `insights`, só que buscado do nosso banco em vez da API da Meta.
@@ -722,9 +753,18 @@ function ClientDetail() {
                 forms: periodForms,
                 cpl: periodCpl,
                 impressions: periodImpressions,
-                clicks: periodClicks,
+                link_clicks: periodClicks,
                 ctr: periodCtr,
                 cpm: periodCpm,
+                cpc: periodClicks > 0 ? periodSpend / periodClicks : null,
+                real_leads: leadTotalsA.real_leads,
+                real_cpl: leadTotalsA.real_leads > 0 ? periodSpend / leadTotalsA.real_leads : null,
+                qualified: leadTotalsA.qualified,
+                cplq: leadTotalsA.qualified > 0 ? periodSpend / leadTotalsA.qualified : null,
+                sales: leadTotalsA.sales,
+                cps: leadTotalsA.sales > 0 ? periodSpend / leadTotalsA.sales : null,
+                sales_value: leadTotalsA.sales_value,
+                roas: periodSpend > 0 ? leadTotalsA.sales_value / periodSpend : null,
               },
               {
                 label: periodLabelB,
@@ -733,56 +773,78 @@ function ClientDetail() {
                 forms: periodFormsB,
                 cpl: periodCplB,
                 impressions: periodImpressionsB,
-                clicks: periodClicksB,
+                link_clicks: periodClicksB,
                 ctr: periodCtrB,
                 cpm: periodCpmB,
+                cpc: periodClicksB > 0 ? periodSpendB / periodClicksB : null,
+                real_leads: leadTotalsB.real_leads,
+                real_cpl: leadTotalsB.real_leads > 0 ? periodSpendB / leadTotalsB.real_leads : null,
+                qualified: leadTotalsB.qualified,
+                cplq: leadTotalsB.qualified > 0 ? periodSpendB / leadTotalsB.qualified : null,
+                sales: leadTotalsB.sales,
+                cps: leadTotalsB.sales > 0 ? periodSpendB / leadTotalsB.sales : null,
+                sales_value: leadTotalsB.sales_value,
+                roas: periodSpendB > 0 ? leadTotalsB.sales_value / periodSpendB : null,
               },
             ];
-            const direction = {
-              leads: "higher",
-              cpl: "lower",
-              ctr: "higher",
-              cpm: "lower",
-            } as const;
-            const isBest = (metric: keyof typeof direction, value: number | null, idx: number) => {
-              const other = periods[1 - idx][metric];
-              if (value === null || other === null || other === value) return false;
-              return direction[metric] === "higher" ? value > other : value < other;
+
+            // Só as métricas que estão ativas em "Colunas" na tabela de
+            // campanhas aparecem aqui — na mesma ordem, pra bater com o que o
+            // gestor está de fato olhando embaixo.
+            const METRIC_RENDER: Partial<Record<ColumnKey, {
+              label: string;
+              format: (p: (typeof periods)[number]) => string;
+              direction?: "higher" | "lower";
+            }>> = {
+              spend: { label: "Gasto", format: (p) => p.spend > 0 ? brl(p.spend) : "—" },
+              leads: { label: "Conversas iniciadas", direction: "higher", format: (p) => p.leads > 0 || p.forms > 0 ? `${p.leads}${p.forms > 0 ? ` +${p.forms}f` : ""}` : "—" },
+              cpl: { label: "CCI médio", direction: "lower", format: (p) => p.cpl !== null ? brl(p.cpl) : "—" },
+              real_leads: { label: "Leads", direction: "higher", format: (p) => p.real_leads > 0 ? String(p.real_leads) : "—" },
+              real_cpl: { label: "CPL", direction: "lower", format: (p) => p.real_cpl !== null ? brl(p.real_cpl) : "—" },
+              qualified: { label: "Lead Qualificado", direction: "higher", format: (p) => p.qualified > 0 ? String(p.qualified) : "—" },
+              cplq: { label: "CPLQ", direction: "lower", format: (p) => p.cplq !== null ? brl(p.cplq) : "—" },
+              sales: { label: "Vendas", direction: "higher", format: (p) => p.sales > 0 ? String(p.sales) : "—" },
+              cps: { label: "Custo por Venda", direction: "lower", format: (p) => p.cps !== null ? brl(p.cps) : "—" },
+              sales_value: { label: "Valor de Conversão", direction: "higher", format: (p) => p.sales_value > 0 ? brl(p.sales_value) : "—" },
+              roas: { label: "ROAS", direction: "higher", format: (p) => p.roas !== null ? `${p.roas.toFixed(2)}x` : "—" },
+              impressions: { label: "Impressões", format: (p) => p.impressions > 0 ? p.impressions.toLocaleString("pt-BR") : "—" },
+              link_clicks: { label: "Cliques", format: (p) => p.link_clicks > 0 ? p.link_clicks.toLocaleString("pt-BR") : "—" },
+              ctr: { label: "CTR médio", direction: "higher", format: (p) => p.ctr !== null ? `${p.ctr.toFixed(2)}%` : "—" },
+              cpm: { label: "CPM médio", direction: "lower", format: (p) => p.cpm !== null ? brl(p.cpm) : "—" },
+              cpc: { label: "CPC", direction: "lower", format: (p) => p.cpc !== null ? brl(p.cpc) : "—" },
             };
+
+            const activeMetricKeys = explorerColumns.filter((c) => METRIC_RENDER[c]) as (keyof typeof METRIC_RENDER)[];
+
+            const isBest = (key: keyof typeof METRIC_RENDER, idx: number) => {
+              const dir = METRIC_RENDER[key]?.direction;
+              if (!dir) return false;
+              const raw = periods[idx] as unknown as Record<string, number | null>;
+              const rawOther = periods[1 - idx] as unknown as Record<string, number | null>;
+              const value = raw[key];
+              const other = rawOther[key];
+              if (value === null || other === null || other === value) return false;
+              return dir === "higher" ? value > other : value < other;
+            };
+
             return (
               <div className="flex flex-col gap-2 mb-4">
                 {periods.map((p, idx) => (
                   <div key={p.label} className="rounded-xl border border-border bg-card p-3 flex items-center gap-1 overflow-x-auto">
                     <span className="text-xs font-medium text-muted-foreground mr-3 shrink-0 min-w-[100px]">{p.label}</span>
-                    <TotalStat label="Gasto" value={p.spend > 0 ? brl(p.spend) : "—"} />
-                    <Divider />
-                    <TotalStat
-                      label="Conversas iniciadas"
-                      value={p.leads > 0 || p.forms > 0 ? `${p.leads}${p.forms > 0 ? ` +${p.forms}f` : ""}` : "—"}
-                      valueClass={isBest("leads", p.leads, idx) ? "text-status-on-target" : ""}
-                    />
-                    <Divider />
-                    <TotalStat
-                      label="CCI médio"
-                      value={p.cpl !== null ? brl(p.cpl) : "—"}
-                      valueClass={isBest("cpl", p.cpl, idx) ? "text-status-on-target" : ""}
-                    />
-                    <Divider />
-                    <TotalStat label="Impressões" value={p.impressions > 0 ? p.impressions.toLocaleString("pt-BR") : "—"} />
-                    <Divider />
-                    <TotalStat label="Cliques" value={p.clicks > 0 ? p.clicks.toLocaleString("pt-BR") : "—"} />
-                    <Divider />
-                    <TotalStat
-                      label="CTR médio"
-                      value={p.ctr !== null ? `${p.ctr.toFixed(2)}%` : "—"}
-                      valueClass={isBest("ctr", p.ctr, idx) ? "text-status-on-target" : ""}
-                    />
-                    <Divider />
-                    <TotalStat
-                      label="CPM médio"
-                      value={p.cpm !== null ? brl(p.cpm) : "—"}
-                      valueClass={isBest("cpm", p.cpm, idx) ? "text-status-on-target" : ""}
-                    />
+                    {activeMetricKeys.map((key, i) => {
+                      const metric = METRIC_RENDER[key]!;
+                      return (
+                        <div key={key} className="contents">
+                          {i > 0 && <Divider />}
+                          <TotalStat
+                            label={metric.label}
+                            value={metric.format(p)}
+                            valueClass={isBest(key, idx) ? "text-status-on-target" : ""}
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
                 ))}
               </div>
@@ -961,6 +1023,11 @@ function ClientDetail() {
             setSheetInitialAdId(initialAdId);
             setSheetOpen(true);
           }}
+          level={explorerLevel}
+          onLevelChange={setExplorerLevel}
+          columns={explorerColumns}
+          onToggleColumn={toggleExplorerColumn}
+          onMoveColumn={moveExplorerColumn}
         />
 
           </TabsContent>

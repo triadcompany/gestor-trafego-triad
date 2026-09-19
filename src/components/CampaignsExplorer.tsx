@@ -33,7 +33,6 @@ import { fetchEntityLeadStats, type EntityLeadStats } from "@/server/lead-attrib
 import {
   AVAILABLE_COLUMNS,
   COLUMN_LABELS,
-  useColumnPrefs,
   type ColumnKey,
   type ExplorerLevel,
 } from "@/lib/campaign-columns";
@@ -185,6 +184,15 @@ interface CampaignsExplorerProps {
   campaigns: MetaCampaign[];
   campaignsLoading: boolean;
   onOpenCampaign: (campaign: MetaCampaign, initialAdSetId?: string, initialAdId?: string) => void;
+  // Nível e colunas visíveis controlados de fora — o resumo de comparação de
+  // período (na página do cliente) precisa saber exatamente quais métricas
+  // estão ativas aqui pra mostrar só essas, então esse estado não pode ficar
+  // só local desse componente.
+  level: ExplorerLevel;
+  onLevelChange: (level: ExplorerLevel) => void;
+  columns: ColumnKey[];
+  onToggleColumn: (key: ColumnKey) => void;
+  onMoveColumn: (key: ColumnKey, direction: "up" | "down") => void;
 }
 
 export function CampaignsExplorer({
@@ -197,8 +205,12 @@ export function CampaignsExplorer({
   campaigns,
   campaignsLoading,
   onOpenCampaign,
+  level,
+  onLevelChange,
+  columns,
+  onToggleColumn,
+  onMoveColumn,
 }: CampaignsExplorerProps) {
-  const [level, setLevel] = useState<ExplorerLevel>("campaign");
   const [search, setSearch] = useState("");
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<Set<string>>(new Set());
   const [sortColumn, setSortColumn] = useState<"name" | ColumnKey | null>(null);
@@ -275,8 +287,6 @@ export function CampaignsExplorer({
   }, [rows, sortColumn, sortDirection]);
 
   const isLoading = level === "campaign" ? campaignsLoading : level === "adset" ? adSetsLoading : adsLoading;
-
-  const { columns, toggleColumn, moveColumn } = useColumnPrefs(level);
 
   const statusMutation = useMutation({
     mutationFn: async ({ id, status }: { id: string; status: "ACTIVE" | "PAUSED" }) => {
@@ -442,7 +452,7 @@ export function CampaignsExplorer({
   return (
     <div>
       <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-        <Tabs value={level} onValueChange={(v) => setLevel(v as ExplorerLevel)}>
+        <Tabs value={level} onValueChange={(v) => onLevelChange(v as ExplorerLevel)}>
           <TabsList>
             <TabsTrigger value="campaign">Campanhas</TabsTrigger>
             <TabsTrigger value="adset">
@@ -461,7 +471,7 @@ export function CampaignsExplorer({
               Comparar selecionadas ({selectedCampaignIds.size})
             </Button>
           )}
-          <ColumnsPicker level={level} visible={columns} onToggle={toggleColumn} onMove={moveColumn} />
+          <ColumnsPicker level={level} visible={columns} onToggle={onToggleColumn} onMove={onMoveColumn} />
         </div>
       </div>
 
