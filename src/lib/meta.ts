@@ -5,6 +5,7 @@ import { db } from "@/db/client";
 import { appConfig, campaignSnapshots, clients as clientsTable, metaTokens, metricsDaily, syncLog } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 import { clientAccessCondition, canAccessClient } from "@/lib/client-access";
+import { isoDateInBrasilia, daysAgoInBrasilia, weekdayInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
 async function getConfigValues(keys: string[]): Promise<Record<string, string>> {
   const { organizationId } = await requireOrgContext();
@@ -396,7 +397,7 @@ export const syncClientMetrics = createServerOnlyFn(async function syncClientMet
   adAccountId: string,
   token: string
 ): Promise<{ spend: number; leads: number; forms: number }> {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = isoDateInBrasilia();
 
   const params = new URLSearchParams({
     fields: "spend,actions",
@@ -544,8 +545,8 @@ export async function buildMetricsReportText(
   token: string,
   templateBody?: string | null,
 ): Promise<string> {
-  const until = new Date().toISOString().slice(0, 10);
-  const since = new Date(Date.now() - periodDays * 86400000).toISOString().slice(0, 10);
+  const until = isoDateInBrasilia();
+  const since = daysAgoInBrasilia(periodDays);
 
   const { spend, leads, impressions, link_clicks, ctr, cpm } = await fetchAccountInsightsForRange(client.metaAdAccountId, token, since, until);
   const custoPorLead = leads > 0 ? spend / leads : 0;
@@ -743,38 +744,26 @@ export interface CustomDateRange {
 // server (meta.ts é usado dos dois lados).
 export function resolveDatePresetRange(preset: DatePreset, customRange?: CustomDateRange): { since: string; until: string } {
   if (customRange) return customRange;
-  const now = new Date();
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const today = iso(now);
-  const daysAgo = (n: number) => iso(new Date(Date.now() - n * 86400000));
+  const today = isoDateInBrasilia();
   switch (preset) {
     case "today": return { since: today, until: today };
-    case "yesterday": return { since: daysAgo(1), until: daysAgo(1) };
-    case "last_3d": return { since: daysAgo(2), until: today };
-    case "last_7d": return { since: daysAgo(6), until: today };
+    case "yesterday": { const d = daysAgoInBrasilia(1); return { since: d, until: d }; }
+    case "last_3d": return { since: daysAgoInBrasilia(2), until: today };
+    case "last_7d": return { since: daysAgoInBrasilia(6), until: today };
     case "this_week_mon_today": {
-      const day = now.getDay();
+      const day = weekdayInBrasilia();
       const diffToMonday = day === 0 ? 6 : day - 1;
-      const monday = new Date(now);
-      monday.setDate(now.getDate() - diffToMonday);
-      return { since: iso(monday), until: today };
+      return { since: daysAgoInBrasilia(diffToMonday), until: today };
     }
     case "last_week_mon_sun": {
-      const day = now.getDay();
+      const day = weekdayInBrasilia();
       const diffToMonday = day === 0 ? 6 : day - 1;
-      const thisMonday = new Date(now);
-      thisMonday.setDate(now.getDate() - diffToMonday);
-      const lastMonday = new Date(thisMonday);
-      lastMonday.setDate(thisMonday.getDate() - 7);
-      const lastSunday = new Date(thisMonday);
-      lastSunday.setDate(thisMonday.getDate() - 1);
-      return { since: iso(lastMonday), until: iso(lastSunday) };
+      return { since: daysAgoInBrasilia(diffToMonday + 7), until: daysAgoInBrasilia(diffToMonday + 1) };
     }
-    case "this_month": return { since: iso(new Date(now.getFullYear(), now.getMonth(), 1)), until: today };
+    case "this_month": return { since: monthRangeInBrasilia(0).start, until: today };
     case "last_month": {
-      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const last = new Date(now.getFullYear(), now.getMonth(), 0);
-      return { since: iso(first), until: iso(last) };
+      const { start, end } = monthRangeInBrasilia(-1);
+      return { since: start, until: end };
     }
     case "maximum": return { since: "2000-01-01", until: today };
   }

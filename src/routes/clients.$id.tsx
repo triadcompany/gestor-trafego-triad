@@ -61,6 +61,7 @@ import { PublicTrackingLinkControl } from "@/components/PublicTrackingLinkContro
 import { LeadsDashboard } from "@/components/LeadsDashboard";
 import { fetchDailyLeadCounts, fetchEntityLeadStats } from "@/server/lead-attribution";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
 export const Route = createFileRoute("/clients/$id")({
   head: () => ({
@@ -90,8 +91,7 @@ const DATE_PRESETS: { value: DatePreset | "custom"; label: string }[] = [
 // "anteontem" nem pra "3/7 dias antes dos últimos 3/7 dias", então esses
 // casos viram período personalizado com a data exata calculada aqui.
 function defaultComparisonPeriod(preset: DatePreset | "custom"): { preset: DatePreset | "custom"; since?: string; until?: string } | null {
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const daysAgo = (n: number) => iso(new Date(Date.now() - n * 86400000));
+  const daysAgo = (n: number) => daysAgoInBrasilia(n);
   switch (preset) {
     case "today": return { preset: "yesterday" };
     case "yesterday": return { preset: "custom", since: daysAgo(2), until: daysAgo(2) };
@@ -100,10 +100,8 @@ function defaultComparisonPeriod(preset: DatePreset | "custom"): { preset: DateP
     case "this_week_mon_today": return { preset: "last_week_mon_sun" };
     case "this_month": return { preset: "last_month" };
     case "last_month": {
-      const now = new Date();
-      const first = new Date(now.getFullYear(), now.getMonth() - 2, 1);
-      const last = new Date(now.getFullYear(), now.getMonth() - 1, 0);
-      return { preset: "custom", since: iso(first), until: iso(last) };
+      const { start, end } = monthRangeInBrasilia(-2);
+      return { preset: "custom", since: start, until: end };
     }
     default: return null;
   }

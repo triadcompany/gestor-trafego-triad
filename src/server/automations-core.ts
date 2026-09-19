@@ -18,6 +18,7 @@ import {
   whatsappInstances,
 } from "@/db/schema";
 import { buildMetricsReportText, fetchCampaigns } from "@/lib/meta";
+import { isoDateInBrasilia, daysAgoInBrasilia } from "@/lib/brasilia-date";
 import { buildClientReportDoc, slug as slugifyName } from "@/lib/client-report-pdf";
 
 // ── Escolha de token / instância (sem sessão) ────────────────────────────────
@@ -285,8 +286,8 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
 
       if (rule.contentType === "report_pdf") {
         try {
-          const until = new Date().toISOString().slice(0, 10);
-          const since = new Date(Date.now() - rule.reportPeriodDays * 86400000).toISOString().slice(0, 10);
+          const until = isoDateInBrasilia();
+          const since = daysAgoInBrasilia(rule.reportPeriodDays);
           const campaigns = await fetchCampaigns(client.metaAdAccountId, tokenRow.accessToken, "today", { since, until });
           const org = await db.query.organizations.findFirst({ where: eq(organizations.id, rule.organizationId), columns: { name: true } });
           const doc = buildClientReportDoc({

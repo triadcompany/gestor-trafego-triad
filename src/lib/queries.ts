@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { and, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
+import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 import {
   clientNotes,
   clientTags,
@@ -150,21 +151,17 @@ export function periodDateRange(
   period: DashboardPeriod,
   customRange?: { since: string; until: string },
 ): { start: string; end: string } {
-  const now = new Date();
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const today = iso(now);
-  const daysAgo = (n: number) => iso(new Date(Date.now() - n * 86400000));
+  const today = isoDateInBrasilia();
   switch (period) {
     case "today":      return { start: today, end: today };
-    case "yesterday":  return { start: daysAgo(1), end: daysAgo(1) };
-    case "last_3d":    return { start: daysAgo(2), end: today };
-    case "last_7d":    return { start: daysAgo(6), end: today };
-    case "last_30d":   return { start: daysAgo(29), end: today };
-    case "this_month": return { start: iso(new Date(now.getFullYear(), now.getMonth(), 1)), end: today };
+    case "yesterday":  { const d = daysAgoInBrasilia(1); return { start: d, end: d }; }
+    case "last_3d":    return { start: daysAgoInBrasilia(2), end: today };
+    case "last_7d":    return { start: daysAgoInBrasilia(6), end: today };
+    case "last_30d":   return { start: daysAgoInBrasilia(29), end: today };
+    case "this_month": return { start: monthRangeInBrasilia(0).start, end: today };
     case "last_month": {
-      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const last  = new Date(now.getFullYear(), now.getMonth(), 0);
-      return { start: iso(first), end: iso(last) };
+      const { start, end } = monthRangeInBrasilia(-1);
+      return { start, end };
     }
     case "maximum":    return { start: "2000-01-01", end: today };
     case "custom":
@@ -279,8 +276,8 @@ const _fetchClientDetail = createServerFn({ method: "GET" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
     const { organizationId, role, userId } = await requireOrgContext();
-    const today = new Date().toISOString().slice(0, 10);
-    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const today = isoDateInBrasilia();
+    const thirtyDaysAgo = daysAgoInBrasilia(30);
 
     const client = await db.query.clients.findFirst({
       where: eq(clients.id, data.id),
@@ -522,7 +519,7 @@ export interface ClientBalance {
 
 const _fetchClientBalances = createServerFn({ method: "GET" }).handler(async () => {
   const { organizationId, role, userId } = await requireOrgContext();
-  const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const yesterday = daysAgoInBrasilia(1);
 
   const clientRows = await db
     .select({

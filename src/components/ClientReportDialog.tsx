@@ -18,6 +18,7 @@ import { getMetaToken, fetchCampaigns } from "@/lib/meta";
 import { generateClientReportPdf } from "@/lib/client-report-pdf";
 import { getCurrentUser } from "@/server/session";
 import { cn } from "@/lib/utils";
+import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
 type Preset = "7" | "15" | "30" | "mes" | "mes_passado" | "custom";
 
@@ -30,27 +31,22 @@ const PRESETS: Array<{ key: Preset; label: string }> = [
   { key: "custom", label: "Personalizado" },
 ];
 
-const iso = (d: Date) => d.toISOString().slice(0, 10);
-
 function rangeForPreset(preset: Preset, customSince: string, customUntil: string): { since: string; until: string } | null {
-  const today = new Date();
+  const today = isoDateInBrasilia();
   if (preset === "custom") {
     if (!customSince || !customUntil) return null;
     if (customSince > customUntil) return { since: customUntil, until: customSince };
     return { since: customSince, until: customUntil };
   }
   if (preset === "mes") {
-    return { since: iso(new Date(today.getFullYear(), today.getMonth(), 1)), until: iso(today) };
+    return { since: monthRangeInBrasilia(0).start, until: today };
   }
   if (preset === "mes_passado") {
-    const first = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-    const last = new Date(today.getFullYear(), today.getMonth(), 0);
-    return { since: iso(first), until: iso(last) };
+    const { start, end } = monthRangeInBrasilia(-1);
+    return { since: start, until: end };
   }
   const days = Number(preset);
-  const since = new Date(today);
-  since.setDate(today.getDate() - days);
-  return { since: iso(since), until: iso(today) };
+  return { since: daysAgoInBrasilia(days), until: today };
 }
 
 export function ClientReportDialog({

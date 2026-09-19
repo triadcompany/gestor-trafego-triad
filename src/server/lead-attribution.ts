@@ -9,6 +9,7 @@ import { canAccessClient } from "@/lib/client-access";
 import { getMetaToken, getMetaTokenForClient, fetchAdSpendByIds, fetchAdCreativeMedia, fetchAccountInsightsForRange } from "@/lib/meta";
 import { sendQualifiedLeadEvent, sendPurchaseEvent, sendCustomMessagingEvent } from "@/server/meta-capi";
 import { periodDateRange, type DashboardPeriod } from "@/lib/queries";
+import { isoDateInBrasilia, brasiliaMidnightUTC } from "@/lib/brasilia-date";
 
 const periodInputSchema = z.object({
   clientId: z.string(),
@@ -34,11 +35,11 @@ const publicPeriodInputSchema = z.object({
 // período pedido começa antes dele — nunca deixa ver antes disso.
 function periodTimestampRange(period: DashboardPeriod | undefined, customSince?: string, customUntil?: string, minStartTs?: string) {
   const { start, end } = periodDateRange(period ?? "maximum", customSince && customUntil ? { since: customSince, until: customUntil } : undefined);
-  let startTs = `${start}T00:00:00.000Z`;
+  let startTs = brasiliaMidnightUTC(start);
   if (minStartTs && minStartTs > startTs) startTs = minStartTs;
   return {
     startTs,
-    endTsExclusive: new Date(new Date(`${end}T00:00:00.000Z`).getTime() + 86400000).toISOString(),
+    endTsExclusive: new Date(new Date(brasiliaMidnightUTC(end)).getTime() + 86400000).toISOString(),
   };
 }
 
@@ -607,8 +608,8 @@ const _fetchDailyLeadCounts = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string(), since: z.string(), until: z.string() }))
   .handler(async ({ data }): Promise<DailyLeadCount[]> => {
     await assertAccessible(data.clientId);
-    const startTs = `${data.since}T00:00:00.000Z`;
-    const endTsExclusive = new Date(new Date(`${data.until}T00:00:00.000Z`).getTime() + 86400000).toISOString();
+    const startTs = brasiliaMidnightUTC(data.since);
+    const endTsExclusive = new Date(new Date(brasiliaMidnightUTC(data.until)).getTime() + 86400000).toISOString();
 
     const rows = await db
       .select({ firstMessageAt: metaLeadAttributions.firstMessageAt, status: metaLeadAttributions.status })
@@ -656,8 +657,8 @@ const _fetchEntityLeadStats = createServerFn({ method: "GET" })
   }))
   .handler(async ({ data }): Promise<EntityLeadStats[]> => {
     await assertAccessible(data.clientId);
-    const startTs = `${data.since}T00:00:00.000Z`;
-    const endTsExclusive = new Date(new Date(`${data.until}T00:00:00.000Z`).getTime() + 86400000).toISOString();
+    const startTs = brasiliaMidnightUTC(data.since);
+    const endTsExclusive = new Date(new Date(brasiliaMidnightUTC(data.until)).getTime() + 86400000).toISOString();
 
     const idColumn = data.level === "campaign"
       ? metaLeadAttributions.campaignId
@@ -909,7 +910,7 @@ async function convertLeadToSaleCore(
     .insert(sales)
     .values({
       clientId: lead.clientId,
-      date: new Date().toISOString().slice(0, 10),
+      date: isoDateInBrasilia(),
       value,
       obs: obs?.trim() || `Venda a partir do lead ${lead.contactName ?? lead.remoteJid}`,
     })

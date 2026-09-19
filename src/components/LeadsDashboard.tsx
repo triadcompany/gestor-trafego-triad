@@ -45,6 +45,7 @@ import {
 import { fetchClientWhatsappInfo } from "@/lib/whatsapp-messages";
 import { brl } from "@/lib/mock-data";
 import type { DashboardPeriod } from "@/lib/queries";
+import { isoDateInBrasilia, daysAgoInBrasilia } from "@/lib/brasilia-date";
 
 const PERIOD_OPTIONS: { value: DashboardPeriod; label: string }[] = [
   { value: "today",      label: "Hoje" },
@@ -172,20 +173,18 @@ export function LeadsDashboard({ clientId, token }: { clientId?: string; token?:
   const trendData = useMemo(() => {
     const byDay = new Map<string, { leads: number; qualified: number }>();
     for (const lead of leads) {
-      const key = lead.first_message_at.slice(0, 10);
+      const key = isoDateInBrasilia(new Date(lead.first_message_at));
       const entry = byDay.get(key) ?? { leads: 0, qualified: 0 };
       entry.leads++;
       if (lead.sale_id || QUALIFIED_STATUSES.has(lead.status)) entry.qualified++;
       byDay.set(key, entry);
     }
     const days: { key: string; label: string; leads: number; qualified: number }[] = [];
-    const today = new Date();
     for (let i = 13; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      const key = daysAgoInBrasilia(i);
       const entry = byDay.get(key) ?? { leads: 0, qualified: 0 };
-      days.push({ key, label: d.toLocaleDateString("pt-BR", { day: "2-digit", month: "2-digit" }), ...entry });
+      const [, month, day] = key.split("-");
+      days.push({ key, label: `${day}/${month}`, ...entry });
     }
     return days;
   }, [leads]);

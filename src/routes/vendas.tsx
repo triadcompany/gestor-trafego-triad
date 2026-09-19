@@ -46,6 +46,7 @@ import {
 } from "@/lib/queries";
 import type { DashboardPeriod } from "@/lib/queries";
 import { fetchPendingSaleSuggestions, dismissSaleSuggestion, type SaleSuggestionRow } from "@/server/sale-suggestions";
+import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
 export const Route = createFileRoute("/vendas")({
   head: () => ({ meta: [{ title: "Vendas — Gestor de Tráfego" }] }),
@@ -55,23 +56,20 @@ export const Route = createFileRoute("/vendas")({
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function today() {
-  return new Date().toISOString().slice(0, 10);
+  return isoDateInBrasilia();
 }
 
 function periodDateRange(period: DashboardPeriod, customRange?: { since: string; until: string }) {
-  const now = new Date();
-  const iso = (d: Date) => d.toISOString().slice(0, 10);
-  const daysAgo = (n: number) => iso(new Date(Date.now() - n * 86400000));
+  const daysAgo = (n: number) => daysAgoInBrasilia(n);
   switch (period) {
     case "today":      return { start: today(), end: today() };
     case "yesterday":  return { start: daysAgo(1), end: daysAgo(1) };
     case "last_7d":    return { start: daysAgo(6), end: today() };
     case "last_30d":   return { start: daysAgo(29), end: today() };
-    case "this_month": return { start: iso(new Date(now.getFullYear(), now.getMonth(), 1)), end: today() };
+    case "this_month": return { start: monthRangeInBrasilia(0).start, end: today() };
     case "last_month": {
-      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-      const last  = new Date(now.getFullYear(), now.getMonth(), 0);
-      return { start: iso(first), end: iso(last) };
+      const { start, end } = monthRangeInBrasilia(-1);
+      return { start, end };
     }
     case "maximum":  return { start: "2000-01-01", end: today() };
     case "custom":   return customRange ? { start: customRange.since, end: customRange.until } : { start: today(), end: today() };
