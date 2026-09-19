@@ -54,6 +54,24 @@ function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => vo
   );
 }
 
+// Durante o deploy (troca de container no EasyPanel), o navegador pode ter
+// carregado o HTML já apontando pros hashes novos dos chunks, mas pegar o
+// container antigo numa requisição de asset no meio da troca — isso derruba
+// o import dinâmico com "Failed to fetch dynamically imported module" e cai
+// na tela de erro. Um reload resolve sozinho; o guard de tempo evita loop se
+// o problema for outro.
+if (typeof window !== "undefined") {
+  window.addEventListener("vite:preloadError", () => {
+    const key = "vite-preload-reload-at";
+    const last = Number(sessionStorage.getItem(key) || 0);
+    const now = Date.now();
+    if (now - last > 10000) {
+      sessionStorage.setItem(key, String(now));
+      window.location.reload();
+    }
+  });
+}
+
 export const getRouter = () => {
   const router = createRouter({
     routeTree,
