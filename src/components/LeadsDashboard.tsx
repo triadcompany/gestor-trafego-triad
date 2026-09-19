@@ -622,6 +622,15 @@ function TimeHeatmap({
 
 const RANK_LABEL = ["#1", "#2", "#3"];
 
+// O embed_html da Meta já vem com width/height do vídeo real (Reels é
+// vertical, vídeo de feed costuma ser horizontal ou quadrado) — extrai pra
+// dimensionar o popup do jeito certo em vez de esticar/cortar.
+function embedAspectRatio(embedHtml: string): number {
+  const width = Number(embedHtml.match(/width="(\d+)"/)?.[1]);
+  const height = Number(embedHtml.match(/height="(\d+)"/)?.[1]);
+  return width > 0 && height > 0 ? width / height : 16 / 9;
+}
+
 // Ranking dos anúncios com lead qualificado mais barato — só entram anúncios
 // com gasto registrado na Meta no período (sem gasto não dá pra calcular
 // custo). O vídeo do criativo (quando existe) abre num modal; anúncio de
@@ -723,9 +732,12 @@ function TopQualifiedAdsCard({
           ) : previewAd?.embed_html ? (
             // Vídeos do tipo Reels não liberam o arquivo bruto (source) pela
             // API — o embed_html é o player oficial do Facebook, funciona
-            // igual pra Reels e vídeo de feed.
+            // igual pra Reels e vídeo de feed. A Meta já manda o width/height
+            // reais no próprio embed (Reels é vertical, 9:16) — respeita essa
+            // proporção em vez de esticar pra largura toda, senão corta o vídeo.
             <div
-              className="w-full [&_iframe]:w-full [&_iframe]:h-[70vh] [&_iframe]:rounded-md [&_iframe]:border-0"
+              className="mx-auto [&_iframe]:w-full [&_iframe]:h-full [&_iframe]:rounded-md [&_iframe]:border-0"
+              style={{ height: "70vh", maxWidth: "100%", aspectRatio: embedAspectRatio(previewAd.embed_html) }}
               dangerouslySetInnerHTML={{ __html: previewAd.embed_html }}
             />
           ) : previewAd?.thumbnail_url ? (
