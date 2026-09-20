@@ -147,19 +147,19 @@ function PixRowItem({ row }: { row: PixRow }) {
 
   return (
     <div
-      className={`flex items-center gap-4 px-5 py-3.5 border-b border-border last:border-0 transition-colors hover:bg-muted/30 ${
+      className={`flex items-center gap-2 sm:gap-4 px-3 sm:px-5 py-3.5 border-b border-border last:border-0 transition-colors hover:bg-muted/30 ${
         isToday ? "bg-status-critical/5 border-l-2 border-l-status-critical" : ""
       }`}
     >
       {/* avatar */}
-      <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center text-[11px] font-bold text-muted-foreground shrink-0">
+      <div className="flex w-8 h-8 rounded-lg bg-muted items-center justify-center text-[11px] font-bold text-muted-foreground shrink-0">
         {initials(row.client.name)}
       </div>
 
       {/* name + ref */}
       <div className="flex-1 min-w-0">
         <div className="text-sm font-medium truncate">{row.client.name}</div>
-        <div className="text-[11px] text-muted-foreground font-mono">{referenceLabel(row.client)}</div>
+        <div className="text-[11px] text-muted-foreground font-mono truncate">{referenceLabel(row.client)}</div>
       </div>
 
       {/* mensal */}
@@ -173,20 +173,20 @@ function PixRowItem({ row }: { row: PixRow }) {
       </div>
 
       {/* parcela */}
-      <div className="text-sm font-bold text-primary tabular-nums shrink-0 min-w-[80px] text-right">
+      <div className="text-sm font-bold text-primary tabular-nums shrink-0 min-w-[64px] sm:min-w-[80px] text-right">
         {brl(row.parcela)}
       </div>
 
       {/* due */}
-      <div className="flex items-center gap-3 shrink-0 min-w-[150px] justify-end">
-        <div className="text-sm tabular-nums text-right">
+      <div className="flex items-center gap-1.5 sm:gap-3 shrink-0 min-w-[84px] sm:min-w-[150px] justify-end">
+        <div className="text-xs sm:text-sm tabular-nums text-right">
           <DueLabel days={row.daysUntil} date={row.nextDate} />
         </div>
         <a
           href={billingUrl}
           target="_blank"
           rel="noopener noreferrer"
-          className="p-1.5 rounded-md bg-muted/50 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors flex-shrink-0"
+          className="hidden sm:flex p-1.5 rounded-md bg-muted/50 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors flex-shrink-0"
           title="Ir para página de cobrança"
         >
           <CreditCard className="w-4 h-4" />
@@ -236,7 +236,7 @@ function PixPage() {
         </div>
 
         {/* summary cards */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
           <SummaryCard
             label="A cobrar hoje"
             value={isLoading ? "—" : totalHoje > 0 ? brl(totalHoje) : "R$ 0"}

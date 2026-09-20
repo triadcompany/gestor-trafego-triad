@@ -372,7 +372,8 @@ function VendasPage() {
             </div>
           </div>
 
-          <table className="w-full border-collapse text-sm">
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-border bg-black/20 text-[11px] text-muted-foreground uppercase tracking-wider">
                 <th className="px-5 py-2.5 text-left font-medium">Cliente</th>
@@ -416,6 +417,7 @@ function VendasPage() {
                   ))}
             </tbody>
           </table>
+          </div>
         </div>
       </div>
 

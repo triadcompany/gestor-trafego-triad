@@ -44,7 +44,7 @@ export function PublicTrackingLinkControl({
   });
 
   return (
-    <div className={compact ? "flex items-center gap-1.5" : "flex items-center justify-between gap-2 flex-wrap rounded-lg border border-border px-3 py-2.5"}>
+    <div className={compact ? "flex flex-wrap items-center gap-1.5" : "flex items-center justify-between gap-2 flex-wrap rounded-lg border border-border px-3 py-2.5"}>
       {!compact && (
         <div className="flex items-center gap-2 min-w-0">
           <Link2 className="h-4 w-4 text-muted-foreground shrink-0" />

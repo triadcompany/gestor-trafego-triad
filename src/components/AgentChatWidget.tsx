@@ -147,6 +147,20 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
     return stored ? clampPos(stored, initialSize) : defaultPos(initialSize);
   });
 
+  // Em telas estreitas a janela flutuante arrastável/redimensionável não faz
+  // sentido (não tem "gerenciamento de janelas" no celular, e o cálculo de
+  // posição padrão assume espaço de sobra à direita/embaixo, o que em telas
+  // menores que DEFAULT_WIDTH jogava a janela pra fora da tela). Vira um
+  // painel fixo ocupando a tela toda abaixo do header mobile.
+  const [isMobile, setIsMobile] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 767px)");
+    setIsMobile(mq.matches);
+    const onChange = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mq.addEventListener("change", onChange);
+    return () => mq.removeEventListener("change", onChange);
+  }, []);
+
   useEffect(() => saveStored("agent-widget-size", size), [size]);
   useEffect(() => saveStored("agent-widget-pos", pos), [pos]);
 
@@ -434,26 +448,33 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
 
   return (
     <div
-      className="fixed z-50 bg-card border border-border rounded-2xl shadow-2xl flex flex-col overflow-hidden"
-      style={{ left: pos.x, top: pos.y, width: size.width, height: size.height, maxWidth: "calc(100vw - 16px)", maxHeight: "calc(100vh - 16px)" }}
+      className={cn(
+        "fixed z-50 bg-card border border-border shadow-2xl flex flex-col overflow-hidden",
+        isMobile ? "inset-x-2 top-16 bottom-2 rounded-xl" : "rounded-2xl",
+      )}
+      style={isMobile ? undefined : { left: pos.x, top: pos.y, width: size.width, height: size.height, maxWidth: "calc(100vw - 16px)", maxHeight: "calc(100vh - 16px)" }}
     >
-      {/* Alças de redimensionar — bordas e cantos */}
-      <div {...makeResizeHandlers("n")} className={cn(resizeHandleClass, "top-0 left-2 right-2 h-1.5 cursor-ns-resize")} style={{ touchAction: "none" }} />
-      <div {...makeResizeHandlers("s")} className={cn(resizeHandleClass, "bottom-0 left-2 right-2 h-1.5 cursor-ns-resize")} style={{ touchAction: "none" }} />
-      <div {...makeResizeHandlers("w")} className={cn(resizeHandleClass, "left-0 top-2 bottom-2 w-1.5 cursor-ew-resize")} style={{ touchAction: "none" }} />
-      <div {...makeResizeHandlers("e")} className={cn(resizeHandleClass, "right-0 top-2 bottom-2 w-1.5 cursor-ew-resize")} style={{ touchAction: "none" }} />
-      <div {...makeResizeHandlers("nw")} className={cn(resizeHandleClass, "top-0 left-0 h-3 w-3 cursor-nwse-resize")} style={{ touchAction: "none" }} />
-      <div {...makeResizeHandlers("ne")} className={cn(resizeHandleClass, "top-0 right-0 h-3 w-3 cursor-nesw-resize")} style={{ touchAction: "none" }} />
-      <div {...makeResizeHandlers("sw")} className={cn(resizeHandleClass, "bottom-0 left-0 h-3 w-3 cursor-nesw-resize")} style={{ touchAction: "none" }} />
-      <div {...makeResizeHandlers("se")} className={cn(resizeHandleClass, "bottom-0 right-0 h-3 w-3 cursor-nwse-resize")} style={{ touchAction: "none" }} />
+      {/* Alças de redimensionar — bordas e cantos (só faz sentido com mouse) */}
+      {!isMobile && (
+        <>
+          <div {...makeResizeHandlers("n")} className={cn(resizeHandleClass, "top-0 left-2 right-2 h-1.5 cursor-ns-resize")} style={{ touchAction: "none" }} />
+          <div {...makeResizeHandlers("s")} className={cn(resizeHandleClass, "bottom-0 left-2 right-2 h-1.5 cursor-ns-resize")} style={{ touchAction: "none" }} />
+          <div {...makeResizeHandlers("w")} className={cn(resizeHandleClass, "left-0 top-2 bottom-2 w-1.5 cursor-ew-resize")} style={{ touchAction: "none" }} />
+          <div {...makeResizeHandlers("e")} className={cn(resizeHandleClass, "right-0 top-2 bottom-2 w-1.5 cursor-ew-resize")} style={{ touchAction: "none" }} />
+          <div {...makeResizeHandlers("nw")} className={cn(resizeHandleClass, "top-0 left-0 h-3 w-3 cursor-nwse-resize")} style={{ touchAction: "none" }} />
+          <div {...makeResizeHandlers("ne")} className={cn(resizeHandleClass, "top-0 right-0 h-3 w-3 cursor-nesw-resize")} style={{ touchAction: "none" }} />
+          <div {...makeResizeHandlers("sw")} className={cn(resizeHandleClass, "bottom-0 left-0 h-3 w-3 cursor-nesw-resize")} style={{ touchAction: "none" }} />
+          <div {...makeResizeHandlers("se")} className={cn(resizeHandleClass, "bottom-0 right-0 h-3 w-3 cursor-nwse-resize")} style={{ touchAction: "none" }} />
+        </>
+      )}
 
-      {/* Header — arraste aqui pra mover a janela */}
+      {/* Header — no desktop, arraste aqui pra mover a janela */}
       <div
-        className="px-4 py-3 border-b border-border flex items-center gap-2 shrink-0 cursor-move select-none"
-        style={{ touchAction: "none" }}
-        onPointerDown={onHeaderPointerDown}
-        onPointerMove={onHeaderPointerMove}
-        onPointerUp={onHeaderPointerUp}
+        className={cn("px-4 py-3 border-b border-border flex items-center gap-2 shrink-0 select-none", !isMobile && "cursor-move")}
+        style={isMobile ? undefined : { touchAction: "none" }}
+        onPointerDown={isMobile ? undefined : onHeaderPointerDown}
+        onPointerMove={isMobile ? undefined : onHeaderPointerMove}
+        onPointerUp={isMobile ? undefined : onHeaderPointerUp}
       >
         <div className="h-7 w-7 rounded-md bg-primary/20 flex items-center justify-center">
           <Bot className="h-4 w-4 text-primary" />

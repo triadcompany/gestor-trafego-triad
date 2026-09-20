@@ -138,15 +138,15 @@ function Dashboard() {
       <div className="px-4 md:px-8 py-6 max-w-7xl mx-auto">
 
         {/* Header */}
-        <div className="flex items-center justify-between gap-4 mb-6">
+        <div className="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Dashboard</h1>
             <p className="text-sm text-muted-foreground">{today}</p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-3">
             {/* Period selector */}
-            <div className="flex flex-col items-end gap-1.5">
+            <div className="flex flex-col items-start gap-1.5 sm:items-end">
               <div
                 role="group"
                 aria-label="Selecionar período"
@@ -248,7 +248,7 @@ function Dashboard() {
 
         {/* Client grid */}
         {isFetching ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="rounded-xl border border-border p-4 space-y-3">
                 <div className="flex items-start justify-between gap-2">
@@ -291,7 +291,7 @@ function Dashboard() {
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {filtered.map((c) => (
               <Link
                 key={c.id}

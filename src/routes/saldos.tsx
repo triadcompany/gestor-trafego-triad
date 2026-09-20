@@ -114,7 +114,7 @@ function SaldosPage() {
         </div>
 
         {/* Summary cards */}
-        <div className="grid grid-cols-3 gap-3 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
           <SummaryCard
             label="Total disponível"
             value={isLoading ? null : brl(totalBalance)}
@@ -138,6 +138,8 @@ function SaldosPage() {
 
         {/* Table */}
         <div className="rounded-xl border border-border overflow-hidden">
+          <div className="overflow-x-auto">
+          <div className="min-w-[640px]">
           {/* Table header */}
           <div className="grid grid-cols-[1fr_140px_110px_110px_90px] gap-0 px-5 py-2.5 bg-muted/40 border-b border-border">
             {["Cliente", "Saldo Meta", "Gasto ontem", "Estimativa", "Status"].map((h, i) => (
@@ -171,10 +173,12 @@ function SaldosPage() {
               />
             ))
           )}
+          </div>
+          </div>
         </div>
 
         {/* Legend */}
-        <div className="flex justify-center gap-6 mt-4 pt-4 border-t border-border">
+        <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-4 pt-4 border-t border-border">
           {[
             { color: "bg-status-on-target", label: "Saldo ≥ R$ 500" },
             { color: "bg-status-attention", label: "R$ 200 – R$ 500" },

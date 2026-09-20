@@ -384,7 +384,7 @@ export function LeadsDashboard({ clientId, token }: { clientId?: string; token?:
                 <TableHead>Campanha / Conjunto / Anúncio</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Venda</TableHead>
-                <TableHead className="text-right">Ações</TableHead>
+                <TableHead className="text-right sticky right-0 z-20 bg-card border-l border-border">Ações</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -416,7 +416,7 @@ export function LeadsDashboard({ clientId, token }: { clientId?: string; token?:
                       <span className="text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <TableCell className="text-right whitespace-nowrap">
+                  <TableCell className="text-right whitespace-nowrap sticky right-0 z-10 bg-card border-l border-border">
                     {lead.status === "pending" && (
                       <Button size="sm" variant="outline" className="h-7 text-xs gap-1 mr-1.5" onClick={() => qualifyMutation.mutate(lead.id)} disabled={qualifyMutation.isPending}>
                         <Check className="h-3 w-3" /> Qualificar

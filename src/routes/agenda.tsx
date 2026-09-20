@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { AppShell } from "@/components/AppShell";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Calendar, dateFnsLocalizer, View, Views } from "react-big-calendar";
 import { format, parse, startOfWeek, getDay, startOfMonth, endOfMonth, startOfWeek as startOfW, endOfWeek } from "date-fns";
@@ -58,6 +58,13 @@ function AgendaPage() {
   const [view, setView] = useState<View>(Views.WEEK);
   const [date, setDate] = useState(new Date());
 
+  // Visão "Semana" (grade de horas × 7 dias) não cabe numa tela de celular —
+  // em telas estreitas troca pra "Dia" assim que monta no cliente (efeito, não
+  // no useState inicial, pra não divergir do HTML renderizado no servidor).
+  useEffect(() => {
+    if (window.innerWidth < 768) setView(Views.DAY);
+  }, []);
+
   const { min, max } = getVisibleRange(date, view);
 
   const { data: connected, isLoading: checkingConnection } = useQuery({
@@ -87,13 +94,13 @@ function AgendaPage() {
     <AppShell>
       <div className="flex flex-col h-[calc(100vh-60px)] md:h-screen bg-background overflow-hidden">
         {/* Header */}
-        <div className="px-4 md:px-6 py-4 border-b border-border flex items-center justify-between gap-4 shrink-0">
+        <div className="px-4 md:px-6 py-4 border-b border-border flex flex-wrap items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-2">
             <CalendarDays className="w-5 h-5 text-muted-foreground" />
             <h1 className="text-xl font-semibold tracking-tight">Agenda</h1>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             {checkingConnection ? (
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
             ) : connected ? (
@@ -124,7 +131,7 @@ function AgendaPage() {
 
         {/* Banner quando não conectado */}
         {!checkingConnection && !connected && (
-          <div className="mx-4 md:mx-6 mt-4 rounded-lg border border-border bg-muted/30 px-4 py-3 flex items-center justify-between gap-4 shrink-0">
+          <div className="mx-4 md:mx-6 mt-4 rounded-lg border border-border bg-muted/30 px-4 py-3 flex flex-wrap items-center justify-between gap-3 shrink-0">
             <p className="text-sm text-muted-foreground">
               Conecte seu Google Agenda para visualizar seus eventos aqui.
             </p>
@@ -158,6 +165,13 @@ function AgendaPage() {
               .rbc-toolbar button:hover { background-color: hsl(var(--muted)/0.5); }
               .rbc-off-range-bg { background-color: hsl(var(--muted)/0.15); }
               .rbc-show-more { color: hsl(var(--primary)); font-size: 12px; }
+              @media (max-width: 640px) {
+                .rbc-toolbar { flex-direction: column; align-items: stretch; gap: 8px; }
+                .rbc-toolbar .rbc-btn-group { justify-content: center; }
+                .rbc-toolbar-label { font-size: 13px; order: -1; }
+                .rbc-toolbar button { padding: 6px 8px; font-size: 12px; }
+                .rbc-event { font-size: 11px; }
+              }
             `}} />
             <Calendar
               localizer={localizer}

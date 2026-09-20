@@ -892,9 +892,9 @@ function NewCampaign() {
         </p>
 
         {/* Step indicator — scratch mode only */}
-        {(mode === "scratch" || mode === "bulk") && <div className="flex items-center gap-2 mb-8">
+        {(mode === "scratch" || mode === "bulk") && <div className="flex items-center gap-2 mb-8 overflow-x-auto">
           {([1, 2, 3] as const).map((n) => (
-            <div key={n} className="flex items-center gap-2">
+            <div key={n} className="flex items-center gap-2 shrink-0">
               <button
                 onClick={() => step > n && setStep(n)}
                 disabled={step <= n}

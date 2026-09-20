@@ -340,7 +340,7 @@ function CampaignSection({
         )}
       </div>
 
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <MetricCell label="Objetivo" value={campaign.objective} small />
         <MetricCell label="Orçamento/dia" value={campaign.daily_budget !== null ? brl(campaign.daily_budget) : "—"} />
         <MetricCell label="Gasto" value={campaign.spend > 0 ? brl(campaign.spend) : "—"} />
