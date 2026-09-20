@@ -937,7 +937,7 @@ function AutomationComposerDialog({
   const [monthdays, setMonthdays] = useState<number[]>([1]);
   const [sendHour, setSendHour] = useState("10");
   const [sendMinute, setSendMinute] = useState("00");
-  const [instanceId, setInstanceId] = useState<string>("auto");
+  const [instanceId, setInstanceId] = useState<string>("");
   const [useClientGroup, setUseClientGroup] = useState(false);
   const [customRecipients, setCustomRecipients] = useState<EvolutionRecipient[]>([]);
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
@@ -958,13 +958,22 @@ function AutomationComposerDialog({
     if (tpl) setReportBody(tpl.body);
   }, [templates, reportTemplateId]);
 
+  // Sem instância explícita (automação nova, ou antiga salva com "automático")
+  // cai na instância principal — a mais antiga da organização, mesma ordem que
+  // o backend já usa como resolução automática (pickWhatsappInstance). Preenche
+  // assim que a lista carrega, em vez de deixar uma opção "automática" vaga no
+  // seletor.
+  useEffect(() => {
+    if (!instanceId && instances.length > 0) setInstanceId(instances[0].id);
+  }, [instances, instanceId]);
+
   const reset = () => {
     setLoadedId(null);
     setName(""); setContentType("text"); setBody(""); setClientId("none"); setReportClientIds([]); setReportPeriodDays(7); setPdfCaption("");
     setReportTemplateId(null); setReportBody(DEFAULT_REPORT_TEMPLATE);
     setSummaryTurno("manha"); setSummaryClientIds([]);
     setRecurrenceType("weekly"); setWeekdays([1]); setMonthdays([1]); setSendHour("10"); setSendMinute("00");
-    setInstanceId("auto"); setUseClientGroup(false); setCustomRecipients([]); setMediaFiles([]); setExistingMedia([]);
+    setInstanceId(""); setUseClientGroup(false); setCustomRecipients([]); setMediaFiles([]); setExistingMedia([]);
   };
 
   if (open && editing && loadedId !== editing.id) {
@@ -991,7 +1000,7 @@ function AutomationComposerDialog({
     if (editing.recurrence_type === "monthly") setMonthdays(editing.recurrence_days.length ? editing.recurrence_days : [1]);
     setSendHour(String(editing.send_hour).padStart(2, "0"));
     setSendMinute(String(editing.send_minute).padStart(2, "0"));
-    setInstanceId(editing.whatsapp_instance_id ?? "auto");
+    setInstanceId(editing.whatsapp_instance_id ?? "");
     setUseClientGroup(editing.destinations.some((d) => d.kind === "client_group"));
     setCustomRecipients(
       editing.destinations
@@ -1068,7 +1077,7 @@ function AutomationComposerDialog({
         recurrenceDays: recurrenceType === "weekly" ? weekdays : recurrenceType === "monthly" ? monthdays : [],
         sendHour: Number(sendHour),
         sendMinute: Number(sendMinute),
-        whatsappInstanceId: instanceId === "auto" ? null : instanceId,
+        whatsappInstanceId: instanceId || null,
         destinations,
         media: [...existingMedia, ...uploaded],
       });
@@ -1403,7 +1412,6 @@ function AutomationComposerDialog({
               <Select value={instanceId} onValueChange={setInstanceId}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="auto">Automática (padrão da organização)</SelectItem>
                   {instances.map((i) => <SelectItem key={i.id} value={i.id}>{i.label}</SelectItem>)}
                 </SelectContent>
               </Select>
