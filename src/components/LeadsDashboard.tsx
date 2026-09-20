@@ -44,7 +44,7 @@ import {
 } from "@/server/lead-attribution";
 import { fetchClientWhatsappInfo, fetchPublicClientWhatsappInfo } from "@/lib/whatsapp-messages";
 import { brl } from "@/lib/mock-data";
-import type { DashboardPeriod } from "@/lib/queries";
+import { findConflictingSale, type DashboardPeriod } from "@/lib/queries";
 import { isoDateInBrasilia, daysAgoInBrasilia } from "@/lib/brasilia-date";
 
 const PERIOD_OPTIONS: { value: DashboardPeriod; label: string }[] = [
@@ -456,7 +456,7 @@ export function LeadsDashboard({ clientId, token, controlledRange }: { clientId?
 
       <TopQualifiedAdsCard queryKeyId={identity} fetchTopAds={fetchTopAds} period={period} customRange={customRange} enabled={periodReady} />
 
-      <ConvertToSaleDialog lead={saleFor} onClose={() => setSaleFor(null)} onSuccess={invalidateAfterSale} onConvert={doConvert} />
+      <ConvertToSaleDialog lead={saleFor} clientId={token ? undefined : clientId} onClose={() => setSaleFor(null)} onSuccess={invalidateAfterSale} onConvert={doConvert} />
     </div>
   );
 }
@@ -786,11 +786,13 @@ function TopQualifiedAdsCard({
 
 function ConvertToSaleDialog({
   lead,
+  clientId,
   onClose,
   onSuccess,
   onConvert,
 }: {
   lead: LeadAttributionRow | null;
+  clientId?: string;
   onClose: () => void;
   onSuccess: () => void;
   onConvert: (leadId: string, value: number | null, obs?: string, email?: string) => Promise<void>;
@@ -800,7 +802,21 @@ function ConvertToSaleDialog({
   const [email, setEmail] = useState("");
 
   const mutation = useMutation({
-    mutationFn: () => onConvert(lead!.id, value.trim() ? Number(value) : null, obs, email),
+    mutationFn: async () => {
+      // Só checa quando é o gestor convertendo (clientId presente) — no link
+      // público do cliente não tem sessão pra consultar isso, e a sugestão de
+      // venda por palavra-chave é um conceito interno, não faz sentido pro cliente.
+      if (clientId) {
+        const conflict = await findConflictingSale(clientId, isoDateInBrasilia(), "lead");
+        if (conflict) {
+          const ok = window.confirm(
+            `Esse cliente já tem uma venda registrada em ${conflict.date} vinda de sugestão do WhatsApp. Pode ser a mesma venda duplicada — confirmar mesmo assim?`
+          );
+          if (!ok) throw new Error("cancelado");
+        }
+      }
+      return onConvert(lead!.id, value.trim() ? Number(value) : null, obs, email);
+    },
     onSuccess: () => {
       toast.success("Venda registrada.");
       setValue("");
@@ -809,7 +825,10 @@ function ConvertToSaleDialog({
       onSuccess();
       onClose();
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao registrar venda"),
+    onError: (e) => {
+      if (e instanceof Error && e.message === "cancelado") return;
+      toast.error(e instanceof Error ? e.message : "Erro ao registrar venda");
+    },
   });
 
   return (

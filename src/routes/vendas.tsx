@@ -32,6 +32,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { TrendingUp, Plus, Check, X, Trash2, ChevronsUpDown, MessageCircle, Search } from "lucide-react";
+import { toast } from "sonner";
 import {
   fetchAllClients,
   fetchSales,
@@ -40,6 +41,7 @@ import {
   deleteSale,
   fetchSalesGoals,
   upsertSalesGoal,
+  findConflictingSale,
   type ClientRow,
   type SaleRow,
   type SalesGoalRow,
@@ -590,13 +592,26 @@ function ClientDrawer({
   });
 
   const createMutation = useMutation({
-    mutationFn: () => createSale({
-      client_id: client.id,
-      date,
-      value: value !== "" ? parseFloat(value.replace(",", ".")) : null,
-      obs: obs.trim() || null,
-      from_suggestion_id: suggestionId,
-    }),
+    mutationFn: async () => {
+      const conflict = await findConflictingSale(client.id, date, "suggestion");
+      if (conflict) {
+        const ok = window.confirm(
+          `${client.name} já tem uma venda registrada em ${conflict.date} vinda de ${conflict.source === "lead" ? "conversão de lead (Rastreamento)" : "sugestão do WhatsApp"}. Pode ser a mesma venda duplicada — confirmar mesmo assim?`
+        );
+        if (!ok) throw new Error("cancelado");
+      }
+      return createSale({
+        client_id: client.id,
+        date,
+        value: value !== "" ? parseFloat(value.replace(",", ".")) : null,
+        obs: obs.trim() || null,
+        from_suggestion_id: suggestionId,
+      });
+    },
+    onError: (e) => {
+      if (e instanceof Error && e.message === "cancelado") return;
+      toast.error(e instanceof Error ? e.message : "Erro ao salvar venda");
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["sales"] });
       queryClient.invalidateQueries({ queryKey: ["sales-by-client", client.id] });

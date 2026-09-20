@@ -8,6 +8,7 @@ import {
   clientTags,
   clients,
   conversationTemplates,
+  metaLeadAttributions,
   metricsDaily,
   profiles,
   reportLog,
@@ -1225,6 +1226,53 @@ const _createSale = createServerFn({ method: "POST" })
 
 export async function createSale(payload: { client_id: string; date: string; value?: number | null; obs?: string | null; from_suggestion_id?: string }): Promise<void> {
   await _createSale({ data: payload });
+}
+
+function addDays(dateStr: string, days: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+export interface ConflictingSale {
+  date: string;
+  source: "suggestion" | "lead";
+}
+
+// Venda por sugestão do WhatsApp (sale_suggestions) e venda por conversão de
+// lead (meta_lead_attributions) são dois caminhos independentes que gravam na
+// mesma tabela `sales`, sem nenhum vínculo entre si — a mesma venda real pode
+// acabar registrada duas vezes (uma por cada caminho). Antes de criar uma
+// venda por um caminho, checa se já existe uma vinda do OUTRO caminho pra
+// esse cliente em uma janela de dias próxima — não bloqueia, só avisa.
+const _findConflictingSale = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string(), date: z.string(), newSource: z.enum(["suggestion", "lead"]) }))
+  .handler(async ({ data }): Promise<ConflictingSale | null> => {
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.clientId, { organizationId, role, userId });
+
+    const since = addDays(data.date, -3);
+    const until = addDays(data.date, 3);
+
+    const rows = await db
+      .select({
+        date: sales.date,
+        fromSuggestionId: saleSuggestions.id,
+        fromLeadId: metaLeadAttributions.id,
+      })
+      .from(sales)
+      .leftJoin(saleSuggestions, eq(saleSuggestions.saleId, sales.id))
+      .leftJoin(metaLeadAttributions, eq(metaLeadAttributions.saleId, sales.id))
+      .where(and(eq(sales.clientId, data.clientId), gte(sales.date, since), lte(sales.date, until)));
+
+    for (const r of rows) {
+      if (data.newSource === "suggestion" && r.fromLeadId) return { date: r.date, source: "lead" };
+      if (data.newSource === "lead" && r.fromSuggestionId) return { date: r.date, source: "suggestion" };
+    }
+    return null;
+  });
+
+export async function findConflictingSale(clientId: string, date: string, newSource: "suggestion" | "lead"): Promise<ConflictingSale | null> {
+  return _findConflictingSale({ data: { clientId, date, newSource } });
 }
 
 const _deleteSale = createServerFn({ method: "POST" })
