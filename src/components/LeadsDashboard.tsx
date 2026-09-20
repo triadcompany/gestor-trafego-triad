@@ -42,7 +42,7 @@ import {
   publicMarkLeadQualified, publicRetryQualifiedLeadEvent, publicConvertLeadToSale,
   type LeadAttributionRow, type TopQualifiedLeadAd, type LeadTimeHeatmap,
 } from "@/server/lead-attribution";
-import { fetchClientWhatsappInfo } from "@/lib/whatsapp-messages";
+import { fetchClientWhatsappInfo, fetchPublicClientWhatsappInfo } from "@/lib/whatsapp-messages";
 import { brl } from "@/lib/mock-data";
 import type { DashboardPeriod } from "@/lib/queries";
 import { isoDateInBrasilia, daysAgoInBrasilia } from "@/lib/brasilia-date";
@@ -124,9 +124,8 @@ export function LeadsDashboard({ clientId, token, controlledRange }: { clientId?
     token ? publicConvertLeadToSale(token, leadId, value, obs, email) : convertLeadToSale(leadId, value, obs, email);
 
   const { data: whatsappInfo } = useQuery({
-    queryKey: ["client-whatsapp-info", clientId],
-    queryFn: () => fetchClientWhatsappInfo(clientId!),
-    enabled: !token,
+    queryKey: ["client-whatsapp-info", identity],
+    queryFn: () => (token ? fetchPublicClientWhatsappInfo(token) : fetchClientWhatsappInfo(clientId!)),
   });
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
@@ -214,10 +213,10 @@ export function LeadsDashboard({ clientId, token, controlledRange }: { clientId?
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <p className="text-xs text-muted-foreground pt-1.5">
-          {token
-            ? ""
-            : whatsappInfo?.connectedAt
-              ? `WhatsApp conectado em ${new Date(whatsappInfo.connectedAt).toLocaleDateString("pt-BR")}${whatsappInfo.instanceLabel ? ` (${whatsappInfo.instanceLabel})` : ""}`
+          {whatsappInfo?.connectedAt
+            ? `WhatsApp conectado em ${new Date(whatsappInfo.connectedAt).toLocaleDateString("pt-BR")}${whatsappInfo.instanceLabel ? ` (${whatsappInfo.instanceLabel})` : ""}`
+            : token
+              ? ""
               : "Nenhuma instância de WhatsApp vinculada a este cliente."}
         </p>
         {!controlledRange && (

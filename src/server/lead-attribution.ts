@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -82,14 +82,20 @@ function dayHourInSaoPaulo(input: string | Date): { day: number; hour: number } 
 
 // Resolve o cliente a partir do token do link público de rastreamento
 // (/r/$token) — é a própria autenticação do link, sem sessão/organização.
-async function resolvePublicClientId(token: string): Promise<string> {
+// Exportada (via createServerOnlyFn, não plain function) porque outros
+// módulos de servidor (ex: whatsapp-messages.ts) também precisam resolver o
+// cliente a partir do mesmo token — sem o wrapper, o acesso a `db` aqui
+// vazava o driver do Postgres pro bundle do navegador assim que outro
+// arquivo importado por componentes client-side passou a importar esta
+// função (mesmo bug já visto com getMetaTokenForClient em meta.ts).
+export const resolvePublicClientId = createServerOnlyFn(async function resolvePublicClientId(token: string): Promise<string> {
   const client = await db.query.clients.findFirst({
     where: eq(clients.publicTrackingToken, token),
     columns: { id: true },
   });
   if (!client) throw new Error("Link inválido ou revogado.");
   return client.id;
-}
+});
 
 export interface LeadTimeHeatmap {
   leads: number[][]; // [dia 0-6][hora 0-23]

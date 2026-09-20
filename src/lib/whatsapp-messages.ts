@@ -6,6 +6,7 @@ import { db } from "@/db/client";
 import { appConfig, clients, scheduledMessageMedia, scheduledMessageRecipients, scheduledMessages, whatsappInstances } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 import { canAccessClient } from "@/lib/client-access";
+import { resolvePublicClientId } from "@/server/lead-attribution";
 
 const mediaItemSchema = z.object({
   base64: z.string(),
@@ -190,6 +191,30 @@ const _fetchClientWhatsappInfo = createServerFn({ method: "GET" })
 
 export async function fetchClientWhatsappInfo(clientId: string): Promise<ClientWhatsappInfo> {
   return _fetchClientWhatsappInfo({ data: { clientId } });
+}
+
+// Mesma coisa, mas resolvendo o cliente pelo token do link público de
+// rastreamento (/r/$token) em vez de sessão/organização — o próprio cliente
+// (dono do negócio) também deve ver a data de conexão do WhatsApp dele.
+const _fetchPublicClientWhatsappInfo = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ token: z.string() }))
+  .handler(async ({ data }): Promise<ClientWhatsappInfo> => {
+    const clientId = await resolvePublicClientId(data.token);
+    const client = await db.query.clients.findFirst({
+      where: eq(clients.id, clientId),
+      columns: { whatsappInstanceId: true },
+    });
+    if (!client?.whatsappInstanceId) return { instanceLabel: null, connectedAt: null };
+
+    const instance = await db.query.whatsappInstances.findFirst({
+      where: eq(whatsappInstances.id, client.whatsappInstanceId),
+      columns: { label: true, createdAt: true },
+    });
+    return { instanceLabel: instance?.label ?? null, connectedAt: instance?.createdAt ?? null };
+  });
+
+export async function fetchPublicClientWhatsappInfo(token: string): Promise<ClientWhatsappInfo> {
+  return _fetchPublicClientWhatsappInfo({ data: { token } });
 }
 
 export async function fetchWhatsappInstances(): Promise<WhatsappInstanceRow[]> {
