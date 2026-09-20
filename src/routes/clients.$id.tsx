@@ -580,8 +580,8 @@ function ClientDetail() {
             )}
           </div>
 
-          {/* Period selector + Meta link — só faz sentido na aba Campanhas, a de Rastreamento tem o próprio período */}
-          {activeTab === "campanhas" && (
+          {/* Period selector + comparar + Ver no Meta — igual nas duas abas
+              (Campanhas e Rastreamento), pra não trocar de UI ao trocar de aba */}
           <div className="flex flex-wrap items-center gap-2">
             <Select value={datePreset} onValueChange={(v) => setDatePreset(v as DatePreset | "custom")}>
               <SelectTrigger className="w-44">
@@ -663,7 +663,6 @@ function ClientDetail() {
               </a>
             </Button>
           </div>
-          )}
         </div>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "campanhas" | "rastreamento")} className="mb-6">
@@ -1032,7 +1031,77 @@ function ClientDetail() {
 
           <TabsContent value="rastreamento" className="space-y-5 mt-4">
             <PublicTrackingLinkControl clientId={id} publicTrackingToken={client.public_tracking_token} invalidateQueryKey={["client", id]} />
-            <LeadsDashboard clientId={id} />
+
+            {/* Comparação de período — mesmos dados de leads/qualificados/vendas já
+                buscados pro resumo de Campanhas, só que renderizados aqui como
+                chips por período (igual à Campanhas) em vez das métricas de anúncio. */}
+            {compareEnabled && (() => {
+              const realCplA = leadTotalsA.real_leads > 0 ? periodSpend / leadTotalsA.real_leads : null;
+              const realCplB = leadTotalsB.real_leads > 0 ? periodSpendB / leadTotalsB.real_leads : null;
+              const qualRateA = leadTotalsA.real_leads > 0 ? Math.round((leadTotalsA.qualified / leadTotalsA.real_leads) * 1000) / 10 : null;
+              const qualRateB = leadTotalsB.real_leads > 0 ? Math.round((leadTotalsB.qualified / leadTotalsB.real_leads) * 1000) / 10 : null;
+
+              const leadPeriods = [
+                {
+                  label: periodLabel,
+                  conversas: periodLeads, cci: periodCpl,
+                  leads: leadTotalsA.real_leads, cpl: realCplA,
+                  qualified: leadTotalsA.qualified, qualRate: qualRateA,
+                  sales: leadTotalsA.sales, salesValue: leadTotalsA.sales_value,
+                },
+                {
+                  label: periodLabelB,
+                  conversas: periodLeadsB, cci: periodCplB,
+                  leads: leadTotalsB.real_leads, cpl: realCplB,
+                  qualified: leadTotalsB.qualified, qualRate: qualRateB,
+                  sales: leadTotalsB.sales, salesValue: leadTotalsB.sales_value,
+                },
+              ];
+
+              const LEAD_METRIC_RENDER: { key: string; label: string; direction?: "higher" | "lower"; format: (p: (typeof leadPeriods)[number]) => string }[] = [
+                { key: "conversas", label: "Conversas iniciadas", direction: "higher", format: (p) => p.conversas > 0 ? String(p.conversas) : "—" },
+                { key: "cci", label: "Custo por conversa", direction: "lower", format: (p) => p.cci !== null ? brl(p.cci) : "—" },
+                { key: "leads", label: "Leads", direction: "higher", format: (p) => p.leads > 0 ? String(p.leads) : "—" },
+                { key: "cpl", label: "Custo por lead", direction: "lower", format: (p) => p.cpl !== null ? brl(p.cpl) : "—" },
+                { key: "qualified", label: "Qualificados", direction: "higher", format: (p) => p.qualified > 0 ? String(p.qualified) : "—" },
+                { key: "qualRate", label: "Taxa de qualificação", direction: "higher", format: (p) => p.qualRate !== null ? `${p.qualRate}%` : "—" },
+                { key: "sales", label: "Vendas", direction: "higher", format: (p) => p.sales > 0 ? String(p.sales) : "—" },
+                { key: "salesValue", label: "Valor vendido", direction: "higher", format: (p) => p.salesValue > 0 ? brl(p.salesValue) : "—" },
+              ];
+
+              const isBest = (key: string, idx: number) => {
+                const metric = LEAD_METRIC_RENDER.find((m) => m.key === key);
+                if (!metric?.direction) return false;
+                const raw = leadPeriods[idx] as unknown as Record<string, number | null>;
+                const rawOther = leadPeriods[1 - idx] as unknown as Record<string, number | null>;
+                const value = raw[key];
+                const other = rawOther[key];
+                if (value === null || other === null || other === value) return false;
+                return metric.direction === "higher" ? value > other : value < other;
+              };
+
+              return (
+                <div className="flex flex-col gap-2">
+                  {leadPeriods.map((p, idx) => (
+                    <div key={p.label} className="rounded-xl border border-border bg-card p-3 flex items-center gap-1 overflow-x-auto">
+                      <span className="text-xs font-medium text-muted-foreground mr-3 shrink-0 min-w-[100px]">{p.label}</span>
+                      {LEAD_METRIC_RENDER.map((metric, i) => (
+                        <div key={metric.key} className="contents">
+                          {i > 0 && <Divider />}
+                          <TotalStat
+                            label={metric.label}
+                            value={metric.format(p)}
+                            valueClass={isBest(metric.key, idx) ? "text-status-on-target" : ""}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            <LeadsDashboard clientId={id} controlledRange={{ since: leadStatsSinceA, until: leadStatsUntilA }} />
           </TabsContent>
         </Tabs>
 

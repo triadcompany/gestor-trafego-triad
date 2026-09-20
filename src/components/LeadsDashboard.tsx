@@ -93,16 +93,21 @@ function formatPhoneFromJid(remoteJid: string): string {
 // clientId = uso normal (gestor logado); token = link público de rastreamento
 // (/r/$token, sem login) — nunca os dois ao mesmo tempo. Todas as chamadas ao
 // servidor abaixo escolhem a variante certa com base em qual foi passado.
-export function LeadsDashboard({ clientId, token }: { clientId?: string; token?: string }) {
+// controlledRange: quando passado (uso dentro de clients.$id.tsx), o período
+// vem do seletor da aba Campanhas — mesmo período nas duas abas, sem seletor
+// próprio duplicado aqui. Sem isso (uso standalone em /rastreamento e no link
+// público /r/$token), o componente continua controlando seu próprio período.
+export function LeadsDashboard({ clientId, token, controlledRange }: { clientId?: string; token?: string; controlledRange?: { since: string; until: string } }) {
   const queryClient = useQueryClient();
   const identity = token ?? clientId!;
   const [search, setSearch] = useState("");
   const [saleFor, setSaleFor] = useState<LeadAttributionRow | null>(null);
-  const [period, setPeriod] = useState<DashboardPeriod>("maximum");
+  const [internalPeriod, setInternalPeriod] = useState<DashboardPeriod>("maximum");
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
 
-  const customRange = period === "custom" && customSince && customUntil ? { since: customSince, until: customUntil } : undefined;
+  const period: DashboardPeriod = controlledRange ? "custom" : internalPeriod;
+  const customRange = controlledRange ?? (internalPeriod === "custom" && customSince && customUntil ? { since: customSince, until: customUntil } : undefined);
   const periodReady = period !== "custom" || !!customRange;
 
   const fetchAttributions = (p?: DashboardPeriod, r?: { since: string; until: string }) =>
@@ -125,12 +130,12 @@ export function LeadsDashboard({ clientId, token }: { clientId?: string; token?:
   });
 
   const { data: summary, isLoading: summaryLoading } = useQuery({
-    queryKey: ["lead-attribution-summary", identity, period, customSince, customUntil],
+    queryKey: ["lead-attribution-summary", identity, period, customRange?.since, customRange?.until],
     queryFn: () => fetchSummary(period, customRange),
     enabled: periodReady,
   });
   const { data: leads = [], isLoading: leadsLoading } = useQuery({
-    queryKey: ["lead-attributions", identity, period, customSince, customUntil],
+    queryKey: ["lead-attributions", identity, period, customRange?.since, customRange?.until],
     queryFn: () => fetchAttributions(period, customRange),
     enabled: periodReady,
   });
@@ -215,6 +220,7 @@ export function LeadsDashboard({ clientId, token }: { clientId?: string; token?:
               ? `WhatsApp conectado em ${new Date(whatsappInfo.connectedAt).toLocaleDateString("pt-BR")}${whatsappInfo.instanceLabel ? ` (${whatsappInfo.instanceLabel})` : ""}`
               : "Nenhuma instância de WhatsApp vinculada a este cliente."}
         </p>
+        {!controlledRange && (
         <div className="flex flex-col items-end gap-1.5">
           <div
             role="group"
@@ -225,7 +231,7 @@ export function LeadsDashboard({ clientId, token }: { clientId?: string; token?:
               <button
                 key={opt.value}
                 type="button"
-                onClick={() => setPeriod(opt.value)}
+                onClick={() => setInternalPeriod(opt.value)}
                 aria-pressed={period === opt.value}
                 className={`flex items-center gap-1 px-3 py-1.5 touch-manipulation transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${
                   period === opt.value
@@ -258,6 +264,7 @@ export function LeadsDashboard({ clientId, token }: { clientId?: string; token?:
             </div>
           )}
         </div>
+        )}
       </div>
 
       {summaryLoading ? (
