@@ -32,6 +32,7 @@ import { Route as AdminInstagramFunilRouteImport } from './routes/admin.instagra
 import { Route as AdminInstagramConexaoRouteImport } from './routes/admin.instagram-conexao'
 import { Route as CampaignsEditIdRouteImport } from './routes/campaigns.edit.$id'
 import { Route as AuthGoogleCallbackRouteImport } from './routes/auth.google.callback'
+import { Route as AdminInstagramFunilEditorFunnelIdRouteImport } from './routes/admin.instagram-funil-editor.$funnelId'
 
 const VendasRoute = VendasRouteImport.update({
   id: '/vendas',
@@ -148,6 +149,12 @@ const AuthGoogleCallbackRoute = AuthGoogleCallbackRouteImport.update({
   path: '/auth/google/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminInstagramFunilEditorFunnelIdRoute =
+  AdminInstagramFunilEditorFunnelIdRouteImport.update({
+    id: '/admin/instagram-funil-editor/$funnelId',
+    path: '/admin/instagram-funil-editor/$funnelId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -171,6 +178,7 @@ export interface FileRoutesByFullPath {
   '/connect/$token': typeof ConnectTokenRoute
   '/r/$token': typeof RTokenRoute
   '/clients/': typeof ClientsIndexRoute
+  '/admin/instagram-funil-editor/$funnelId': typeof AdminInstagramFunilEditorFunnelIdRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
   '/campaigns/edit/$id': typeof CampaignsEditIdRoute
 }
@@ -196,6 +204,7 @@ export interface FileRoutesByTo {
   '/connect/$token': typeof ConnectTokenRoute
   '/r/$token': typeof RTokenRoute
   '/clients': typeof ClientsIndexRoute
+  '/admin/instagram-funil-editor/$funnelId': typeof AdminInstagramFunilEditorFunnelIdRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
   '/campaigns/edit/$id': typeof CampaignsEditIdRoute
 }
@@ -222,6 +231,7 @@ export interface FileRoutesById {
   '/connect/$token': typeof ConnectTokenRoute
   '/r/$token': typeof RTokenRoute
   '/clients/': typeof ClientsIndexRoute
+  '/admin/instagram-funil-editor/$funnelId': typeof AdminInstagramFunilEditorFunnelIdRoute
   '/auth/google/callback': typeof AuthGoogleCallbackRoute
   '/campaigns/edit/$id': typeof CampaignsEditIdRoute
 }
@@ -249,6 +259,7 @@ export interface FileRouteTypes {
     | '/connect/$token'
     | '/r/$token'
     | '/clients/'
+    | '/admin/instagram-funil-editor/$funnelId'
     | '/auth/google/callback'
     | '/campaigns/edit/$id'
   fileRoutesByTo: FileRoutesByTo
@@ -274,6 +285,7 @@ export interface FileRouteTypes {
     | '/connect/$token'
     | '/r/$token'
     | '/clients'
+    | '/admin/instagram-funil-editor/$funnelId'
     | '/auth/google/callback'
     | '/campaigns/edit/$id'
   id:
@@ -299,6 +311,7 @@ export interface FileRouteTypes {
     | '/connect/$token'
     | '/r/$token'
     | '/clients/'
+    | '/admin/instagram-funil-editor/$funnelId'
     | '/auth/google/callback'
     | '/campaigns/edit/$id'
   fileRoutesById: FileRoutesById
@@ -325,6 +338,7 @@ export interface RootRouteChildren {
   ConnectTokenRoute: typeof ConnectTokenRoute
   RTokenRoute: typeof RTokenRoute
   ClientsIndexRoute: typeof ClientsIndexRoute
+  AdminInstagramFunilEditorFunnelIdRoute: typeof AdminInstagramFunilEditorFunnelIdRoute
   AuthGoogleCallbackRoute: typeof AuthGoogleCallbackRoute
   CampaignsEditIdRoute: typeof CampaignsEditIdRoute
 }
@@ -492,6 +506,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthGoogleCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/instagram-funil-editor/$funnelId': {
+      id: '/admin/instagram-funil-editor/$funnelId'
+      path: '/admin/instagram-funil-editor/$funnelId'
+      fullPath: '/admin/instagram-funil-editor/$funnelId'
+      preLoaderRoute: typeof AdminInstagramFunilEditorFunnelIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -517,6 +538,8 @@ const rootRouteChildren: RootRouteChildren = {
   ConnectTokenRoute: ConnectTokenRoute,
   RTokenRoute: RTokenRoute,
   ClientsIndexRoute: ClientsIndexRoute,
+  AdminInstagramFunilEditorFunnelIdRoute:
+    AdminInstagramFunilEditorFunnelIdRoute,
   AuthGoogleCallbackRoute: AuthGoogleCallbackRoute,
   CampaignsEditIdRoute: CampaignsEditIdRoute,
 }

@@ -2,7 +2,14 @@ import { createServerFn } from "@tanstack/react-start";
 import { and, desc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { instagramConnections, instagramFunnelLeads, instagramFunnelRules } from "@/db/schema";
+import {
+  instagramConnections,
+  instagramFunnelLeads,
+  instagramFunnelRules,
+  instagramFunnels,
+  instagramFunnelNodes,
+  instagramFunnelEdges,
+} from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 
 // Ferramenta interna, só pra conta da Triad Company (não é multi-tenant) —
@@ -136,6 +143,7 @@ export interface FunnelRuleRow {
   keyword: string;
   message: string;
   public_reply: string | null;
+  funnel_id: string | null;
   active: boolean;
   created_at: string;
 }
@@ -155,6 +163,7 @@ const _fetchFunnelRules = createServerFn({ method: "GET" }).handler(async (): Pr
     keyword: r.keyword,
     message: r.message,
     public_reply: r.publicReply,
+    funnel_id: r.funnelId,
     active: r.active,
     created_at: r.createdAt,
   }));
@@ -171,6 +180,7 @@ const createRuleSchema = z.object({
   keyword: z.string().min(1),
   message: z.string().min(1),
   public_reply: z.string().nullable().optional(),
+  funnel_id: z.string().nullable().optional(),
 });
 
 const _createFunnelRule = createServerFn({ method: "POST" })
@@ -185,6 +195,7 @@ const _createFunnelRule = createServerFn({ method: "POST" })
       keyword: data.keyword.trim(),
       message: data.message,
       publicReply: data.public_reply?.trim() || null,
+      funnelId: data.funnel_id ?? null,
     });
   });
 
@@ -195,6 +206,7 @@ export async function createFunnelRule(payload: {
   keyword: string;
   message: string;
   public_reply?: string | null;
+  funnel_id?: string | null;
 }): Promise<void> {
   await _createFunnelRule({ data: payload });
 }
@@ -204,6 +216,7 @@ const updateRuleSchema = z.object({
   keyword: z.string().min(1),
   message: z.string().min(1),
   public_reply: z.string().nullable().optional(),
+  funnel_id: z.string().nullable().optional(),
 });
 
 const _updateFunnelRule = createServerFn({ method: "POST" })
@@ -216,6 +229,7 @@ const _updateFunnelRule = createServerFn({ method: "POST" })
         keyword: data.keyword.trim(),
         message: data.message,
         publicReply: data.public_reply?.trim() || null,
+        funnelId: data.funnel_id ?? null,
       })
       .where(and(eq(instagramFunnelRules.id, data.id), eq(instagramFunnelRules.organizationId, organizationId)));
   });
@@ -225,6 +239,7 @@ export async function updateFunnelRule(payload: {
   keyword: string;
   message: string;
   public_reply?: string | null;
+  funnel_id?: string | null;
 }): Promise<void> {
   await _updateFunnelRule({ data: payload });
 }
@@ -304,4 +319,184 @@ const _fetchFunnelLeads = createServerFn({ method: "GET" }).handler(async (): Pr
 
 export async function fetchFunnelLeads(): Promise<FunnelLeadRow[]> {
   return _fetchFunnelLeads();
+}
+
+// ── Funis visuais (editor de blocos) ───────────────────────────────────────
+
+export interface FunnelRow {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+const _fetchFunnels = createServerFn({ method: "GET" }).handler(async (): Promise<FunnelRow[]> => {
+  const { organizationId } = await requirePlatformAdminOrg();
+  const rows = await db
+    .select()
+    .from(instagramFunnels)
+    .where(eq(instagramFunnels.organizationId, organizationId))
+    .orderBy(desc(instagramFunnels.createdAt));
+  return rows.map((r) => ({ id: r.id, name: r.name, created_at: r.createdAt }));
+});
+
+export async function fetchFunnels(): Promise<FunnelRow[]> {
+  return _fetchFunnels();
+}
+
+const _createFunnel = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ name: z.string().min(1) }))
+  .handler(async ({ data }): Promise<{ id: string }> => {
+    const { organizationId } = await requirePlatformAdminOrg();
+    return db.transaction(async (tx) => {
+      const [funnel] = await tx.insert(instagramFunnels).values({ organizationId, name: data.name.trim() }).returning({ id: instagramFunnels.id });
+      // Bloco Gatilho — ponto de entrada fixo, um por funil, criado junto.
+      await tx.insert(instagramFunnelNodes).values({ funnelId: funnel.id, type: "trigger", positionX: 80, positionY: 160 });
+      return { id: funnel.id };
+    });
+  });
+
+export async function createFunnel(name: string): Promise<{ id: string }> {
+  return _createFunnel({ data: { name } });
+}
+
+const _renameFunnel = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string(), name: z.string().min(1) }))
+  .handler(async ({ data }) => {
+    const { organizationId } = await requirePlatformAdminOrg();
+    await db
+      .update(instagramFunnels)
+      .set({ name: data.name.trim() })
+      .where(and(eq(instagramFunnels.id, data.id), eq(instagramFunnels.organizationId, organizationId)));
+  });
+
+export async function renameFunnel(id: string, name: string): Promise<void> {
+  await _renameFunnel({ data: { id, name } });
+}
+
+const _deleteFunnel = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    const { organizationId } = await requirePlatformAdminOrg();
+    await db.delete(instagramFunnels).where(and(eq(instagramFunnels.id, data.id), eq(instagramFunnels.organizationId, organizationId)));
+  });
+
+export async function deleteFunnel(id: string): Promise<void> {
+  await _deleteFunnel({ data: { id } });
+}
+
+export interface FunnelNodeRow {
+  id: string;
+  type: "trigger" | "message" | "condition";
+  position_x: number;
+  position_y: number;
+  message: string | null;
+  condition_keywords: { id: string; keyword: string }[];
+}
+
+export interface FunnelEdgeRow {
+  id: string;
+  source_node_id: string;
+  source_handle: string | null;
+  target_node_id: string;
+}
+
+const _fetchFunnelGraph = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ funnel_id: z.string() }))
+  .handler(async ({ data }): Promise<{ nodes: FunnelNodeRow[]; edges: FunnelEdgeRow[] }> => {
+    const { organizationId } = await requirePlatformAdminOrg();
+    const funnel = await db.query.instagramFunnels.findFirst({
+      where: and(eq(instagramFunnels.id, data.funnel_id), eq(instagramFunnels.organizationId, organizationId)),
+    });
+    if (!funnel) throw new Error("Funil não encontrado.");
+    const [nodeRows, edgeRows] = await Promise.all([
+      db.select().from(instagramFunnelNodes).where(eq(instagramFunnelNodes.funnelId, data.funnel_id)),
+      db.select().from(instagramFunnelEdges).where(eq(instagramFunnelEdges.funnelId, data.funnel_id)),
+    ]);
+    return {
+      nodes: nodeRows.map((n) => ({
+        id: n.id,
+        type: n.type as "trigger" | "message" | "condition",
+        position_x: n.positionX,
+        position_y: n.positionY,
+        message: n.message,
+        condition_keywords: (n.conditionKeywords as { id: string; keyword: string }[] | null) ?? [],
+      })),
+      edges: edgeRows.map((e) => ({ id: e.id, source_node_id: e.sourceNodeId, source_handle: e.sourceHandle, target_node_id: e.targetNodeId })),
+    };
+  });
+
+export async function fetchFunnelGraph(funnelId: string): Promise<{ nodes: FunnelNodeRow[]; edges: FunnelEdgeRow[] }> {
+  return _fetchFunnelGraph({ data: { funnel_id: funnelId } });
+}
+
+const saveGraphSchema = z.object({
+  funnel_id: z.string(),
+  nodes: z.array(
+    z.object({
+      id: z.string(),
+      type: z.enum(["trigger", "message", "condition"]),
+      position_x: z.number(),
+      position_y: z.number(),
+      message: z.string().nullable().optional(),
+      condition_keywords: z.array(z.object({ id: z.string(), keyword: z.string() })).optional(),
+    })
+  ),
+  edges: z.array(
+    z.object({
+      source_node_id: z.string(),
+      source_handle: z.string().nullable().optional(),
+      target_node_id: z.string(),
+    })
+  ),
+});
+
+// Substitui o grafo inteiro do funil numa transação — mais simples que
+// sincronizar nó a nó, e o volume de dados é pequeno (dezenas de blocos, no
+// máximo). Sessões (instagram_funnel_sessions) apontando pra nós apagados
+// nessa troca são perdidas (cascade) — aceitável: editar o funil enquanto
+// alguém está no meio de uma conversa é raro nesse uso interno.
+const _saveFunnelGraph = createServerFn({ method: "POST" })
+  .inputValidator(saveGraphSchema)
+  .handler(async ({ data }) => {
+    const { organizationId } = await requirePlatformAdminOrg();
+    const funnel = await db.query.instagramFunnels.findFirst({
+      where: and(eq(instagramFunnels.id, data.funnel_id), eq(instagramFunnels.organizationId, organizationId)),
+    });
+    if (!funnel) throw new Error("Funil não encontrado.");
+
+    await db.transaction(async (tx) => {
+      await tx.delete(instagramFunnelEdges).where(eq(instagramFunnelEdges.funnelId, data.funnel_id));
+      await tx.delete(instagramFunnelNodes).where(eq(instagramFunnelNodes.funnelId, data.funnel_id));
+      if (data.nodes.length > 0) {
+        await tx.insert(instagramFunnelNodes).values(
+          data.nodes.map((n) => ({
+            id: n.id,
+            funnelId: data.funnel_id,
+            type: n.type,
+            positionX: Math.round(n.position_x),
+            positionY: Math.round(n.position_y),
+            message: n.type === "message" ? (n.message ?? null) : null,
+            conditionKeywords: n.type === "condition" ? (n.condition_keywords ?? []) : [],
+          }))
+        );
+      }
+      if (data.edges.length > 0) {
+        await tx.insert(instagramFunnelEdges).values(
+          data.edges.map((e) => ({
+            funnelId: data.funnel_id,
+            sourceNodeId: e.source_node_id,
+            sourceHandle: e.source_handle ?? null,
+            targetNodeId: e.target_node_id,
+          }))
+        );
+      }
+    });
+  });
+
+export async function saveFunnelGraph(
+  funnelId: string,
+  nodes: FunnelNodeRow[],
+  edges: { source_node_id: string; source_handle: string | null; target_node_id: string }[]
+): Promise<void> {
+  await _saveFunnelGraph({ data: { funnel_id: funnelId, nodes, edges } });
 }

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { relations } from "drizzle-orm/relations";
 import {
+  type AnyPgColumn,
   boolean,
   check,
   date,
@@ -373,6 +374,9 @@ export const instagramFunnelRules = pgTable("instagram_funnel_rules", {
   // Direct!"), além do DM privado. Exige a permissão
   // instagram_business_manage_comments, que o DM sozinho não precisa.
   publicReply: text("public_reply"),
+  // Opcional — funil visual (instagram_funnels) que continua depois da 1ª
+  // mensagem. set null: apagar o funil não apaga a regra, só desconecta.
+  funnelId: uuid("funnel_id").references((): AnyPgColumn => instagramFunnels.id, { onDelete: "set null" }),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
@@ -396,6 +400,86 @@ export const instagramFunnelLeads = pgTable(
     // Rede de segurança contra reprocessar o mesmo comentário duas vezes se
     // o webhook da Meta reentregar o mesmo evento.
     unique("instagram_funnel_leads_dedupe_key").on(t.ruleId, t.commentId),
+  ]
+);
+
+// Funil visual (editor de blocos conectáveis) — continua a conversa no
+// Direct depois da 1ª mensagem de uma regra. Ver spec
+// docs/superpowers/specs/2026-09-21-funil-visual-instagram-design.md.
+
+export const instagramFunnels = pgTable("instagram_funnels", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  name: text("name").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const instagramFunnelNodes = pgTable("instagram_funnel_nodes", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  funnelId: uuid("funnel_id")
+    .notNull()
+    .references(() => instagramFunnels.id, { onDelete: "cascade" }),
+  type: text("type").notNull(), // trigger | message | condition
+  positionX: integer("position_x").notNull().default(0),
+  positionY: integer("position_y").notNull().default(0),
+  message: text("message"), // só type='message'
+  // só type='condition' — array de { id: uuid, keyword: string }, um por
+  // saída (fora a saída fixa "Nenhuma bateu", que não precisa de linha própria)
+  conditionKeywords: jsonb("condition_keywords").notNull().default([]),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const instagramFunnelEdges = pgTable(
+  "instagram_funnel_edges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => instagramFunnels.id, { onDelete: "cascade" }),
+    sourceNodeId: uuid("source_node_id")
+      .notNull()
+      .references(() => instagramFunnelNodes.id, { onDelete: "cascade" }),
+    // null pra Gatilho/Mensagem (saída única); pro nó de Condição, o id de
+    // uma entrada de condition_keywords, ou o literal "default".
+    sourceHandle: text("source_handle"),
+    targetNodeId: uuid("target_node_id")
+      .notNull()
+      .references(() => instagramFunnelNodes.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    // Cada saída só liga a um destino — "desconectar" é apagar a linha,
+    // "conectar" é inserir (substitui se já tinha uma ligação ali).
+    unique("instagram_funnel_edges_source_key").on(t.sourceNodeId, t.sourceHandle),
+  ]
+);
+
+// Estado de "em qual bloco de Condição essa pessoa está esperando" —
+// consultado quando chega uma mensagem nova no Direct.
+export const instagramFunnelSessions = pgTable(
+  "instagram_funnel_sessions",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    organizationId: uuid("organization_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    igUserId: text("ig_user_id").notNull(),
+    funnelId: uuid("funnel_id")
+      .notNull()
+      .references(() => instagramFunnels.id, { onDelete: "cascade" }),
+    currentNodeId: uuid("current_node_id")
+      .notNull()
+      .references(() => instagramFunnelNodes.id, { onDelete: "cascade" }),
+    leadId: uuid("lead_id")
+      .notNull()
+      .references(() => instagramFunnelLeads.id, { onDelete: "cascade" }),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => [
+    // Uma pessoa só fica esperando em um funil por vez — entrar em outro sobrescreve.
+    unique("instagram_funnel_sessions_user_key").on(t.organizationId, t.igUserId),
   ]
 );
 
@@ -813,4 +897,23 @@ export const instagramFunnelRulesRelations = relations(instagramFunnelRules, ({ 
 
 export const instagramFunnelLeadsRelations = relations(instagramFunnelLeads, ({ one }) => ({
   rule: one(instagramFunnelRules, { fields: [instagramFunnelLeads.ruleId], references: [instagramFunnelRules.id] }),
+}));
+
+export const instagramFunnelsRelations = relations(instagramFunnels, ({ many }) => ({
+  nodes: many(instagramFunnelNodes),
+  edges: many(instagramFunnelEdges),
+}));
+
+export const instagramFunnelNodesRelations = relations(instagramFunnelNodes, ({ one }) => ({
+  funnel: one(instagramFunnels, { fields: [instagramFunnelNodes.funnelId], references: [instagramFunnels.id] }),
+}));
+
+export const instagramFunnelEdgesRelations = relations(instagramFunnelEdges, ({ one }) => ({
+  funnel: one(instagramFunnels, { fields: [instagramFunnelEdges.funnelId], references: [instagramFunnels.id] }),
+}));
+
+export const instagramFunnelSessionsRelations = relations(instagramFunnelSessions, ({ one }) => ({
+  funnel: one(instagramFunnels, { fields: [instagramFunnelSessions.funnelId], references: [instagramFunnels.id] }),
+  currentNode: one(instagramFunnelNodes, { fields: [instagramFunnelSessions.currentNodeId], references: [instagramFunnelNodes.id] }),
+  lead: one(instagramFunnelLeads, { fields: [instagramFunnelSessions.leadId], references: [instagramFunnelLeads.id] }),
 }));

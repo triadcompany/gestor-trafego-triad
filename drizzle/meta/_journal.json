@@ -169,6 +169,13 @@
       "when": 1790039363870,
       "tag": "0023_instagram_public_reply",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1790041600006,
+      "tag": "0024_instagram_visual_funnel",
+      "breakpoints": true
     }
   ]
 }

@@ -26,8 +26,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Instagram, Plus, Pencil, Trash2, ExternalLink, MessageCircle } from "lucide-react";
+import { Instagram, Plus, Pencil, Trash2, ExternalLink, MessageCircle, Workflow } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchFunnelRules,
@@ -37,8 +44,13 @@ import {
   deleteFunnelRule,
   fetchRecentInstagramPosts,
   fetchFunnelLeads,
+  fetchFunnels,
+  createFunnel,
+  renameFunnel,
+  deleteFunnel,
   type InstagramPostRow,
   type FunnelRuleRow,
+  type FunnelRow,
 } from "@/server/instagram-funnel";
 
 export const Route = createFileRoute("/admin/instagram-funil")({
@@ -65,10 +77,14 @@ function InstagramFunilPage() {
         <Tabs defaultValue="regras">
           <TabsList>
             <TabsTrigger value="regras">Regras</TabsTrigger>
+            <TabsTrigger value="funis">Funis</TabsTrigger>
             <TabsTrigger value="leads">Leads</TabsTrigger>
           </TabsList>
           <TabsContent value="regras" className="mt-4">
             <RulesTab />
+          </TabsContent>
+          <TabsContent value="funis" className="mt-4">
+            <FunnelsTab />
           </TabsContent>
           <TabsContent value="leads" className="mt-4">
             <LeadsTab />
@@ -173,8 +189,10 @@ function NewRuleDialog({ onCreated }: { onCreated: () => void }) {
   const [keyword, setKeyword] = useState("");
   const [message, setMessage] = useState("");
   const [publicReply, setPublicReply] = useState("");
+  const [funnelId, setFunnelId] = useState<string>("none");
 
   const { data: posts = [], isLoading, isError, error } = useQuery({ queryKey: ["instagram-recent-posts"], queryFn: fetchRecentInstagramPosts });
+  const { data: funnels = [] } = useQuery({ queryKey: ["instagram-funnels"], queryFn: fetchFunnels });
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -185,6 +203,7 @@ function NewRuleDialog({ onCreated }: { onCreated: () => void }) {
         keyword: keyword.trim(),
         message: message.trim(),
         public_reply: publicReply.trim() || null,
+        funnel_id: funnelId === "none" ? null : funnelId,
       }),
     onSuccess: () => {
       toast.success("Regra criada.");
@@ -253,6 +272,17 @@ function NewRuleDialog({ onCreated }: { onCreated: () => void }) {
             deixe em branco se o token atual não tiver essa permissão.
           </p>
         </div>
+        <div className="space-y-1.5">
+          <Label>Funil (opcional)</Label>
+          <Select value={funnelId} onValueChange={setFunnelId}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Nenhum — só a mensagem acima</SelectItem>
+              {funnels.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <p className="text-[11px] text-muted-foreground">Continua a conversa no Direct depois dessa 1ª mensagem.</p>
+        </div>
       </div>
       <DialogFooter>
         <Button
@@ -274,6 +304,9 @@ function EditRuleDialog({ rule, onSaved }: { rule: FunnelRuleRow; onSaved: () =>
   const [keyword, setKeyword] = useState(rule.keyword);
   const [message, setMessage] = useState(rule.message);
   const [publicReply, setPublicReply] = useState(rule.public_reply ?? "");
+  const [funnelId, setFunnelId] = useState<string>(rule.funnel_id ?? "none");
+
+  const { data: funnels = [] } = useQuery({ queryKey: ["instagram-funnels"], queryFn: fetchFunnels });
 
   const updateMutation = useMutation({
     mutationFn: () =>
@@ -282,6 +315,7 @@ function EditRuleDialog({ rule, onSaved }: { rule: FunnelRuleRow; onSaved: () =>
         keyword: keyword.trim(),
         message: message.trim(),
         public_reply: publicReply.trim() || null,
+        funnel_id: funnelId === "none" ? null : funnelId,
       }),
     onSuccess: () => {
       toast.success("Regra atualizada.");
@@ -324,6 +358,16 @@ function EditRuleDialog({ rule, onSaved }: { rule: FunnelRuleRow; onSaved: () =>
           <Label>Resposta pública no comentário (opcional)</Label>
           <Input value={publicReply} onChange={(e) => setPublicReply(e.target.value)} placeholder="Ex: Te mandei no Direct!" />
         </div>
+        <div className="space-y-1.5">
+          <Label>Funil (opcional)</Label>
+          <Select value={funnelId} onValueChange={setFunnelId}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Nenhum — só a mensagem acima</SelectItem>
+              {funnels.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
       <DialogFooter>
         <Button
@@ -334,6 +378,122 @@ function EditRuleDialog({ rule, onSaved }: { rule: FunnelRuleRow; onSaved: () =>
         </Button>
       </DialogFooter>
     </DialogContent>
+  );
+}
+
+function FunnelsTab() {
+  const queryClient = useQueryClient();
+  const [newOpen, setNewOpen] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [renaming, setRenaming] = useState<FunnelRow | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+
+  const { data: funnels = [], isLoading } = useQuery({ queryKey: ["instagram-funnels"], queryFn: fetchFunnels });
+
+  const createMutation = useMutation({
+    mutationFn: () => createFunnel(newName.trim()),
+    onSuccess: () => {
+      toast.success("Funil criado.");
+      setNewOpen(false);
+      setNewName("");
+      queryClient.invalidateQueries({ queryKey: ["instagram-funnels"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao criar funil"),
+  });
+
+  const renameMutation = useMutation({
+    mutationFn: () => renameFunnel(renaming!.id, renameValue.trim()),
+    onSuccess: () => {
+      setRenaming(null);
+      queryClient.invalidateQueries({ queryKey: ["instagram-funnels"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao renomear funil"),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteFunnel(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["instagram-funnels"] }),
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex justify-end">
+        <Dialog open={newOpen} onOpenChange={setNewOpen}>
+          <DialogTrigger asChild>
+            <Button size="sm" className="gap-2">
+              <Plus className="h-4 w-4" /> Novo funil
+            </Button>
+          </DialogTrigger>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Novo funil</DialogTitle>
+            </DialogHeader>
+            <div className="py-2 space-y-1.5">
+              <Label>Nome</Label>
+              <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Ex: Qualificação de lead" autoFocus />
+            </div>
+            <DialogFooter>
+              <Button onClick={() => createMutation.mutate()} disabled={!newName.trim() || createMutation.isPending}>
+                {createMutation.isPending ? "Criando..." : "Criar"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+
+      <Dialog open={!!renaming} onOpenChange={(o) => !o && setRenaming(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Renomear funil</DialogTitle>
+          </DialogHeader>
+          <div className="py-2 space-y-1.5">
+            <Label>Nome</Label>
+            <Input value={renameValue} onChange={(e) => setRenameValue(e.target.value)} autoFocus />
+          </div>
+          <DialogFooter>
+            <Button onClick={() => renameMutation.mutate()} disabled={!renameValue.trim() || renameMutation.isPending}>
+              {renameMutation.isPending ? "Salvando..." : "Salvar"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {isLoading ? (
+        <div className="space-y-2">
+          {[1, 2].map((i) => <Skeleton key={i} className="h-14 w-full rounded-xl" />)}
+        </div>
+      ) : funnels.length === 0 ? (
+        <div className="text-center py-16 rounded-xl border border-dashed border-border">
+          <Workflow className="h-6 w-6 mx-auto mb-2 text-muted-foreground" />
+          <p className="text-sm text-muted-foreground">Nenhum funil ainda.</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {funnels.map((f) => (
+            <Card key={f.id} className="p-3 flex items-center gap-3">
+              <Workflow className="h-4 w-4 text-muted-foreground shrink-0" />
+              <p className="flex-1 min-w-0 text-sm font-medium truncate">{f.name}</p>
+              <div className="flex items-center gap-1 shrink-0">
+                <Link to="/admin/instagram-funil-editor/$funnelId" params={{ funnelId: f.id }}>
+                  <Button size="sm" variant="outline">Editar fluxo</Button>
+                </Link>
+                <Button size="icon" variant="ghost" onClick={() => { setRenaming(f); setRenameValue(f.name); }}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => { if (confirm(`Excluir o funil "${f.name}"? Regras conectadas a ele voltam a mandar só a 1ª mensagem.`)) deleteMutation.mutate(f.id); }}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 
