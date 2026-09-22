@@ -10,8 +10,9 @@ import { instagramConnections, instagramFunnelLeads, instagramFunnelRules } from
 // API), mas ainda assim extraída com checagens defensivas — webhook nunca
 // deve derrubar por causa de um campo faltando.
 
-const GRAPH_VERSION = "v21.0";
-const BASE_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
+// Mesmo host de instagram-funnel.ts — contas conectadas via "Instagram
+// Login" usam graph.instagram.com, não graph.facebook.com.
+const BASE_URL = "https://graph.instagram.com";
 
 interface CommentChangeValue {
   id?: string; // comment id

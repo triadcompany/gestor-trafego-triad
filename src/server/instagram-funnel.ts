@@ -16,8 +16,10 @@ async function requirePlatformAdminOrg(): Promise<{ organizationId: string }> {
   return { organizationId };
 }
 
-const GRAPH_VERSION = "v21.0";
-const BASE_URL = `https://graph.facebook.com/${GRAPH_VERSION}`;
+// Contas conectadas via "Instagram Login" (sem Página do Facebook, nosso
+// caso) usam o host graph.instagram.com, não graph.facebook.com — e esses
+// endpoints são efetivamente sem versão (sem prefixo /vXX.X/ no caminho).
+const BASE_URL = "https://graph.instagram.com";
 
 // ── Conexão ──────────────────────────────────────────────────────────────
 

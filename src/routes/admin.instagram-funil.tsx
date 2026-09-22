@@ -162,7 +162,7 @@ function NewRuleDialog({ onCreated }: { onCreated: () => void }) {
   const [keyword, setKeyword] = useState("");
   const [message, setMessage] = useState("");
 
-  const { data: posts = [], isLoading, isError } = useQuery({ queryKey: ["instagram-recent-posts"], queryFn: fetchRecentInstagramPosts });
+  const { data: posts = [], isLoading, isError, error } = useQuery({ queryKey: ["instagram-recent-posts"], queryFn: fetchRecentInstagramPosts });
 
   const createMutation = useMutation({
     mutationFn: () =>
@@ -195,7 +195,7 @@ function NewRuleDialog({ onCreated }: { onCreated: () => void }) {
             </div>
           ) : isError ? (
             <p className="text-sm text-destructive">
-              Erro ao buscar posts. Confira a{" "}
+              {error instanceof Error ? error.message : "Erro ao buscar posts."} Confira a{" "}
               <Link to="/admin/instagram-conexao" className="underline underline-offset-2">conexão do Instagram</Link>.
             </p>
           ) : posts.length === 0 ? (
