@@ -390,6 +390,9 @@ export interface FunnelNodeRow {
   position_x: number;
   position_y: number;
   message: string | null;
+  file_base64: string | null;
+  file_mimetype: string | null;
+  file_filename: string | null;
   condition_keywords: { id: string; keyword: string }[];
 }
 
@@ -419,6 +422,9 @@ const _fetchFunnelGraph = createServerFn({ method: "GET" })
         position_x: n.positionX,
         position_y: n.positionY,
         message: n.message,
+        file_base64: n.fileBase64,
+        file_mimetype: n.fileMimetype,
+        file_filename: n.fileFilename,
         condition_keywords: (n.conditionKeywords as { id: string; keyword: string }[] | null) ?? [],
       })),
       edges: edgeRows.map((e) => ({ id: e.id, source_node_id: e.sourceNodeId, source_handle: e.sourceHandle, target_node_id: e.targetNodeId })),
@@ -438,6 +444,9 @@ const saveGraphSchema = z.object({
       position_x: z.number(),
       position_y: z.number(),
       message: z.string().nullable().optional(),
+      file_base64: z.string().nullable().optional(),
+      file_mimetype: z.string().nullable().optional(),
+      file_filename: z.string().nullable().optional(),
       condition_keywords: z.array(z.object({ id: z.string(), keyword: z.string() })).optional(),
     })
   ),
@@ -476,6 +485,9 @@ const _saveFunnelGraph = createServerFn({ method: "POST" })
             positionX: Math.round(n.position_x),
             positionY: Math.round(n.position_y),
             message: n.type === "message" ? (n.message ?? null) : null,
+            fileBase64: n.type === "message" ? (n.file_base64 ?? null) : null,
+            fileMimetype: n.type === "message" ? (n.file_mimetype ?? null) : null,
+            fileFilename: n.type === "message" ? (n.file_filename ?? null) : null,
             conditionKeywords: n.type === "condition" ? (n.condition_keywords ?? []) : [],
           }))
         );

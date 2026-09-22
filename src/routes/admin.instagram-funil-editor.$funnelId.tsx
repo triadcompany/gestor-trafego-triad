@@ -27,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Zap, MessageSquare, GitBranch, Plus, X, Save } from "lucide-react";
+import { ArrowLeft, Zap, MessageSquare, GitBranch, Plus, X, Save, Paperclip } from "lucide-react";
 import { toast } from "sonner";
 import { fetchFunnelGraph, saveFunnelGraph, fetchFunnels } from "@/server/instagram-funnel";
 
@@ -38,6 +38,9 @@ export const Route = createFileRoute("/admin/instagram-funil-editor/$funnelId")(
 
 interface MessageData extends Record<string, unknown> {
   message: string;
+  file_base64: string | null;
+  file_mimetype: string | null;
+  file_filename: string | null;
 }
 interface ConditionData extends Record<string, unknown> {
   keywords: { id: string; keyword: string }[];
@@ -62,7 +65,13 @@ function MessageNodeCard({ data }: NodeProps<Node<MessageData>>) {
       <div className="flex items-center gap-1.5 text-muted-foreground font-semibold text-[10px] uppercase tracking-wide">
         <MessageSquare className="h-3.5 w-3.5" /> Enviar mensagem
       </div>
-      <p className="text-sm mt-1 line-clamp-3 whitespace-pre-wrap">{data.message || "Clique 2x pra escrever a mensagem..."}</p>
+      {data.file_filename ? (
+        <p className="text-sm mt-1 flex items-center gap-1.5 text-foreground/90">
+          <Paperclip className="h-3.5 w-3.5 shrink-0" /> <span className="truncate">{data.file_filename}</span>
+        </p>
+      ) : (
+        <p className="text-sm mt-1 line-clamp-3 whitespace-pre-wrap">{data.message || "Clique 2x pra escrever a mensagem..."}</p>
+      )}
       <Handle type="source" position={Position.Right} className="!bg-primary !w-3 !h-3" />
     </div>
   );
@@ -117,7 +126,12 @@ function FunnelEditorPage() {
         type: n.type,
         position: { x: n.position_x, y: n.position_y },
         deletable: n.type !== "trigger",
-        data: n.type === "message" ? { message: n.message ?? "" } : n.type === "condition" ? { keywords: n.condition_keywords } : {},
+        data:
+          n.type === "message"
+            ? { message: n.message ?? "", file_base64: n.file_base64, file_mimetype: n.file_mimetype, file_filename: n.file_filename }
+            : n.type === "condition"
+              ? { keywords: n.condition_keywords }
+              : {},
       }))
     );
     setEdges(graph.edges.map((e) => ({ id: e.id, source: e.source_node_id, sourceHandle: e.source_handle, target: e.target_node_id })));
@@ -141,7 +155,7 @@ function FunnelEditorPage() {
         type,
         position: { x: 380 + offset, y: 120 + offset },
         deletable: true,
-        data: type === "message" ? { message: "" } : { keywords: [] },
+        data: type === "message" ? { message: "", file_base64: null, file_mimetype: null, file_filename: null } : { keywords: [] },
       },
     ]);
   };
@@ -156,6 +170,9 @@ function FunnelEditorPage() {
           position_x: n.position.x,
           position_y: n.position.y,
           message: n.type === "message" ? ((n.data as MessageData).message ?? null) : null,
+          file_base64: n.type === "message" ? (n.data as MessageData).file_base64 : null,
+          file_mimetype: n.type === "message" ? (n.data as MessageData).file_mimetype : null,
+          file_filename: n.type === "message" ? (n.data as MessageData).file_filename : null,
           condition_keywords: n.type === "condition" ? (n.data as ConditionData).keywords : [],
         })),
         edges.map((e) => ({ source_node_id: e.source, source_handle: e.sourceHandle ?? null, target_node_id: e.target }))
@@ -206,8 +223,8 @@ function FunnelEditorPage() {
         {editingNode?.type === "message" && (
           <MessageNodeEditor
             data={editingNode.data as MessageData}
-            onSave={(message) => {
-              setNodes((nds) => nds.map((n) => (n.id === editingNode.id ? { ...n, data: { ...n.data, message } } : n)));
+            onSave={(patch) => {
+              setNodes((nds) => nds.map((n) => (n.id === editingNode.id ? { ...n, data: { ...n.data, ...patch } } : n)));
               setEditingNode(null);
             }}
           />
@@ -226,19 +243,72 @@ function FunnelEditorPage() {
   );
 }
 
-function MessageNodeEditor({ data, onSave }: { data: MessageData; onSave: (message: string) => void }) {
+const MAX_FILE_BYTES = 25 * 1024 * 1024; // limite da própria Meta pra anexo
+
+function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(",")[1] ?? "");
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
+type MessagePatch = Pick<MessageData, "message" | "file_base64" | "file_mimetype" | "file_filename">;
+
+function MessageNodeEditor({ data, onSave }: { data: MessageData; onSave: (patch: MessagePatch) => void }) {
   const [message, setMessage] = useState(data.message);
+  const [file, setFile] = useState({ base64: data.file_base64, mimetype: data.file_mimetype, filename: data.file_filename });
+
+  const handleFile = async (f: File | undefined) => {
+    if (!f) return;
+    if (f.size > MAX_FILE_BYTES) {
+      toast.error("Arquivo maior que 25MB — limite da própria API do Instagram.");
+      return;
+    }
+    const base64 = await readFileAsBase64(f);
+    setFile({ base64, mimetype: f.type || "application/octet-stream", filename: f.name });
+  };
+
   return (
     <DialogContent>
       <DialogHeader>
         <DialogTitle>Enviar mensagem</DialogTitle>
       </DialogHeader>
-      <div className="py-2 space-y-1.5">
-        <Label>Texto do DM</Label>
-        <Textarea value={message} onChange={(e) => setMessage(e.target.value)} className="min-h-[100px]" autoFocus />
+      <div className="py-2 space-y-4">
+        <div className="space-y-1.5">
+          <Label>Texto do DM</Label>
+          <Textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            className="min-h-[100px]"
+            autoFocus
+            disabled={!!file.base64}
+            placeholder={file.base64 ? "Ignorado enquanto tiver um arquivo anexado" : undefined}
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Anexo (opcional — ex: PDF)</Label>
+          {file.base64 ? (
+            <div className="flex items-center gap-2 rounded-md border border-border px-3 py-2 text-sm">
+              <Paperclip className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="flex-1 min-w-0 truncate">{file.filename}</span>
+              <Button size="icon" variant="ghost" className="h-6 w-6 shrink-0" onClick={() => setFile({ base64: null, mimetype: null, filename: null })}>
+                <X className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <Input type="file" onChange={(e) => handleFile(e.target.files?.[0])} />
+          )}
+          <p className="text-[11px] text-muted-foreground">
+            Anexando um arquivo, a mensagem manda só ele (o texto acima é ignorado). Até 25MB.
+          </p>
+        </div>
       </div>
       <DialogFooter>
-        <Button onClick={() => onSave(message)}>Salvar bloco</Button>
+        <Button onClick={() => onSave({ message, file_base64: file.base64, file_mimetype: file.mimetype, file_filename: file.filename })}>
+          Salvar bloco
+        </Button>
       </DialogFooter>
     </DialogContent>
   );

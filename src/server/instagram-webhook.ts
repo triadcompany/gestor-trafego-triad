@@ -200,13 +200,19 @@ async function advanceFunnel(
   if (!node) return;
 
   if (node.type === "message") {
-    if (node.message) {
-      try {
+    try {
+      if (node.fileBase64) {
+        // Anexo (ex: PDF) — a Meta busca o arquivo por URL pública própria,
+        // não aceita base64 direto na mensagem.
+        const appUrl = process.env.APP_URL;
+        if (!appUrl) throw new Error("APP_URL não configurada — necessária pra anexo de arquivo.");
+        await sendFileMessage(accessToken, igBusinessAccountId, igUserId, `${appUrl.replace(/\/+$/, "")}/api/instagram-files/${node.id}`);
+      } else if (node.message) {
         await sendDirectMessage(accessToken, igBusinessAccountId, igUserId, node.message);
-      } catch (err) {
-        console.error("[instagram-webhook] falha ao enviar mensagem do funil:", err);
-        return; // não segue adiante se a mensagem não saiu
       }
+    } catch (err) {
+      console.error("[instagram-webhook] falha ao enviar mensagem do funil:", err);
+      return; // não segue adiante se a mensagem não saiu
     }
     const edge = await db.query.instagramFunnelEdges.findFirst({ where: eq(instagramFunnelEdges.sourceNodeId, node.id) });
     if (edge) await advanceFunnel(accessToken, igBusinessAccountId, igUserId, funnelId, leadId, edge.targetNodeId);
@@ -245,6 +251,19 @@ async function sendDirectMessage(accessToken: string, igBusinessAccountId: strin
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ recipient: { id: igUserId }, message: { text } }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Meta retornou ${res.status}: ${body.slice(0, 300)}`);
+  }
+}
+
+async function sendFileMessage(accessToken: string, igBusinessAccountId: string, igUserId: string, fileUrl: string): Promise<void> {
+  const url = `${BASE_URL}/${igBusinessAccountId}/messages?access_token=${encodeURIComponent(accessToken)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ recipient: { id: igUserId }, message: { attachment: { type: "file", payload: { url: fileUrl } } } }),
   });
   if (!res.ok) {
     const body = await res.text();

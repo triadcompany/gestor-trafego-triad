@@ -425,6 +425,13 @@ export const instagramFunnelNodes = pgTable("instagram_funnel_nodes", {
   positionX: integer("position_x").notNull().default(0),
   positionY: integer("position_y").notNull().default(0),
   message: text("message"), // só type='message'
+  // Anexo opcional (ex: PDF) num bloco type='message' — a Meta exige URL
+  // pública pra mandar anexo, não aceita base64 direto; guardamos o arquivo
+  // aqui e servimos via rota pública própria (instagram-files.route.ts),
+  // igual scheduled_message_media já guarda mídia do WhatsApp.
+  fileBase64: text("file_base64"),
+  fileMimetype: text("file_mimetype"),
+  fileFilename: text("file_filename"),
   // só type='condition' — array de { id: uuid, keyword: string }, um por
   // saída (fora a saída fixa "Nenhuma bateu", que não precisa de linha própria)
   conditionKeywords: jsonb("condition_keywords").notNull().default([]),

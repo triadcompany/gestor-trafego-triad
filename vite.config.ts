@@ -50,6 +50,13 @@ export default defineConfig(({ mode }) => {
             route: "/api/webhooks/instagram",
             handler: "./src/server/instagram-webhook.route.ts",
           },
+          {
+            // Serve anexo (ex: PDF) de um bloco do funil — a Meta busca essa
+            // URL pra anexar o arquivo na mensagem do Direct.
+            route: "/api/instagram-files/:nodeId",
+            method: "GET",
+            handler: "./src/server/instagram-files.route.ts",
+          },
         ],
       }),
       viteReact(),
