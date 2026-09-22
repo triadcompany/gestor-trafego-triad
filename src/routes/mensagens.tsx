@@ -811,7 +811,12 @@ function AutomacoesTab() {
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
-                    onClick={() => runNow(a.id)}
+                    onClick={() => {
+                      const dest = a.destinations.map((d) => d.name).join(", ") || "nenhum destino configurado";
+                      if (confirm(`Rodar "${a.name}" agora?\n\nIsso ENVIA de verdade, já, pra: ${dest}.\n\nNão é um teste — quem estiver do outro lado recebe a mensagem real.`)) {
+                        runNow(a.id);
+                      }
+                    }}
                     disabled={runningId === a.id}
                     aria-label="Rodar agora"
                   >
