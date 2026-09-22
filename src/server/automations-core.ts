@@ -2,7 +2,7 @@
 // handler do tick e via import() dinâmico dentro de handlers). Concentra toda a
 // lógica que toca o banco fora de um createServerFn: escolha de token/instância
 // sem sessão, materialização de regra em mensagem agendada, e o tick.
-import { and, eq, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   clients,
@@ -85,6 +85,49 @@ async function pickWhatsappInstance(opts: {
     .where(and(eq(whatsappInstances.organizationId, opts.organizationId), eq(whatsappInstances.active, true)))
     .orderBy(whatsappInstances.createdAt);
   return candidates[0] ? shape(candidates[0]) : null;
+}
+
+// Instância "do gestor" — pra toda automação interna (relatório, resumo de
+// grupo, texto livre). Nunca cai numa instância de rastreamento presa a um
+// cliente específico, mesmo que essa seja a mais antiga da organização — uma
+// automação já saiu pela instância errada assim, mensagem "enviada com
+// sucesso" mas indo pra sessão/grupo que ninguém acompanha (ou nem existe
+// mais). Mesmo cuidado que resolveGestorWhatsappInstance já toma pro envio
+// manual (src/lib/whatsapp-messages.ts) — se explicitInstanceId apontar pra
+// uma instância de cliente (regra antiga, ou apagada), ignora e cai pro
+// fallback em vez de usar.
+async function pickGestorWhatsappInstance(opts: {
+  organizationId: string;
+  explicitInstanceId?: string | null;
+}): Promise<PickedInstance | null> {
+  const shape = (row: typeof whatsappInstances.$inferSelect): PickedInstance => ({
+    instanceId: row.id,
+    url: row.evolutionUrl,
+    apiKey: row.evolutionKey,
+    instance: row.instanceName,
+  });
+  const gestorOnly = and(
+    eq(whatsappInstances.organizationId, opts.organizationId),
+    eq(whatsappInstances.active, true),
+    isNull(clients.id)
+  );
+
+  if (opts.explicitInstanceId) {
+    const rows = await db
+      .select({ instance: whatsappInstances })
+      .from(whatsappInstances)
+      .leftJoin(clients, eq(clients.whatsappInstanceId, whatsappInstances.id))
+      .where(and(eq(whatsappInstances.id, opts.explicitInstanceId), gestorOnly));
+    if (rows[0]) return shape(rows[0].instance);
+  }
+
+  const candidates = await db
+    .select({ instance: whatsappInstances })
+    .from(whatsappInstances)
+    .leftJoin(clients, eq(clients.whatsappInstanceId, whatsappInstances.id))
+    .where(gestorOnly)
+    .orderBy(whatsappInstances.createdAt);
+  return candidates[0] ? shape(candidates[0].instance) : null;
 }
 
 // ── Recorrência ─────────────────────────────────────────────────────────────
@@ -272,8 +315,8 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
       });
       if (!client) return { created: false, warnings: [`Regra "${rule.name}": cliente ${clientId} não encontrado.`] };
 
-      const instance = await pickWhatsappInstance({ organizationId: rule.organizationId, clientId: client.id, explicitInstanceId: rule.whatsappInstanceId });
-      if (!instance) return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): nenhuma instância de WhatsApp ativa.`] };
+      const instance = await pickGestorWhatsappInstance({ organizationId: rule.organizationId, explicitInstanceId: rule.whatsappInstanceId });
+      if (!instance) return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): nenhuma instância de WhatsApp do gestor ativa.`] };
 
       const tokenRow = await pickMetaTokenRow({ organizationId: rule.organizationId, clientId: client.id });
       if (!tokenRow) return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): nenhum token Meta ativo.`] };
@@ -375,12 +418,11 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
 
   const warnings: string[] = [];
 
-  const instance = await pickWhatsappInstance({
+  const instance = await pickGestorWhatsappInstance({
     organizationId: rule.organizationId,
-    clientId: rule.clientId,
     explicitInstanceId: rule.whatsappInstanceId,
   });
-  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp ativa na organização.`] };
+  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp do gestor ativa na organização.`] };
 
   let text: string;
   if (rule.contentType === "group_summary") {

@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -958,14 +958,21 @@ function AutomationComposerDialog({
     if (tpl) setReportBody(tpl.body);
   }, [templates, reportTemplateId]);
 
+  // Automação é sempre interna — nunca deve sair pela instância de
+  // rastreamento de um cliente específico (essa é só pro grupo/número daquele
+  // cliente, e pode nem ser membro do grupo operacional). Por isso o seletor
+  // só lista instâncias sem cliente vinculado, mesmo filtro usado em
+  // Configurações pra separar "Interno/Gestor" de "Clientes".
+  const gestorInstances = useMemo(() => instances.filter((i) => !i.clientName), [instances]);
+
   // Sem instância explícita (automação nova, ou antiga salva com "automático")
-  // cai na instância principal — a mais antiga da organização, mesma ordem que
-  // o backend já usa como resolução automática (pickWhatsappInstance). Preenche
-  // assim que a lista carrega, em vez de deixar uma opção "automática" vaga no
-  // seletor.
+  // cai na instância do gestor mais antiga da organização, mesma ordem que o
+  // backend já usa como resolução automática (pickGestorWhatsappInstance).
+  // Preenche assim que a lista carrega, em vez de deixar uma opção
+  // "automática" vaga no seletor.
   useEffect(() => {
-    if (!instanceId && instances.length > 0) setInstanceId(instances[0].id);
-  }, [instances, instanceId]);
+    if (!instanceId && gestorInstances.length > 0) setInstanceId(gestorInstances[0].id);
+  }, [gestorInstances, instanceId]);
 
   const reset = () => {
     setLoadedId(null);
@@ -1406,13 +1413,13 @@ function AutomationComposerDialog({
             <RecipientSearch selected={customRecipients} onChange={setCustomRecipients} />
           </div>
 
-          {instances.length > 1 && (
+          {gestorInstances.length > 1 && (
             <div className="space-y-1.5">
-              <Label>Instância WhatsApp</Label>
+              <Label>Instância WhatsApp (do gestor)</Label>
               <Select value={instanceId} onValueChange={setInstanceId}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  {instances.map((i) => <SelectItem key={i.id} value={i.id}>{i.label}</SelectItem>)}
+                  {gestorInstances.map((i) => <SelectItem key={i.id} value={i.id}>{i.label}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
