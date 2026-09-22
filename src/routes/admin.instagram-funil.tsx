@@ -27,16 +27,18 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Instagram, Plus, Trash2, ExternalLink, MessageCircle } from "lucide-react";
+import { Instagram, Plus, Pencil, Trash2, ExternalLink, MessageCircle } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchFunnelRules,
   createFunnelRule,
+  updateFunnelRule,
   toggleFunnelRule,
   deleteFunnelRule,
   fetchRecentInstagramPosts,
   fetchFunnelLeads,
   type InstagramPostRow,
+  type FunnelRuleRow,
 } from "@/server/instagram-funnel";
 
 export const Route = createFileRoute("/admin/instagram-funil")({
@@ -80,6 +82,7 @@ function InstagramFunilPage() {
 function RulesTab() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingRule, setEditingRule] = useState<FunnelRuleRow | null>(null);
 
   const { data: rules = [], isLoading } = useQuery({ queryKey: ["instagram-funnel-rules"], queryFn: fetchFunnelRules });
 
@@ -105,6 +108,10 @@ function RulesTab() {
           <NewRuleDialog onCreated={() => setDialogOpen(false)} />
         </Dialog>
       </div>
+
+      <Dialog open={!!editingRule} onOpenChange={(o) => !o && setEditingRule(null)}>
+        {editingRule && <EditRuleDialog rule={editingRule} onSaved={() => setEditingRule(null)} />}
+      </Dialog>
 
       {isLoading ? (
         <div className="space-y-2">
@@ -140,6 +147,9 @@ function RulesTab() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <Switch checked={r.active} onCheckedChange={(v) => toggleMutation.mutate({ id: r.id, active: v })} />
+                <Button size="icon" variant="ghost" onClick={() => setEditingRule(r)}>
+                  <Pencil className="h-4 w-4" />
+                </Button>
                 <Button
                   size="icon"
                   variant="ghost"
@@ -250,6 +260,77 @@ function NewRuleDialog({ onCreated }: { onCreated: () => void }) {
           disabled={!selectedPost || !keyword.trim() || !message.trim() || createMutation.isPending}
         >
           {createMutation.isPending ? "Criando..." : "Criar regra"}
+        </Button>
+      </DialogFooter>
+    </DialogContent>
+  );
+}
+
+// Edita palavra-chave/mensagens de uma regra existente — o post fica fixo
+// (mudar de post é raro o bastante pra não valer a complexidade de reabrir o
+// seletor de posts aqui; nesse caso é mais simples excluir e criar de novo).
+function EditRuleDialog({ rule, onSaved }: { rule: FunnelRuleRow; onSaved: () => void }) {
+  const queryClient = useQueryClient();
+  const [keyword, setKeyword] = useState(rule.keyword);
+  const [message, setMessage] = useState(rule.message);
+  const [publicReply, setPublicReply] = useState(rule.public_reply ?? "");
+
+  const updateMutation = useMutation({
+    mutationFn: () =>
+      updateFunnelRule({
+        id: rule.id,
+        keyword: keyword.trim(),
+        message: message.trim(),
+        public_reply: publicReply.trim() || null,
+      }),
+    onSuccess: () => {
+      toast.success("Regra atualizada.");
+      queryClient.invalidateQueries({ queryKey: ["instagram-funnel-rules"] });
+      onSaved();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar regra"),
+  });
+
+  return (
+    <DialogContent className="max-w-lg">
+      <DialogHeader>
+        <DialogTitle>Editar regra</DialogTitle>
+      </DialogHeader>
+      <div className="space-y-4 py-2">
+        <div className="flex items-center gap-3">
+          {rule.post_thumbnail_url ? (
+            <img src={rule.post_thumbnail_url} alt="" className="h-14 w-14 rounded-md object-cover shrink-0" />
+          ) : (
+            <div className="h-14 w-14 rounded-md bg-muted flex items-center justify-center shrink-0">
+              <Instagram className="h-5 w-5 text-muted-foreground" />
+            </div>
+          )}
+          {rule.post_permalink && (
+            <a href={rule.post_permalink} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
+              Ver post <ExternalLink className="h-3 w-3" />
+            </a>
+          )}
+        </div>
+        <div className="space-y-1.5">
+          <Label>Palavra-chave</Label>
+          <Input value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder="Ex: QUERO" />
+          <p className="text-[11px] text-muted-foreground">Bate se o comentário contiver essa palavra (sem diferenciar maiúsculas).</p>
+        </div>
+        <div className="space-y-1.5">
+          <Label>Mensagem do DM</Label>
+          <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Oi! Vi que você comentou..." className="min-h-[90px]" />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Resposta pública no comentário (opcional)</Label>
+          <Input value={publicReply} onChange={(e) => setPublicReply(e.target.value)} placeholder="Ex: Te mandei no Direct!" />
+        </div>
+      </div>
+      <DialogFooter>
+        <Button
+          onClick={() => updateMutation.mutate()}
+          disabled={!keyword.trim() || !message.trim() || updateMutation.isPending}
+        >
+          {updateMutation.isPending ? "Salvando..." : "Salvar"}
         </Button>
       </DialogFooter>
     </DialogContent>

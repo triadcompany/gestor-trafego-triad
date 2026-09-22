@@ -199,6 +199,36 @@ export async function createFunnelRule(payload: {
   await _createFunnelRule({ data: payload });
 }
 
+const updateRuleSchema = z.object({
+  id: z.string(),
+  keyword: z.string().min(1),
+  message: z.string().min(1),
+  public_reply: z.string().nullable().optional(),
+});
+
+const _updateFunnelRule = createServerFn({ method: "POST" })
+  .inputValidator(updateRuleSchema)
+  .handler(async ({ data }) => {
+    const { organizationId } = await requirePlatformAdminOrg();
+    await db
+      .update(instagramFunnelRules)
+      .set({
+        keyword: data.keyword.trim(),
+        message: data.message,
+        publicReply: data.public_reply?.trim() || null,
+      })
+      .where(and(eq(instagramFunnelRules.id, data.id), eq(instagramFunnelRules.organizationId, organizationId)));
+  });
+
+export async function updateFunnelRule(payload: {
+  id: string;
+  keyword: string;
+  message: string;
+  public_reply?: string | null;
+}): Promise<void> {
+  await _updateFunnelRule({ data: payload });
+}
+
 const _toggleFunnelRule = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string(), active: z.boolean() }))
   .handler(async ({ data }) => {
