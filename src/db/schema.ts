@@ -342,6 +342,59 @@ export const metaLeadAttributions = pgTable(
   ]
 );
 
+// ── Funil de vendas via Instagram (ferramenta interna, só da Triad Company —
+// não é multi-tenant, gerenciada atrás de requirePlatformAdmin) ────────────
+// Comentário com palavra-chave num post específico dispara resposta privada
+// automática no Direct via Instagram Messaging API.
+
+export const instagramConnections = pgTable("instagram_connections", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  instagramBusinessAccountId: text("instagram_business_account_id").notNull(),
+  accessToken: text("access_token").notNull(),
+  expiresAt: timestamp("expires_at"),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const instagramFunnelRules = pgTable("instagram_funnel_rules", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  organizationId: uuid("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
+  postId: text("post_id").notNull(),
+  postThumbnailUrl: text("post_thumbnail_url"),
+  postPermalink: text("post_permalink"),
+  keyword: text("keyword").notNull(), // comparação: contém, case-insensitive
+  message: text("message").notNull(),
+  active: boolean("active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const instagramFunnelLeads = pgTable(
+  "instagram_funnel_leads",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    ruleId: uuid("rule_id")
+      .notNull()
+      .references(() => instagramFunnelRules.id, { onDelete: "cascade" }),
+    commentId: text("comment_id").notNull(),
+    igUsername: text("ig_username"),
+    igUserId: text("ig_user_id").notNull(),
+    commentText: text("comment_text").notNull(),
+    status: text("status").notNull(), // sent | failed
+    errorMessage: text("error_message"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    // Rede de segurança contra reprocessar o mesmo comentário duas vezes se
+    // o webhook da Meta reentregar o mesmo evento.
+    unique("instagram_funnel_leads_dedupe_key").on(t.ruleId, t.commentId),
+  ]
+);
+
 export const tags = pgTable("tags", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id")
@@ -748,4 +801,12 @@ export const messageAutomationMediaRelations = relations(messageAutomationMedia,
     fields: [messageAutomationMedia.automationId],
     references: [messageAutomations.id],
   }),
+}));
+
+export const instagramFunnelRulesRelations = relations(instagramFunnelRules, ({ many }) => ({
+  leads: many(instagramFunnelLeads),
+}));
+
+export const instagramFunnelLeadsRelations = relations(instagramFunnelLeads, ({ one }) => ({
+  rule: one(instagramFunnelRules, { fields: [instagramFunnelLeads.ruleId], references: [instagramFunnelRules.id] }),
 }));

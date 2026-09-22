@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X, Sun, Moon, MessageCircle, Target, ChevronsLeft } from "lucide-react";
+import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X, Sun, Moon, MessageCircle, Target, ChevronsLeft, Instagram } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { logout } from "@/server/session";
+import { logout, getCurrentUser } from "@/server/session";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { fetchCurrentProfile } from "@/lib/queries";
@@ -43,6 +43,15 @@ const navGroups = [
     ],
   },
 ] as const;
+
+// Só aparece pra platform admin (Triad Company) — ferramenta interna, não é
+// recurso multi-tenant. Ver docs/superpowers/specs/2026-09-21-funil-instagram-design.md.
+const adminNavGroup = {
+  label: "Admin",
+  items: [
+    { to: "/admin/instagram-funil", label: "Funil Instagram", icon: Instagram, exact: false },
+  ],
+} as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -88,6 +97,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     queryFn: fetchCurrentProfile,
     staleTime: Infinity,
   });
+
+  const { data: currentUser } = useQuery({
+    queryKey: ["current-user"],
+    queryFn: getCurrentUser,
+    staleTime: 1000 * 60,
+  });
+  const visibleNavGroups = currentUser?.isPlatformAdmin ? [...navGroups, adminNavGroup] : navGroups;
 
   const { theme, toggleTheme } = useTheme();
 
@@ -144,7 +160,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <nav className="flex-1 p-3 space-y-4 overflow-y-auto overflow-x-hidden">
-          {navGroups.map((group) => (
+          {visibleNavGroups.map((group) => (
             <div key={group.label}>
               {!effectiveCollapsed && (
                 <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 whitespace-nowrap">
@@ -241,7 +257,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             {/* Itens de navegação */}
             <nav className="flex-1 overflow-y-auto p-3 space-y-4">
-              {navGroups.map((group) => (
+              {visibleNavGroups.map((group) => (
                 <div key={group.label}>
                   <div className="px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
                     {group.label}

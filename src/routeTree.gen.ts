@@ -28,6 +28,8 @@ import { Route as ClientsIdRouteImport } from './routes/clients.$id'
 import { Route as CampaignsNewRouteImport } from './routes/campaigns.new'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AdminOrganizationsRouteImport } from './routes/admin.organizations'
+import { Route as AdminInstagramFunilRouteImport } from './routes/admin.instagram-funil'
+import { Route as AdminInstagramConexaoRouteImport } from './routes/admin.instagram-conexao'
 import { Route as CampaignsEditIdRouteImport } from './routes/campaigns.edit.$id'
 import { Route as AuthGoogleCallbackRouteImport } from './routes/auth.google.callback'
 
@@ -126,6 +128,16 @@ const AdminOrganizationsRoute = AdminOrganizationsRouteImport.update({
   path: '/admin/organizations',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminInstagramFunilRoute = AdminInstagramFunilRouteImport.update({
+  id: '/admin/instagram-funil',
+  path: '/admin/instagram-funil',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminInstagramConexaoRoute = AdminInstagramConexaoRouteImport.update({
+  id: '/admin/instagram-conexao',
+  path: '/admin/instagram-conexao',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const CampaignsEditIdRoute = CampaignsEditIdRouteImport.update({
   id: '/campaigns/edit/$id',
   path: '/campaigns/edit/$id',
@@ -150,6 +162,8 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
   '/vendas': typeof VendasRoute
+  '/admin/instagram-conexao': typeof AdminInstagramConexaoRoute
+  '/admin/instagram-funil': typeof AdminInstagramFunilRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
@@ -173,6 +187,8 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
   '/vendas': typeof VendasRoute
+  '/admin/instagram-conexao': typeof AdminInstagramConexaoRoute
+  '/admin/instagram-funil': typeof AdminInstagramFunilRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
@@ -197,6 +213,8 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
   '/vendas': typeof VendasRoute
+  '/admin/instagram-conexao': typeof AdminInstagramConexaoRoute
+  '/admin/instagram-funil': typeof AdminInstagramFunilRoute
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
@@ -222,6 +240,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tarefas'
     | '/vendas'
+    | '/admin/instagram-conexao'
+    | '/admin/instagram-funil'
     | '/admin/organizations'
     | '/auth/callback'
     | '/campaigns/new'
@@ -245,6 +265,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tarefas'
     | '/vendas'
+    | '/admin/instagram-conexao'
+    | '/admin/instagram-funil'
     | '/admin/organizations'
     | '/auth/callback'
     | '/campaigns/new'
@@ -268,6 +290,8 @@ export interface FileRouteTypes {
     | '/settings'
     | '/tarefas'
     | '/vendas'
+    | '/admin/instagram-conexao'
+    | '/admin/instagram-funil'
     | '/admin/organizations'
     | '/auth/callback'
     | '/campaigns/new'
@@ -292,6 +316,8 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   TarefasRoute: typeof TarefasRoute
   VendasRoute: typeof VendasRoute
+  AdminInstagramConexaoRoute: typeof AdminInstagramConexaoRoute
+  AdminInstagramFunilRoute: typeof AdminInstagramFunilRoute
   AdminOrganizationsRoute: typeof AdminOrganizationsRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   CampaignsNewRoute: typeof CampaignsNewRoute
@@ -438,6 +464,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminOrganizationsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/instagram-funil': {
+      id: '/admin/instagram-funil'
+      path: '/admin/instagram-funil'
+      fullPath: '/admin/instagram-funil'
+      preLoaderRoute: typeof AdminInstagramFunilRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/instagram-conexao': {
+      id: '/admin/instagram-conexao'
+      path: '/admin/instagram-conexao'
+      fullPath: '/admin/instagram-conexao'
+      preLoaderRoute: typeof AdminInstagramConexaoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/campaigns/edit/$id': {
       id: '/campaigns/edit/$id'
       path: '/campaigns/edit/$id'
@@ -468,6 +508,8 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   TarefasRoute: TarefasRoute,
   VendasRoute: VendasRoute,
+  AdminInstagramConexaoRoute: AdminInstagramConexaoRoute,
+  AdminInstagramFunilRoute: AdminInstagramFunilRoute,
   AdminOrganizationsRoute: AdminOrganizationsRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   CampaignsNewRoute: CampaignsNewRoute,

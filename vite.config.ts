@@ -43,6 +43,13 @@ export default defineConfig(({ mode }) => {
             method: "POST",
             handler: "./src/server/evolution-webhook.route.ts",
           },
+          {
+            // Sem `method`: casa GET (handshake de verificação da Meta) e
+            // POST (evento de comentário) — o handler distingue por
+            // event.req.method internamente.
+            route: "/api/webhooks/instagram",
+            handler: "./src/server/instagram-webhook.route.ts",
+          },
         ],
       }),
       viteReact(),
