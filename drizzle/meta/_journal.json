@@ -190,6 +190,13 @@
       "when": 1790044324805,
       "tag": "0026_instagram_funnel_condition_ai",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1790097198753,
+      "tag": "0027_whatsapp_instance_default_gestor",
+      "breakpoints": true
     }
   ]
 }

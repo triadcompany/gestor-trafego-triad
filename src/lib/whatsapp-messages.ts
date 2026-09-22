@@ -137,6 +137,7 @@ export interface WhatsappInstanceRow {
   createdAt: string;
   clientId: string | null;
   clientName: string | null;
+  isDefaultGestor: boolean;
 }
 
 const _fetchWhatsappInstances = createServerFn({ method: "GET" }).handler(async (): Promise<WhatsappInstanceRow[]> => {
@@ -151,6 +152,7 @@ const _fetchWhatsappInstances = createServerFn({ method: "GET" }).handler(async 
       createdAt: whatsappInstances.createdAt,
       clientId: clients.id,
       clientName: clients.name,
+      isDefaultGestor: whatsappInstances.isDefaultGestor,
     })
     .from(whatsappInstances)
     .leftJoin(clients, eq(clients.whatsappInstanceId, whatsappInstances.id))
@@ -393,6 +395,25 @@ const _setInstanceClient = createServerFn({ method: "POST" })
 
 export async function setInstanceClient(id: string, clientId: string | null): Promise<void> {
   await _setInstanceClient({ data: { id, clientId } });
+}
+
+// Marca qual instância é "a" instância oficial do gestor pra automação — no
+// máximo uma por organização, então desmarca qualquer outra primeiro. Usada
+// como prioridade no fallback automático (pickGestorWhatsappInstance em
+// automations-core.ts) quando a regra não tem instância explícita escolhida.
+const _setDefaultGestorInstance = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await loadInstanceInOrg(data.id, organizationId);
+    await db.transaction(async (tx) => {
+      await tx.update(whatsappInstances).set({ isDefaultGestor: false }).where(eq(whatsappInstances.organizationId, organizationId));
+      await tx.update(whatsappInstances).set({ isDefaultGestor: true }).where(eq(whatsappInstances.id, data.id));
+    });
+  });
+
+export async function setDefaultGestorInstance(id: string): Promise<void> {
+  await _setDefaultGestorInstance({ data: { id } });
 }
 
 const _deleteWhatsappInstance = createServerFn({ method: "POST" })

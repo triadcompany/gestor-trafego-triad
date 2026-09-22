@@ -59,6 +59,7 @@ import {
   createWhatsappInstance,
   renameWhatsappInstance,
   setInstanceClient,
+  setDefaultGestorInstance,
   deleteWhatsappInstance,
   fetchWhatsappInstanceQr,
   fetchWhatsappInstanceState,
@@ -552,6 +553,15 @@ function WhatsappInstancesSection() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao remover instância"),
   });
 
+  const setDefaultMutation = useMutation({
+    mutationFn: setDefaultGestorInstance,
+    onSuccess: () => {
+      toast.success("Instância marcada como padrão do gestor.");
+      queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao marcar como padrão"),
+  });
+
   const openEdit = (i: WhatsappInstanceRow) => {
     setEditing(i);
     setEditLabel(i.label);
@@ -675,6 +685,7 @@ function WhatsappInstancesSection() {
             onCopyLink={(id) => linkMutation.mutate(id)}
             onEdit={openEdit}
             onDelete={(i) => { if (confirm(`Excluir a instância "${i.label}"? Isso desconecta e apaga ela na Evolution.`)) deleteMutation.mutate(i.id); }}
+            onSetDefault={(id) => setDefaultMutation.mutate(id)}
           />
           <WhatsappInstanceGroup
             title="Clientes"
@@ -754,6 +765,7 @@ function WhatsappInstanceGroup({
   onCopyLink,
   onEdit,
   onDelete,
+  onSetDefault,
 }: {
   title: string;
   instances: WhatsappInstanceRow[];
@@ -762,6 +774,7 @@ function WhatsappInstanceGroup({
   onCopyLink: (id: string) => void;
   onEdit: (i: WhatsappInstanceRow) => void;
   onDelete: (i: WhatsappInstanceRow) => void;
+  onSetDefault?: (id: string) => void;
 }) {
   return (
     <div>
@@ -777,7 +790,14 @@ function WhatsappInstanceGroup({
             return (
               <div key={i.id} className="px-5 py-3 flex items-center gap-3">
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{i.label}</p>
+                  <p className="text-sm font-medium truncate flex items-center gap-1.5">
+                    {i.label}
+                    {i.isDefaultGestor && (
+                      <Badge variant="secondary" className="gap-1 text-[10px] px-1.5 py-0">
+                        <Star className="h-2.5 w-2.5 fill-current" /> Padrão do gestor
+                      </Badge>
+                    )}
+                  </p>
                   <p className="text-xs text-muted-foreground font-mono truncate">
                     {i.instanceName}{assigned ? ` · ${assigned.fullName}` : ""}
                   </p>
@@ -790,6 +810,11 @@ function WhatsappInstanceGroup({
                   </p>
                 </div>
                 <WaStateDot id={i.id} />
+                {onSetDefault && !i.isDefaultGestor && (
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onSetDefault(i.id)} title="Usar essa como padrão nas automações">
+                    <Star className="h-3.5 w-3.5" /> Marcar como padrão
+                  </Button>
+                )}
                 <Button size="sm" variant="outline" onClick={() => onConnect(i.id)}>Conectar</Button>
                 <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onCopyLink(i.id)}>
                   <Copy className="h-3.5 w-3.5" /> Copiar link

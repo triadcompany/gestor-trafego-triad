@@ -2,7 +2,7 @@
 // handler do tick e via import() dinâmico dentro de handlers). Concentra toda a
 // lógica que toca o banco fora de um createServerFn: escolha de token/instância
 // sem sessão, materialização de regra em mensagem agendada, e o tick.
-import { and, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   clients,
@@ -121,12 +121,14 @@ async function pickGestorWhatsappInstance(opts: {
     if (rows[0]) return shape(rows[0].instance);
   }
 
+  // Instância marcada como padrão primeiro (ver setDefaultGestorInstance em
+  // whatsapp-messages.ts); sem nenhuma marcada, cai na mais antiga.
   const candidates = await db
     .select({ instance: whatsappInstances })
     .from(whatsappInstances)
     .leftJoin(clients, eq(clients.whatsappInstanceId, whatsappInstances.id))
     .where(gestorOnly)
-    .orderBy(whatsappInstances.createdAt);
+    .orderBy(desc(whatsappInstances.isDefaultGestor), whatsappInstances.createdAt);
   return candidates[0] ? shape(candidates[0].instance) : null;
 }
 

@@ -1,0 +1,1 @@
+ALTER TABLE "whatsapp_instances" ADD COLUMN "is_default_gestor" boolean DEFAULT false NOT NULL;

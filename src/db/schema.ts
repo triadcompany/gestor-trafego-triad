@@ -98,6 +98,11 @@ export const whatsappInstances = pgTable("whatsapp_instances", {
   instanceName: text("instance_name").notNull(),
   assignedUserId: uuid("assigned_user_id").references(() => profiles.id, { onDelete: "set null" }),
   active: boolean("active").notNull().default(true),
+  // Instância "oficial" do gestor pra automação — no máximo uma marcada por
+  // organização (garantido na hora de marcar, não por constraint). Sem
+  // nenhuma marcada, o fallback de automação cai na instância do gestor mais
+  // antiga (ver pickGestorWhatsappInstance em automations-core.ts).
+  isDefaultGestor: boolean("is_default_gestor").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   // Token pra link público de conexão (cliente escaneia o QR sem precisar logar
   // no sistema) — nulo = nenhum link ativo no momento. Expira sozinho por tempo
