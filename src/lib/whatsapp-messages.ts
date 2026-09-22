@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { db } from "@/db/client";
@@ -59,13 +59,22 @@ const _resolveWhatsappInstance = createServerFn({ method: "GET" })
       }
     }
 
-    const candidates = await db
-      .select()
+    // Fallback (sem cliente, ou cliente sem instância própria): só instância
+    // "do gestor" — nunca a de OUTRO cliente qualquer. Mesmo bug de antes (ver
+    // comentário acima) também acontecia aqui: "Enviar lista de campanhas" e o
+    // relatório semanal chamam isso sem clientId, e sem esse filtro podiam cair
+    // na instância de rastreamento de um cliente qualquer (mensagem "enviada"
+    // mas nunca chegava em lugar nenhum, porque essa instância não é membro do
+    // grupo operacional).
+    const rows = await db
+      .select({ instance: whatsappInstances })
       .from(whatsappInstances)
-      .where(and(eq(whatsappInstances.organizationId, organizationId), eq(whatsappInstances.active, true)))
-      .orderBy(whatsappInstances.createdAt);
+      .leftJoin(clients, eq(clients.whatsappInstanceId, whatsappInstances.id))
+      .where(and(eq(whatsappInstances.organizationId, organizationId), eq(whatsappInstances.active, true), isNull(clients.id)))
+      .orderBy(desc(whatsappInstances.isDefaultGestor), whatsappInstances.createdAt);
+    const candidates = rows.map((r) => r.instance);
     const chosen = candidates.find((i) => i.assignedUserId === userId) ?? candidates[0];
-    if (!chosen) throw new Error("Nenhuma instância de WhatsApp configurada. Acesse Configurações.");
+    if (!chosen) throw new Error("Nenhuma instância de WhatsApp do gestor configurada. Acesse Configurações.");
     return { instanceId: chosen.id, url: chosen.evolutionUrl, apiKey: chosen.evolutionKey, instance: chosen.instanceName };
   });
 
