@@ -20,6 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
 import {
   Dialog,
   DialogContent,
@@ -27,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { ArrowLeft, Zap, MessageSquare, GitBranch, Plus, X, Save, Paperclip } from "lucide-react";
+import { ArrowLeft, Zap, MessageSquare, GitBranch, Plus, X, Save, Paperclip, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { fetchFunnelGraph, saveFunnelGraph, fetchFunnels } from "@/server/instagram-funnel";
 
@@ -44,6 +45,7 @@ interface MessageData extends Record<string, unknown> {
 }
 interface ConditionData extends Record<string, unknown> {
   keywords: { id: string; keyword: string }[];
+  use_ai: boolean;
 }
 
 function TriggerNodeCard() {
@@ -84,6 +86,7 @@ function ConditionNodeCard({ data }: NodeProps<Node<ConditionData>>) {
       <Handle type="target" position={Position.Left} className="!bg-muted-foreground !w-3 !h-3" />
       <div className="flex items-center gap-1.5 text-sky-600 dark:text-sky-400 font-semibold text-[10px] uppercase tracking-wide">
         <GitBranch className="h-3.5 w-3.5" /> Condição
+        {data.use_ai && <Sparkles className="h-3 w-3" aria-label="Classificado por IA" />}
       </div>
       <div className="mt-2 space-y-1.5">
         {rows.map((r) => (
@@ -130,7 +133,7 @@ function FunnelEditorPage() {
           n.type === "message"
             ? { message: n.message ?? "", file_base64: n.file_base64, file_mimetype: n.file_mimetype, file_filename: n.file_filename }
             : n.type === "condition"
-              ? { keywords: n.condition_keywords }
+              ? { keywords: n.condition_keywords, use_ai: n.condition_use_ai }
               : {},
       }))
     );
@@ -155,7 +158,7 @@ function FunnelEditorPage() {
         type,
         position: { x: 380 + offset, y: 120 + offset },
         deletable: true,
-        data: type === "message" ? { message: "", file_base64: null, file_mimetype: null, file_filename: null } : { keywords: [] },
+        data: type === "message" ? { message: "", file_base64: null, file_mimetype: null, file_filename: null } : { keywords: [], use_ai: false },
       },
     ]);
   };
@@ -174,6 +177,7 @@ function FunnelEditorPage() {
           file_mimetype: n.type === "message" ? (n.data as MessageData).file_mimetype : null,
           file_filename: n.type === "message" ? (n.data as MessageData).file_filename : null,
           condition_keywords: n.type === "condition" ? (n.data as ConditionData).keywords : [],
+          condition_use_ai: n.type === "condition" ? (n.data as ConditionData).use_ai : false,
         })),
         edges.map((e) => ({ source_node_id: e.source, source_handle: e.sourceHandle ?? null, target_node_id: e.target }))
       ),
@@ -232,8 +236,8 @@ function FunnelEditorPage() {
         {editingNode?.type === "condition" && (
           <ConditionNodeEditor
             data={editingNode.data as ConditionData}
-            onSave={(keywords) => {
-              setNodes((nds) => nds.map((n) => (n.id === editingNode.id ? { ...n, data: { ...n.data, keywords } } : n)));
+            onSave={(patch) => {
+              setNodes((nds) => nds.map((n) => (n.id === editingNode.id ? { ...n, data: { ...n.data, ...patch } } : n)));
               setEditingNode(null);
             }}
           />
@@ -314,8 +318,11 @@ function MessageNodeEditor({ data, onSave }: { data: MessageData; onSave: (patch
   );
 }
 
-function ConditionNodeEditor({ data, onSave }: { data: ConditionData; onSave: (keywords: { id: string; keyword: string }[]) => void }) {
+type ConditionPatch = { keywords: { id: string; keyword: string }[]; use_ai: boolean };
+
+function ConditionNodeEditor({ data, onSave }: { data: ConditionData; onSave: (patch: ConditionPatch) => void }) {
   const [keywords, setKeywords] = useState(data.keywords);
+  const [useAi, setUseAi] = useState(data.use_ai);
 
   return (
     <DialogContent>
@@ -347,9 +354,22 @@ function ConditionNodeEditor({ data, onSave }: { data: ConditionData; onSave: (k
         <p className="text-[11px] text-muted-foreground">
           Sempre tem também uma saída fixa "Nenhuma bateu", pra quando a resposta não bater com nenhuma acima.
         </p>
+
+        <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5 mt-3">
+          <div className="min-w-0">
+            <p className="text-sm font-medium flex items-center gap-1.5">
+              <Sparkles className="h-3.5 w-3.5 text-muted-foreground" /> Classificar com IA
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Em vez de exigir a palavra exata, manda a resposta pro GPT escolher a opção mais parecida com a
+              intenção (usa a chave OpenAI já configurada em Configurações).
+            </p>
+          </div>
+          <Switch checked={useAi} onCheckedChange={setUseAi} className="shrink-0" />
+        </div>
       </div>
       <DialogFooter>
-        <Button onClick={() => onSave(keywords.filter((k) => k.keyword.trim()))}>Salvar bloco</Button>
+        <Button onClick={() => onSave({ keywords: keywords.filter((k) => k.keyword.trim()), use_ai: useAi })}>Salvar bloco</Button>
       </DialogFooter>
     </DialogContent>
   );

@@ -183,6 +183,13 @@
       "when": 1790043000729,
       "tag": "0025_instagram_funnel_file_attachment",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1790044324805,
+      "tag": "0026_instagram_funnel_condition_ai",
+      "breakpoints": true
     }
   ]
 }

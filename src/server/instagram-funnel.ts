@@ -394,6 +394,7 @@ export interface FunnelNodeRow {
   file_mimetype: string | null;
   file_filename: string | null;
   condition_keywords: { id: string; keyword: string }[];
+  condition_use_ai: boolean;
 }
 
 export interface FunnelEdgeRow {
@@ -426,6 +427,7 @@ const _fetchFunnelGraph = createServerFn({ method: "GET" })
         file_mimetype: n.fileMimetype,
         file_filename: n.fileFilename,
         condition_keywords: (n.conditionKeywords as { id: string; keyword: string }[] | null) ?? [],
+        condition_use_ai: n.conditionUseAi,
       })),
       edges: edgeRows.map((e) => ({ id: e.id, source_node_id: e.sourceNodeId, source_handle: e.sourceHandle, target_node_id: e.targetNodeId })),
     };
@@ -448,6 +450,7 @@ const saveGraphSchema = z.object({
       file_mimetype: z.string().nullable().optional(),
       file_filename: z.string().nullable().optional(),
       condition_keywords: z.array(z.object({ id: z.string(), keyword: z.string() })).optional(),
+      condition_use_ai: z.boolean().optional(),
     })
   ),
   edges: z.array(
@@ -489,6 +492,7 @@ const _saveFunnelGraph = createServerFn({ method: "POST" })
             fileMimetype: n.type === "message" ? (n.file_mimetype ?? null) : null,
             fileFilename: n.type === "message" ? (n.file_filename ?? null) : null,
             conditionKeywords: n.type === "condition" ? (n.condition_keywords ?? []) : [],
+            conditionUseAi: n.type === "condition" ? (n.condition_use_ai ?? false) : false,
           }))
         );
       }

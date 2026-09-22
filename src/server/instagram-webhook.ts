@@ -1,6 +1,8 @@
+import OpenAI from "openai";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
+  appConfig,
   instagramConnections,
   instagramFunnelLeads,
   instagramFunnelRules,
@@ -172,10 +174,10 @@ async function processIncomingMessage(igBusinessAccountId: string, senderId: str
   await db.delete(instagramFunnelSessions).where(eq(instagramFunnelSessions.id, session.id));
   if (!node || node.type !== "condition") return;
 
-  const textLower = text.toLowerCase();
   const keywords = (node.conditionKeywords as { id: string; keyword: string }[] | null) ?? [];
-  const matched = keywords.find((k) => textLower.includes(k.keyword.toLowerCase()));
-  const handle = matched?.id ?? "default";
+  const handle = node.conditionUseAi
+    ? await classifyReplyWithAI(connection.organizationId, text, keywords)
+    : matchByKeyword(text, keywords);
 
   const edge = await db.query.instagramFunnelEdges.findFirst({
     where: and(eq(instagramFunnelEdges.sourceNodeId, node.id), eq(instagramFunnelEdges.sourceHandle, handle)),
@@ -183,6 +185,49 @@ async function processIncomingMessage(igBusinessAccountId: string, senderId: str
   if (!edge) return; // saída não conectada a nada — funil acaba aqui pra essa pessoa
 
   await advanceFunnel(connection.accessToken, igBusinessAccountId, senderId, session.funnelId, session.leadId, edge.targetNodeId);
+}
+
+function matchByKeyword(text: string, keywords: { id: string; keyword: string }[]): string {
+  const textLower = text.toLowerCase();
+  const matched = keywords.find((k) => textLower.includes(k.keyword.toLowerCase()));
+  return matched?.id ?? "default";
+}
+
+// Classifica a resposta usando a chave OpenAI já configurada em
+// Configurações → API Key do Agente — entende variações de texto que
+// "contém a palavra" não pegaria (ex: "com certeza!" bater com a opção
+// "sim"). Cai pro casamento literal se a chave não estiver configurada ou a
+// chamada falhar — nunca trava o funil por causa disso.
+async function classifyReplyWithAI(organizationId: string, text: string, keywords: { id: string; keyword: string }[]): Promise<string> {
+  if (keywords.length === 0) return "default";
+  try {
+    const row = await db.query.appConfig.findFirst({
+      where: and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, "openai_api_key")),
+    });
+    if (!row?.value) return matchByKeyword(text, keywords);
+
+    const openai = new OpenAI({ apiKey: row.value });
+    const optionsList = keywords.map((k, i) => `${i + 1}. ${k.keyword}`).join("\n");
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0,
+      max_tokens: 5,
+      messages: [
+        {
+          role: "system",
+          content: `Você classifica a resposta de um lead num funil de vendas do Instagram. Escolha qual das opções abaixo melhor representa a intenção da mensagem da pessoa, mesmo que as palavras usadas sejam diferentes. Responda só com o número da opção. Se nenhuma se encaixar, responda "0".\n\nOpções:\n${optionsList}`,
+        },
+        { role: "user", content: text },
+      ],
+    });
+    const answer = response.choices[0]?.message?.content?.trim() ?? "0";
+    const idx = parseInt(answer, 10);
+    if (Number.isInteger(idx) && idx >= 1 && idx <= keywords.length) return keywords[idx - 1].id;
+    return "default";
+  } catch (err) {
+    console.error("[instagram-webhook] falha ao classificar resposta com IA, usando casamento literal:", err);
+    return matchByKeyword(text, keywords);
+  }
 }
 
 // Segue o grafo a partir de um nó: manda mensagens em sequência sem pausa

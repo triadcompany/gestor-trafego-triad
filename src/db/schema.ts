@@ -435,6 +435,12 @@ export const instagramFunnelNodes = pgTable("instagram_funnel_nodes", {
   // só type='condition' — array de { id: uuid, keyword: string }, um por
   // saída (fora a saída fixa "Nenhuma bateu", que não precisa de linha própria)
   conditionKeywords: jsonb("condition_keywords").notNull().default([]),
+  // só type='condition' — em vez de "contém a palavra" literal, manda a
+  // resposta da pessoa pro GPT (chave OpenAI já configurada em
+  // Configurações) escolher qual palavra-chave melhor representa a
+  // intenção. Cai pro casamento literal se a chave não estiver configurada
+  // ou a chamada falhar.
+  conditionUseAi: boolean("condition_use_ai").notNull().default(false),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

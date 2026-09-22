@@ -1,0 +1,1 @@
+ALTER TABLE "instagram_funnel_nodes" ADD COLUMN "condition_use_ai" boolean DEFAULT false NOT NULL;
