@@ -132,11 +132,11 @@ function InstagramConexaoPage() {
           </p>
           <ol className="text-sm text-muted-foreground space-y-1.5 list-decimal list-inside">
             <li>
-              Crie um app em{" "}
+              Pode usar o mesmo app do Meta Ads que vocês já têm em{" "}
               <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener noreferrer" className="underline underline-offset-2 hover:text-foreground">
                 developers.facebook.com/apps
               </a>{" "}
-              (tipo "Negócios") e adicione o produto "Instagram" com "Instagram Login".
+              — um app pode ter vários produtos. Só adicione o produto "Instagram" com "Instagram Login" nele (ou crie um app novo, se preferir separar).
             </li>
             <li>Adicione a conta da Triad Company como Admin/Tester do app — dispensa revisão do app da Meta.</li>
             <li>Gere um token de usuário do Instagram com as permissões <code className="text-xs bg-muted px-1 py-0.5 rounded">instagram_business_basic</code> e <code className="text-xs bg-muted px-1 py-0.5 rounded">instagram_business_manage_messages</code>, e troque por um de longa duração.</li>
