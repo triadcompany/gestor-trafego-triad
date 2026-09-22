@@ -128,6 +128,7 @@ function RulesTab() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
                   <Badge variant="outline" className="font-mono">{r.keyword}</Badge>
+                  {r.public_reply && <Badge variant="outline" className="text-muted-foreground">+ resposta pública</Badge>}
                   {!r.active && <Badge variant="outline" className="text-muted-foreground">Pausada</Badge>}
                   {r.post_permalink && (
                     <a href={r.post_permalink} target="_blank" rel="noopener noreferrer" className="text-xs text-muted-foreground hover:text-foreground inline-flex items-center gap-1">
@@ -161,6 +162,7 @@ function NewRuleDialog({ onCreated }: { onCreated: () => void }) {
   const [selectedPost, setSelectedPost] = useState<InstagramPostRow | null>(null);
   const [keyword, setKeyword] = useState("");
   const [message, setMessage] = useState("");
+  const [publicReply, setPublicReply] = useState("");
 
   const { data: posts = [], isLoading, isError, error } = useQuery({ queryKey: ["instagram-recent-posts"], queryFn: fetchRecentInstagramPosts });
 
@@ -172,6 +174,7 @@ function NewRuleDialog({ onCreated }: { onCreated: () => void }) {
         post_permalink: selectedPost!.permalink,
         keyword: keyword.trim(),
         message: message.trim(),
+        public_reply: publicReply.trim() || null,
       }),
     onSuccess: () => {
       toast.success("Regra criada.");
@@ -230,6 +233,15 @@ function NewRuleDialog({ onCreated }: { onCreated: () => void }) {
         <div className="space-y-1.5">
           <Label>Mensagem do DM</Label>
           <Textarea value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Oi! Vi que você comentou..." className="min-h-[90px]" />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Resposta pública no comentário (opcional)</Label>
+          <Input value={publicReply} onChange={(e) => setPublicReply(e.target.value)} placeholder="Ex: Te mandei no Direct!" />
+          <p className="text-[11px] text-muted-foreground">
+            Responde o comentário publicamente, além do DM. Exige permissão extra no token
+            (<code className="text-[11px] bg-muted px-1 py-0.5 rounded">instagram_business_manage_comments</code>) —
+            deixe em branco se o token atual não tiver essa permissão.
+          </p>
         </div>
       </div>
       <DialogFooter>

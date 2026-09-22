@@ -135,6 +135,7 @@ export interface FunnelRuleRow {
   post_permalink: string | null;
   keyword: string;
   message: string;
+  public_reply: string | null;
   active: boolean;
   created_at: string;
 }
@@ -153,6 +154,7 @@ const _fetchFunnelRules = createServerFn({ method: "GET" }).handler(async (): Pr
     post_permalink: r.postPermalink,
     keyword: r.keyword,
     message: r.message,
+    public_reply: r.publicReply,
     active: r.active,
     created_at: r.createdAt,
   }));
@@ -168,6 +170,7 @@ const createRuleSchema = z.object({
   post_permalink: z.string().nullable().optional(),
   keyword: z.string().min(1),
   message: z.string().min(1),
+  public_reply: z.string().nullable().optional(),
 });
 
 const _createFunnelRule = createServerFn({ method: "POST" })
@@ -181,6 +184,7 @@ const _createFunnelRule = createServerFn({ method: "POST" })
       postPermalink: data.post_permalink ?? null,
       keyword: data.keyword.trim(),
       message: data.message,
+      publicReply: data.public_reply?.trim() || null,
     });
   });
 
@@ -190,6 +194,7 @@ export async function createFunnelRule(payload: {
   post_permalink?: string | null;
   keyword: string;
   message: string;
+  public_reply?: string | null;
 }): Promise<void> {
   await _createFunnelRule({ data: payload });
 }

@@ -88,6 +88,18 @@ async function processComment(
     errorMessage = err instanceof Error ? err.message : String(err);
   }
 
+  // Resposta pública embaixo do comentário — opcional, best-effort: exige a
+  // permissão instagram_business_manage_comments (o DM sozinho não precisa),
+  // então uma falha aqui não deve derrubar o registro do lead nem sobrescrever
+  // o status/erro do DM, que é a parte principal do funil.
+  if (rule.publicReply) {
+    try {
+      await replyToCommentPublicly(connection.accessToken, comment.commentId, rule.publicReply);
+    } catch (err) {
+      console.error("[instagram-webhook] falha ao responder comentário publicamente:", err);
+    }
+  }
+
   const [inserted] = await db
     .insert(instagramFunnelLeads)
     .values({
@@ -111,6 +123,19 @@ async function sendPrivateReply(accessToken: string, igBusinessAccountId: string
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ recipient: { comment_id: commentId }, message: { text } }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Meta retornou ${res.status}: ${body.slice(0, 300)}`);
+  }
+}
+
+async function replyToCommentPublicly(accessToken: string, commentId: string, message: string): Promise<void> {
+  const url = `${BASE_URL}/${commentId}/replies?access_token=${encodeURIComponent(accessToken)}`;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
   });
   if (!res.ok) {
     const body = await res.text();

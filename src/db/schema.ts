@@ -369,6 +369,10 @@ export const instagramFunnelRules = pgTable("instagram_funnel_rules", {
   postPermalink: text("post_permalink"),
   keyword: text("keyword").notNull(), // comparação: contém, case-insensitive
   message: text("message").notNull(),
+  // Opcional — resposta pública embaixo do comentário (ex: "Te mandei no
+  // Direct!"), além do DM privado. Exige a permissão
+  // instagram_business_manage_comments, que o DM sozinho não precisa.
+  publicReply: text("public_reply"),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
