@@ -659,47 +659,34 @@ function WhatsappInstancesSection() {
         </Dialog>
       </div>
 
-      <Card className="divide-y divide-border">
-        {isLoading ? (
-          <div className="px-5 py-4 text-sm text-muted-foreground">Carregando...</div>
-        ) : instances.length === 0 ? (
-          <div className="px-5 py-4 text-sm text-muted-foreground">
-            Nenhuma instância. Clique em "Nova instância" pra gerar uma e conectar pelo QR code.
-          </div>
-        ) : (
-          instances.map((i) => {
-            const assigned = members.find((m) => m.id === i.assignedUserId);
-            return (
-              <div key={i.id} className="px-5 py-3 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{i.label}</p>
-                  <p className="text-xs text-muted-foreground font-mono truncate">
-                    {i.instanceName}{assigned ? ` · ${assigned.fullName}` : ""}
-                  </p>
-                  <p className="text-xs mt-0.5">
-                    {i.clientName ? (
-                      <span className="text-primary">Cliente: {i.clientName}</span>
-                    ) : (
-                      <span className="text-muted-foreground">Sem cliente vinculado</span>
-                    )}
-                  </p>
-                </div>
-                <WaStateDot id={i.id} />
-                <Button size="sm" variant="outline" onClick={() => openConnect(i.id)}>Conectar</Button>
-                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => linkMutation.mutate(i.id)} disabled={linkMutation.isPending}>
-                  <Copy className="h-3.5 w-3.5" /> Copiar link
-                </Button>
-                <Button size="icon" variant="ghost" onClick={() => openEdit(i)} title="Editar">
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button size="icon" variant="ghost" onClick={() => { if (confirm(`Excluir a instância "${i.label}"? Isso desconecta e apaga ela na Evolution.`)) deleteMutation.mutate(i.id); }} className="text-destructive hover:text-destructive">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            );
-          })
-        )}
-      </Card>
+      {isLoading ? (
+        <Card className="px-5 py-4 text-sm text-muted-foreground">Carregando...</Card>
+      ) : instances.length === 0 ? (
+        <Card className="px-5 py-4 text-sm text-muted-foreground">
+          Nenhuma instância. Clique em "Nova instância" pra gerar uma e conectar pelo QR code.
+        </Card>
+      ) : (
+        <div className="space-y-4">
+          <WhatsappInstanceGroup
+            title="Interno / Gestor"
+            instances={instances.filter((i) => !i.clientName)}
+            members={members}
+            onConnect={openConnect}
+            onCopyLink={(id) => linkMutation.mutate(id)}
+            onEdit={openEdit}
+            onDelete={(i) => { if (confirm(`Excluir a instância "${i.label}"? Isso desconecta e apaga ela na Evolution.`)) deleteMutation.mutate(i.id); }}
+          />
+          <WhatsappInstanceGroup
+            title="Clientes"
+            instances={instances.filter((i) => i.clientName)}
+            members={members}
+            onConnect={openConnect}
+            onCopyLink={(id) => linkMutation.mutate(id)}
+            onEdit={openEdit}
+            onDelete={(i) => { if (confirm(`Excluir a instância "${i.label}"? Isso desconecta e apaga ela na Evolution.`)) deleteMutation.mutate(i.id); }}
+          />
+        </div>
+      )}
 
       <QrDialog
         instanceId={qrFor}
@@ -756,6 +743,69 @@ function WhatsappInstancesSection() {
         </DialogContent>
       </Dialog>
     </section>
+  );
+}
+
+function WhatsappInstanceGroup({
+  title,
+  instances,
+  members,
+  onConnect,
+  onCopyLink,
+  onEdit,
+  onDelete,
+}: {
+  title: string;
+  instances: WhatsappInstanceRow[];
+  members: { id: string; fullName: string }[];
+  onConnect: (id: string) => void;
+  onCopyLink: (id: string) => void;
+  onEdit: (i: WhatsappInstanceRow) => void;
+  onDelete: (i: WhatsappInstanceRow) => void;
+}) {
+  return (
+    <div>
+      <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground mb-2">
+        {title} <span className="normal-case text-muted-foreground/70">({instances.length})</span>
+      </h3>
+      <Card className="divide-y divide-border">
+        {instances.length === 0 ? (
+          <div className="px-5 py-4 text-sm text-muted-foreground">Nenhuma instância nessa categoria.</div>
+        ) : (
+          instances.map((i) => {
+            const assigned = members.find((m) => m.id === i.assignedUserId);
+            return (
+              <div key={i.id} className="px-5 py-3 flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate">{i.label}</p>
+                  <p className="text-xs text-muted-foreground font-mono truncate">
+                    {i.instanceName}{assigned ? ` · ${assigned.fullName}` : ""}
+                  </p>
+                  <p className="text-xs mt-0.5">
+                    {i.clientName ? (
+                      <span className="text-primary">Cliente: {i.clientName}</span>
+                    ) : (
+                      <span className="text-muted-foreground">Sem cliente vinculado</span>
+                    )}
+                  </p>
+                </div>
+                <WaStateDot id={i.id} />
+                <Button size="sm" variant="outline" onClick={() => onConnect(i.id)}>Conectar</Button>
+                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onCopyLink(i.id)}>
+                  <Copy className="h-3.5 w-3.5" /> Copiar link
+                </Button>
+                <Button size="icon" variant="ghost" onClick={() => onEdit(i)} title="Editar">
+                  <Pencil className="h-4 w-4" />
+                </Button>
+                <Button size="icon" variant="ghost" onClick={() => onDelete(i)} className="text-destructive hover:text-destructive">
+                  <Trash2 className="h-4 w-4" />
+                </Button>
+              </div>
+            );
+          })
+        )}
+      </Card>
+    </div>
   );
 }
 
