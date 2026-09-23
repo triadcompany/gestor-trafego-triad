@@ -2378,8 +2378,14 @@ export async function duplicateCampaign(
 
     // whatsapp_phone_number é obrigatório no promoted_object para destino WHATSAPP (error 100.2446885).
     // Prioridade: promoted_object original → cadastro do cliente → criativo do primeiro anúncio.
+    // Só copia page_id + whatsapp_phone_number — NUNCA whats_app_business_phone_number_id (a Meta
+    // devolve esse campo ao LER o conjunto original, mas reenviá-lo na CRIAÇÃO de um conjunto novo
+    // exige permissão extra sobre aquela WhatsApp Business Account específica e derruba a duplicação
+    // com "(#200) Permissions error" mesmo quando o número em si funcionaria normalmente).
     if (adSet.promoted_object || effectiveDestinationType === "WHATSAPP") {
-      const po: Record<string, string> = { ...(adSet.promoted_object ?? {}) };
+      const po: Record<string, string> = {};
+      if (adSet.promoted_object?.page_id) po.page_id = adSet.promoted_object.page_id;
+      if (adSet.promoted_object?.whatsapp_phone_number) po.whatsapp_phone_number = adSet.promoted_object.whatsapp_phone_number;
 
       if (effectiveDestinationType === "WHATSAPP" && !po.whatsapp_phone_number) {
         // Tenta extrair do criativo do primeiro anúncio do conjunto original
@@ -2513,7 +2519,12 @@ export async function duplicateAdSet(
   if (adSet.bid_constraints) adSetParams.bid_constraints = JSON.stringify(adSet.bid_constraints);
 
   if (adSet.promoted_object || effectiveDestinationType === "WHATSAPP") {
-    const po: Record<string, string> = { ...(adSet.promoted_object ?? {}) };
+    // Só page_id + whatsapp_phone_number — ver comentário equivalente em duplicateCampaign
+    // sobre por que whats_app_business_phone_number_id nunca deve ser copiado de volta.
+    const po: Record<string, string> = {};
+    if (adSet.promoted_object?.page_id) po.page_id = adSet.promoted_object.page_id;
+    if (adSet.promoted_object?.whatsapp_phone_number) po.whatsapp_phone_number = adSet.promoted_object.whatsapp_phone_number;
+
     if (effectiveDestinationType === "WHATSAPP" && !po.whatsapp_phone_number) {
       const waFromCreative = await fetchWhatsappNumberFromAdSet(adSetId, token);
       const resolved = whatsappNumber ?? waFromCreative;
