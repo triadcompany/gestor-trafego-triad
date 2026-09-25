@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Instagram, ArrowRight } from "lucide-react";
 import { toast } from "sonner";
-import { fetchInstagramConnection, upsertInstagramConnection } from "@/server/instagram-funnel";
+import { fetchInstagramConnection, upsertInstagramConnection, deleteInstagramConnection } from "@/server/instagram-funnel";
 
 export const Route = createFileRoute("/admin/instagram-conexao")({
   head: () => ({ meta: [{ title: "Conexão Instagram — Admin" }] }),
@@ -43,6 +43,15 @@ function InstagramConexaoPage() {
       queryClient.invalidateQueries({ queryKey: ["instagram-connection"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar conexão"),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: deleteInstagramConnection,
+    onSuccess: () => {
+      toast.success("Instagram desconectado.");
+      queryClient.invalidateQueries({ queryKey: ["instagram-connection"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao desconectar"),
   });
 
   const expiringSoon = connection?.expires_at && daysUntil(connection.expires_at) <= 7;
@@ -87,6 +96,21 @@ function InstagramConexaoPage() {
                 </>
               )}
             </div>
+            {connection && !isLoading && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive shrink-0"
+                disabled={disconnectMutation.isPending}
+                onClick={() => {
+                  if (confirm("Desconectar o Instagram? O funil para de funcionar até você conectar de novo — as regras e leads já salvos continuam intactos.")) {
+                    disconnectMutation.mutate();
+                  }
+                }}
+              >
+                {disconnectMutation.isPending ? "Desconectando..." : "Desconectar"}
+              </Button>
+            )}
           </div>
 
           <div className="p-5 space-y-4">

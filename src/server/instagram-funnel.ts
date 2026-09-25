@@ -91,6 +91,19 @@ export async function upsertInstagramConnection(payload: {
   await _upsertInstagramConnection({ data: payload });
 }
 
+// Remove a conexão (token + business account id) — as regras, funis e leads já
+// gravados continuam intactos, prontos pra quando reconectar. O webhook da Meta
+// para de achar a conta (findFirst por instagramBusinessAccountId) e o funil
+// simplesmente para de disparar, sem precisar desligar nada mais.
+const _deleteInstagramConnection = createServerFn({ method: "POST" }).handler(async () => {
+  const { organizationId } = await requirePlatformAdminOrg();
+  await db.delete(instagramConnections).where(eq(instagramConnections.organizationId, organizationId));
+});
+
+export async function deleteInstagramConnection(): Promise<void> {
+  await _deleteInstagramConnection();
+}
+
 // ── Posts recentes (pra escolher na hora de criar uma regra) ─────────────
 
 export interface InstagramPostRow {
