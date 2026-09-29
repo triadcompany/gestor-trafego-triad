@@ -291,7 +291,7 @@ export function LeadsDashboard({ clientId, token, controlledRange }: { clientId?
             hint="Lead de verdade"
           />
           <StatCard label="Qualificados" value={String(summary?.qualified_leads ?? 0)} />
-          <StatCard label="Taxa de qualificação" value={summary?.qualification_rate !== null && summary?.qualification_rate !== undefined ? `${summary.qualification_rate}%` : "—"} />
+          <StatCard label="Custo por lead qualificado" value={summary?.cost_per_qualified_lead != null ? brl(summary.cost_per_qualified_lead) : "—"} />
           <StatCard label="Vendas" value={String(summary?.sales_count ?? 0)} />
           <StatCard label="Valor vendido" value={brl(summary?.sales_value_total ?? 0)} />
         </div>

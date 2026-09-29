@@ -451,7 +451,7 @@ export interface LeadAttributionSummary {
   cost_per_lead: number | null;
   cost_per_conversation: number | null;
   qualified_leads: number;
-  qualification_rate: number | null;
+  cost_per_qualified_lead: number | null;
   sales_count: number;
   sales_value_total: number;
   sales_rate: number | null;
@@ -553,7 +553,7 @@ async function getLeadAttributionSummaryCore(
     cost_per_lead: rows.length > 0 ? Math.round((totalSpend / rows.length) * 100) / 100 : null,
     cost_per_conversation: metaLeadsTotal > 0 ? Math.round((totalSpend / metaLeadsTotal) * 100) / 100 : null,
     qualified_leads: qualifiedTotal,
-    qualification_rate: rows.length > 0 ? Math.round((qualifiedTotal / rows.length) * 1000) / 10 : null,
+    cost_per_qualified_lead: qualifiedTotal > 0 ? Math.round((totalSpend / qualifiedTotal) * 100) / 100 : null,
     sales_count: salesCount,
     sales_value_total: salesValueTotal,
     sales_rate: rows.length > 0 ? Math.round((salesCount / rows.length) * 1000) / 10 : null,
