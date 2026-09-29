@@ -167,6 +167,7 @@ function EditCampaign() {
   const [adsetId, setAdsetId] = useState<string | undefined>();
   const [adId, setAdId] = useState<string | undefined>();
   const [whatsappNumber, setWhatsappNumber] = useState<string | undefined>();
+  const [pageId, setPageId] = useState<string | undefined>();
   const [prefillLoaded, setPrefillLoaded] = useState(false);
 
   const { data: prefill, isLoading: prefillLoading } = useQuery({
@@ -202,6 +203,7 @@ function EditCampaign() {
     setAdsetId(prefill.adsetId);
     setAdId(prefill.adId);
     setWhatsappNumber(prefill.whatsappNumber || undefined);
+    setPageId(prefill.pageId || undefined);
     setPrefillLoaded(true);
   }, [prefill, prefillLoaded, campaignId]);
 
@@ -342,7 +344,14 @@ function EditCampaign() {
         targeting.instagram_positions = igPos;
       }
 
-      await updateMetaObject(adsetId, { targeting: JSON.stringify(targeting) }, token);
+      const fields: Record<string, string> = { targeting: JSON.stringify(targeting) };
+      // Só page_id + whatsapp_phone_number — nunca whats_app_business_phone_number_id
+      // (a Meta devolve esse campo ao ler o conjunto, mas reenviá-lo derruba a
+      // atualização com "(#200) Permissions error", mesmo bug já visto na duplicação).
+      if (whatsappNumber && pageId) {
+        fields.promoted_object = JSON.stringify({ page_id: pageId, whatsapp_phone_number: whatsappNumber });
+      }
+      await updateMetaObject(adsetId, fields, token);
     },
     onSuccess: () => {
       toast.success("Conjunto atualizado.");
@@ -536,6 +545,23 @@ function EditCampaign() {
               <div className="space-y-2">
                 <Label>Interesses <span className="text-muted-foreground font-normal text-xs ml-1">opcional</span></Label>
                 <InterestSearch selected={interests} onChange={setInterests} />
+              </div>
+            </Card>
+
+            <Card className="p-5 space-y-4">
+              <SectionTitle>WhatsApp</SectionTitle>
+              <div className="space-y-2">
+                <Label>Número que recebe os cliques</Label>
+                <Input
+                  type="tel"
+                  value={whatsappNumber ?? ""}
+                  onChange={(e) => setWhatsappNumber(e.target.value)}
+                  placeholder="5511999999999"
+                  className="font-mono"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Com DDI e DDD, só números (ex: 5511999999999). É pra esse número que a Meta manda quem clicar no anúncio.
+                </p>
               </div>
             </Card>
 
