@@ -27,11 +27,11 @@ function TermsPage() {
     <div className="min-h-screen bg-background">
       <div className="max-w-2xl mx-auto px-4 py-12">
         <h1 className="text-2xl font-semibold tracking-tight mb-1">Termos de Uso</h1>
-        <p className="text-xs text-muted-foreground mb-8">Última atualização: [DATA]</p>
+        <p className="text-xs text-muted-foreground mb-8">Última atualização: 02/10/2026</p>
 
         <P>
           Estes Termos de Uso regem o acesso e uso do <strong className="text-foreground">Gestor de Tráfego</strong>,
-          sistema interno da <strong className="text-foreground">[RAZÃO SOCIAL DA EMPRESA], CNPJ [NÚMERO]</strong> ("Triad
+          sistema interno de <strong className="text-foreground">60.117.019 THIAGO RUIZ LISBOA, CNPJ 60.117.019/0001-44</strong> ("Triad
           Company", "nós"). Ao fazer login, você ("gestor" ou "usuário") concorda com estes termos.
         </P>
 
@@ -91,7 +91,7 @@ function TermsPage() {
         <P>Estes termos são regidos pelas leis da República Federativa do Brasil.</P>
 
         <H2>10. Contato</H2>
-        <P>Dúvidas sobre estes termos: <A href="mailto:[EMAIL DE SUPORTE]">[EMAIL DE SUPORTE]</A>.</P>
+        <P>Dúvidas sobre estes termos: <A href="mailto:triadcompanyy@gmail.com">triadcompanyy@gmail.com</A>.</P>
       </div>
     </div>
   );

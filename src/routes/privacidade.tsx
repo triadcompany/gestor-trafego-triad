@@ -30,11 +30,11 @@ function PrivacyPage() {
     <div className="min-h-screen bg-background">
       <div className="max-w-2xl mx-auto px-4 py-12">
         <h1 className="text-2xl font-semibold tracking-tight mb-1">Política de Privacidade</h1>
-        <p className="text-xs text-muted-foreground mb-8">Última atualização: [DATA]</p>
+        <p className="text-xs text-muted-foreground mb-8">Última atualização: 02/10/2026</p>
 
         <P>
           Esta Política de Privacidade descreve como o <strong className="text-foreground">Gestor de Tráfego</strong> ("nós", "nosso"
-          ou "sistema"), ferramenta interna da <strong className="text-foreground">[RAZÃO SOCIAL DA EMPRESA], CNPJ [NÚMERO]</strong> ("Triad
+          ou "sistema"), ferramenta interna de <strong className="text-foreground">60.117.019 THIAGO RUIZ LISBOA, CNPJ 60.117.019/0001-44</strong> ("Triad
           Company"), coleta, usa e protege dados ao gerenciar campanhas de anúncios da Meta (Facebook e
           Instagram) e automações de atendimento via WhatsApp em nome das contas de clientes da agência.
         </P>
@@ -94,7 +94,7 @@ function PrivacyPage() {
           Mantemos os dados enquanto a conta/organização estiver ativa no sistema. Qualquer gestor pode
           solicitar a exclusão dos próprios dados, ou a desconexão de uma conta da Meta/Instagram/WhatsApp, a
           qualquer momento pelo próprio sistema (em Configurações) ou escrevendo para{" "}
-          <A href="mailto:[EMAIL DE SUPORTE]">[EMAIL DE SUPORTE]</A>. Atendemos pedidos de exclusão em até 30
+          <A href="mailto:triadcompanyy@gmail.com">triadcompanyy@gmail.com</A>. Atendemos pedidos de exclusão em até 30
           dias.
         </P>
         <P>
@@ -110,14 +110,14 @@ function PrivacyPage() {
           Como titular de dados, você pode solicitar a qualquer momento: confirmação de quais dados temos
           sobre você, correção de dados incompletos/incorretos, anonimização ou exclusão de dados
           desnecessários, e informação sobre com quem compartilhamos seus dados. Solicitações pelo email{" "}
-          <A href="mailto:[EMAIL DE SUPORTE]">[EMAIL DE SUPORTE]</A>.
+          <A href="mailto:triadcompanyy@gmail.com">triadcompanyy@gmail.com</A>.
         </P>
 
         <H2>8. Alterações nesta política</H2>
         <P>Podemos atualizar esta política conforme o sistema evolui. A data da última atualização sempre aparece no topo desta página.</P>
 
         <H2>9. Contato</H2>
-        <P>Dúvidas sobre esta política ou sobre seus dados: <A href="mailto:[EMAIL DE SUPORTE]">[EMAIL DE SUPORTE]</A>.</P>
+        <P>Dúvidas sobre esta política ou sobre seus dados: <A href="mailto:triadcompanyy@gmail.com">triadcompanyy@gmail.com</A>.</P>
       </div>
     </div>
   );
