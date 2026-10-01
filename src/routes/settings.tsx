@@ -34,6 +34,7 @@ import {
   MessageCircle,
   Star,
   Pencil,
+  Facebook,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import {
@@ -77,6 +78,7 @@ import {
 } from "@/lib/agent-chat";
 import { fetchOrgMembers, createOrgMember, updateOrgMemberRole, setOrgMemberActive } from "@/server/team";
 import { getCurrentUser } from "@/server/session";
+import { startMetaOAuth } from "@/server/meta-oauth";
 
 export const Route = createFileRoute("/settings")({
   head: () => ({
@@ -230,6 +232,14 @@ function MetaTokensSection({ isAdmin }: { isAdmin: boolean }) {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao remover token"),
   });
 
+  const loginMutation = useMutation({
+    mutationFn: async () => {
+      const { url } = await startMetaOAuth();
+      window.location.href = url;
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao iniciar login com a Meta"),
+  });
+
   return (
     <section className="mb-6">
       <div className="flex items-center justify-between mb-3">
@@ -237,6 +247,17 @@ function MetaTokensSection({ isAdmin }: { isAdmin: boolean }) {
           <KeyRound className="h-4 w-4 text-muted-foreground" />
           <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Tokens Meta Ads</h2>
         </div>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            className="gap-1.5"
+            onClick={() => loginMutation.mutate()}
+            disabled={loginMutation.isPending}
+          >
+            {loginMutation.isPending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Facebook className="h-3.5 w-3.5" />}
+            Entrar com Facebook
+          </Button>
         {isAdmin && (
           <Dialog open={open} onOpenChange={setOpen}>
             <DialogTrigger asChild>
@@ -287,6 +308,7 @@ function MetaTokensSection({ isAdmin }: { isAdmin: boolean }) {
             </DialogContent>
           </Dialog>
         )}
+        </div>
       </div>
 
       <Card className="divide-y divide-border">
@@ -296,7 +318,7 @@ function MetaTokensSection({ isAdmin }: { isAdmin: boolean }) {
           <div className="px-5 py-4 flex items-center gap-3">
             <ShieldAlert className="h-5 w-5 text-destructive shrink-0" />
             <p className="text-sm text-muted-foreground">
-              Nenhum token configurado. {isAdmin ? "Adicione um acima para sincronizar campanhas." : "Peça a um admin da organização para configurar."}
+              Nenhum token configurado. {isAdmin ? "Adicione um acima para sincronizar campanhas." : "Clique em \"Entrar com Facebook\" acima, ou peça a um admin da organização."}
             </p>
           </div>
         ) : (

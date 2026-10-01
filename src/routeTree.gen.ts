@@ -10,10 +10,12 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as VendasRouteImport } from './routes/vendas'
+import { Route as TermosRouteImport } from './routes/termos'
 import { Route as TarefasRouteImport } from './routes/tarefas'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SaldosRouteImport } from './routes/saldos'
 import { Route as RastreamentoRouteImport } from './routes/rastreamento'
+import { Route as PrivacidadeRouteImport } from './routes/privacidade'
 import { Route as PixRouteImport } from './routes/pix'
 import { Route as MensagensRouteImport } from './routes/mensagens'
 import { Route as LoginRouteImport } from './routes/login'
@@ -39,6 +41,11 @@ const VendasRoute = VendasRouteImport.update({
   path: '/vendas',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TermosRoute = TermosRouteImport.update({
+  id: '/termos',
+  path: '/termos',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TarefasRoute = TarefasRouteImport.update({
   id: '/tarefas',
   path: '/tarefas',
@@ -57,6 +64,11 @@ const SaldosRoute = SaldosRouteImport.update({
 const RastreamentoRoute = RastreamentoRouteImport.update({
   id: '/rastreamento',
   path: '/rastreamento',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacidadeRoute = PrivacidadeRouteImport.update({
+  id: '/privacidade',
+  path: '/privacidade',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PixRoute = PixRouteImport.update({
@@ -164,10 +176,12 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
   '/pix': typeof PixRoute
+  '/privacidade': typeof PrivacidadeRoute
   '/rastreamento': typeof RastreamentoRoute
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
+  '/termos': typeof TermosRoute
   '/vendas': typeof VendasRoute
   '/admin/instagram-conexao': typeof AdminInstagramConexaoRoute
   '/admin/instagram-funil': typeof AdminInstagramFunilRoute
@@ -190,10 +204,12 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
   '/pix': typeof PixRoute
+  '/privacidade': typeof PrivacidadeRoute
   '/rastreamento': typeof RastreamentoRoute
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
+  '/termos': typeof TermosRoute
   '/vendas': typeof VendasRoute
   '/admin/instagram-conexao': typeof AdminInstagramConexaoRoute
   '/admin/instagram-funil': typeof AdminInstagramFunilRoute
@@ -217,10 +233,12 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
   '/pix': typeof PixRoute
+  '/privacidade': typeof PrivacidadeRoute
   '/rastreamento': typeof RastreamentoRoute
   '/saldos': typeof SaldosRoute
   '/settings': typeof SettingsRoute
   '/tarefas': typeof TarefasRoute
+  '/termos': typeof TermosRoute
   '/vendas': typeof VendasRoute
   '/admin/instagram-conexao': typeof AdminInstagramConexaoRoute
   '/admin/instagram-funil': typeof AdminInstagramFunilRoute
@@ -245,10 +263,12 @@ export interface FileRouteTypes {
     | '/login'
     | '/mensagens'
     | '/pix'
+    | '/privacidade'
     | '/rastreamento'
     | '/saldos'
     | '/settings'
     | '/tarefas'
+    | '/termos'
     | '/vendas'
     | '/admin/instagram-conexao'
     | '/admin/instagram-funil'
@@ -271,10 +291,12 @@ export interface FileRouteTypes {
     | '/login'
     | '/mensagens'
     | '/pix'
+    | '/privacidade'
     | '/rastreamento'
     | '/saldos'
     | '/settings'
     | '/tarefas'
+    | '/termos'
     | '/vendas'
     | '/admin/instagram-conexao'
     | '/admin/instagram-funil'
@@ -297,10 +319,12 @@ export interface FileRouteTypes {
     | '/login'
     | '/mensagens'
     | '/pix'
+    | '/privacidade'
     | '/rastreamento'
     | '/saldos'
     | '/settings'
     | '/tarefas'
+    | '/termos'
     | '/vendas'
     | '/admin/instagram-conexao'
     | '/admin/instagram-funil'
@@ -324,10 +348,12 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   MensagensRoute: typeof MensagensRoute
   PixRoute: typeof PixRoute
+  PrivacidadeRoute: typeof PrivacidadeRoute
   RastreamentoRoute: typeof RastreamentoRoute
   SaldosRoute: typeof SaldosRoute
   SettingsRoute: typeof SettingsRoute
   TarefasRoute: typeof TarefasRoute
+  TermosRoute: typeof TermosRoute
   VendasRoute: typeof VendasRoute
   AdminInstagramConexaoRoute: typeof AdminInstagramConexaoRoute
   AdminInstagramFunilRoute: typeof AdminInstagramFunilRoute
@@ -350,6 +376,13 @@ declare module '@tanstack/react-router' {
       path: '/vendas'
       fullPath: '/vendas'
       preLoaderRoute: typeof VendasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/termos': {
+      id: '/termos'
+      path: '/termos'
+      fullPath: '/termos'
+      preLoaderRoute: typeof TermosRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/tarefas': {
@@ -378,6 +411,13 @@ declare module '@tanstack/react-router' {
       path: '/rastreamento'
       fullPath: '/rastreamento'
       preLoaderRoute: typeof RastreamentoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacidade': {
+      id: '/privacidade'
+      path: '/privacidade'
+      fullPath: '/privacidade'
+      preLoaderRoute: typeof PrivacidadeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/pix': {
@@ -524,10 +564,12 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   MensagensRoute: MensagensRoute,
   PixRoute: PixRoute,
+  PrivacidadeRoute: PrivacidadeRoute,
   RastreamentoRoute: RastreamentoRoute,
   SaldosRoute: SaldosRoute,
   SettingsRoute: SettingsRoute,
   TarefasRoute: TarefasRoute,
+  TermosRoute: TermosRoute,
   VendasRoute: VendasRoute,
   AdminInstagramConexaoRoute: AdminInstagramConexaoRoute,
   AdminInstagramFunilRoute: AdminInstagramFunilRoute,
