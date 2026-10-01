@@ -292,8 +292,8 @@ function NewCampaign() {
   const [placementMode, setPlacementMode] = useState<"advantage_plus" | "manual">("advantage_plus");
   const [bidAmount, setBidAmount] = useState<number | "">("");
   const [platforms, setPlatforms] = useState({ facebook: true, instagram: true });
-  const [fbPositions, setFbPositions] = useState(["feed", "story"]);
-  const [igPositions, setIgPositions] = useState(["stream", "story"]);
+  const [fbPositions, setFbPositions] = useState(["feed", "story", "right_hand_column"]);
+  const [igPositions, setIgPositions] = useState(["stream", "story", "explore", "reels"]);
 
   // ── Step 3: Ad creative ─────────────────────────────────────
   const [mediaType, setMediaType] = useState<"image" | "video">("image");

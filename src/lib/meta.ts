@@ -2718,10 +2718,12 @@ export async function fetchBaseCampaignPrefill(
     locations,
     interests,
     platforms,
-    fbPositions: fbPlaces.length > 0 ? fbPlaces : ["feed", "story"],
+    // Sem posicionamento explícito (ex: campanha duplicada, que sai em modo
+    // Advantage+/automático) marca tudo por padrão — nunca só feed+story.
+    fbPositions: fbPlaces.length > 0 ? fbPlaces : ["feed", "story", "facebook_reels", "right_hand_column"],
     igPositions: igPlaces.filter((p) => p !== "ig_search").length > 0
       ? igPlaces.filter((p) => p !== "ig_search")
-      : ["stream", "story"],
+      : ["stream", "story", "explore", "reels"],
     primaryText,
     headline,
     description,
