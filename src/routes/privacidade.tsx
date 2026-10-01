@@ -34,8 +34,8 @@ function PrivacyPage() {
 
         <P>
           Esta Política de Privacidade descreve como o <strong className="text-foreground">Gestor de Tráfego</strong> ("nós", "nosso"
-          ou "sistema"), ferramenta interna de <strong className="text-foreground">60.117.019 THIAGO RUIZ LISBOA, CNPJ 60.117.019/0001-44</strong> ("Triad
-          Company"), coleta, usa e protege dados ao gerenciar campanhas de anúncios da Meta (Facebook e
+          ou "sistema"), ferramenta interna da <strong className="text-foreground">Triad Company (60.117.019 THIAGO RUIZ LISBOA, CNPJ 60.117.019/0001-44)</strong>,
+          coleta, usa e protege dados ao gerenciar campanhas de anúncios da Meta (Facebook e
           Instagram) e automações de atendimento via WhatsApp em nome das contas de clientes da agência.
         </P>
 

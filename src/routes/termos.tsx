@@ -31,8 +31,8 @@ function TermsPage() {
 
         <P>
           Estes Termos de Uso regem o acesso e uso do <strong className="text-foreground">Gestor de Tráfego</strong>,
-          sistema interno de <strong className="text-foreground">60.117.019 THIAGO RUIZ LISBOA, CNPJ 60.117.019/0001-44</strong> ("Triad
-          Company", "nós"). Ao fazer login, você ("gestor" ou "usuário") concorda com estes termos.
+          sistema interno da <strong className="text-foreground">Triad Company (60.117.019 THIAGO RUIZ LISBOA, CNPJ 60.117.019/0001-44)</strong>
+          ("nós"). Ao fazer login, você ("gestor" ou "usuário") concorda com estes termos.
         </P>
 
         <H2>1. O que é o sistema</H2>
