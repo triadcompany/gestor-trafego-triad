@@ -9,7 +9,7 @@ import { canAccessClient } from "@/lib/client-access";
 import { getMetaToken, getMetaTokenForClient, fetchAdSpendByIds, fetchAdCreativeMedia, fetchAccountInsightsForRange } from "@/lib/meta";
 import { sendQualifiedLeadEvent, sendPurchaseEvent, sendCustomMessagingEvent } from "@/server/meta-capi";
 import { periodDateRange, type DashboardPeriod } from "@/lib/queries";
-import { isoDateInBrasilia, brasiliaMidnightUTC } from "@/lib/brasilia-date";
+import { isoDateInBrasilia, brasiliaMidnightUTC, daysAgoInBrasilia } from "@/lib/brasilia-date";
 
 const periodInputSchema = z.object({
   clientId: z.string(),
@@ -60,7 +60,13 @@ async function getPublicReportFloorTs(clientId: string): Promise<string | undefi
     columns: { createdAt: true },
   });
   if (!instance) return undefined;
-  return new Date(new Date(instance.createdAt).getTime() + 86400000).toISOString();
+  // Meia-noite (Brasília) do dia SEGUINTE à conexão — não 24h corridas a partir
+  // da hora exata de conexão. 24h corridas podia empurrar o corte pra dentro do
+  // dia de hoje (ex: conectou às 14h, corte só liberava "hoje" às 14h),
+  // escondendo leads reais do dia na página pública do cliente enquanto o
+  // painel do gestor, sem esse corte, já mostrava eles normalmente.
+  const nextDay = daysAgoInBrasilia(-1, new Date(instance.createdAt));
+  return brasiliaMidnightUTC(nextDay);
 }
 
 // Dia da semana (0=domingo) e hora (0-23) no horário de Brasília, a partir de
