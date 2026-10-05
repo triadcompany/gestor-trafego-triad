@@ -620,7 +620,7 @@ function contentLabel(r: MessageAutomationRow): string {
     return `Relatório PDF ${r.report_period_days} dias${who ? ` · ${who}` : ""}`;
   }
   if (r.content_type === "group_summary") {
-    return `Resumo de grupo · ${r.summary_turno === "tarde" ? "tarde" : "manhã"} · ${r.summary_client_ids.length} cliente${r.summary_client_ids.length === 1 ? "" : "s"}`;
+    return `Resumo de grupo · ${r.summary_turno === "ambos" ? "manhã e tarde" : r.summary_turno === "tarde" ? "tarde" : "manhã"} · ${r.summary_client_ids.length} cliente${r.summary_client_ids.length === 1 ? "" : "s"}`;
   }
   return "Texto";
 }
@@ -938,7 +938,7 @@ function AutomationComposerDialog({
   const [templateEditorOpen, setTemplateEditorOpen] = useState(false);
   const [templateEditorMode, setTemplateEditorMode] = useState<"create" | "edit">("create");
   const reportBodyRef = useRef<HTMLTextAreaElement>(null);
-  const [summaryTurno, setSummaryTurno] = useState<"manha" | "tarde">("manha");
+  const [summaryTurno, setSummaryTurno] = useState<"manha" | "tarde" | "ambos">("manha");
   const [summaryClientIds, setSummaryClientIds] = useState<string[]>([]);
   const [recurrenceType, setRecurrenceType] = useState<"weekly" | "daily" | "monthly">("weekly");
   const [weekdays, setWeekdays] = useState<number[]>([1]);
@@ -1315,10 +1315,14 @@ function AutomationComposerDialog({
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label>Turno</Label>
-                <RadioGroup value={summaryTurno} onValueChange={(v) => setSummaryTurno(v as "manha" | "tarde")} className="flex gap-4">
+                <RadioGroup value={summaryTurno} onValueChange={(v) => setSummaryTurno(v as "manha" | "tarde" | "ambos")} className="flex flex-wrap gap-4">
                   <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="manha" /> Manhã (00h–12h)</label>
                   <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="tarde" /> Tarde (12h–17h30)</label>
+                  <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="ambos" /> Os dois</label>
                 </RadioGroup>
+                {summaryTurno === "ambos" && (
+                  <p className="text-[11px] text-muted-foreground">Os dois saem numa mensagem só, com manhã e tarde em blocos. Agende depois das 17h30 pra pegar o dia todo.</p>
+                )}
               </div>
               <ReportClientsField
                 clients={clients}

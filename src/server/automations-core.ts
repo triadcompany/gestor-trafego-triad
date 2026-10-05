@@ -215,9 +215,10 @@ interface SummaryInstance {
 
 async function buildGroupSummaryText(
   rule: typeof messageAutomations.$inferSelect,
-  instance: SummaryInstance
+  instance: SummaryInstance,
+  turno: "manha" | "tarde"
 ): Promise<string> {
-  const { since, until, label, emoji } = summaryWindow(rule.summaryTurno ?? "manha");
+  const { since, until, label, emoji } = summaryWindow(turno);
 
   const rows = await db
     .select({ id: clients.id, name: clients.name, groupId: clients.whatsappGroupId })
@@ -448,7 +449,10 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
       return { created: false, warnings: [`Regra "${rule.name}": nenhum cliente selecionado pro resumo.`] };
     }
     try {
-      text = await buildGroupSummaryText(rule, instance);
+      const turnos: Array<"manha" | "tarde"> = rule.summaryTurno === "ambos" ? ["manha", "tarde"] : [rule.summaryTurno === "tarde" ? "tarde" : "manha"];
+      const partes: string[] = [];
+      for (const turno of turnos) partes.push(await buildGroupSummaryText(rule, instance, turno));
+      text = partes.join("\n\n━━━━━━━━━━━━\n\n");
     } catch (e) {
       return { created: false, warnings: [`Regra "${rule.name}": falha ao montar resumo — ${e instanceof Error ? e.message : String(e)}`] };
     }

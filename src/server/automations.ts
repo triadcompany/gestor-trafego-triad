@@ -33,7 +33,7 @@ export interface MessageAutomationRow {
   report_template_id: string | null;
   report_client_ids: string[];
   report_client_names: string[];
-  summary_turno: "manha" | "tarde" | null;
+  summary_turno: "manha" | "tarde" | "ambos" | null;
   summary_client_ids: string[];
   recurrence_type: "weekly" | "daily" | "monthly";
   recurrence_days: number[];
@@ -80,7 +80,7 @@ const _fetchMessageAutomations = createServerFn({ method: "GET" }).handler(async
     report_template_id: r.reportTemplateId,
     report_client_ids: r.reportClientIds,
     report_client_names: r.reportClientIds.map((id) => clientNameById.get(id) ?? "?"),
-    summary_turno: (r.summaryTurno as "manha" | "tarde" | null) ?? null,
+    summary_turno: (r.summaryTurno as "manha" | "tarde" | "ambos" | null) ?? null,
     summary_client_ids: r.summaryClientIds,
     recurrence_type: r.recurrenceType as "weekly" | "daily" | "monthly",
     recurrence_days: r.recurrenceDays,
@@ -134,7 +134,7 @@ const upsertSchema = z.object({
   reportPeriodDays: z.number().int(),
   reportTemplateId: z.string().nullable().optional(),
   reportClientIds: z.array(z.string()).default([]),
-  summaryTurno: z.enum(["manha", "tarde"]).nullable().optional(),
+  summaryTurno: z.enum(["manha", "tarde", "ambos"]).nullable().optional(),
   summaryClientIds: z.array(z.string()).default([]),
   recurrenceType: z.enum(["weekly", "daily", "monthly"]),
   recurrenceDays: z.array(z.number().int()),
