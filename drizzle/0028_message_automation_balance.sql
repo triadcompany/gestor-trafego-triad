@@ -1,0 +1,1 @@
+ALTER TABLE "message_automations" ADD COLUMN "balance_threshold" integer;

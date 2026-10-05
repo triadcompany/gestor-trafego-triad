@@ -687,7 +687,8 @@ export const messageAutomations = pgTable("message_automations", {
   // cliente. Vazio + clientId preenchido = automação antiga (1 cliente só).
   reportClientIds: uuid("report_client_ids").array().notNull().default([]),
   summaryTurno: text("summary_turno"), // 'manha' | 'tarde' — só p/ group_summary
-  summaryClientIds: uuid("summary_client_ids").array().notNull().default([]), // clientes cujos grupos entram no resumo
+  balanceThreshold: integer("balance_threshold"), // centavos — só p/ saldo_baixo; nulo = R$ 500
+summaryClientIds: uuid("summary_client_ids").array().notNull().default([]), // clientes cujos grupos entram no resumo
   recurrenceType: text("recurrence_type").notNull(), // 'weekly' | 'daily' | 'monthly'
   recurrenceDays: integer("recurrence_days").array().notNull().default([]), // weekly: 1..7 (1=segunda); monthly: 1..28
   sendHour: integer("send_hour").notNull(), // 0..23, fuso America/Sao_Paulo

@@ -197,6 +197,13 @@
       "when": 1790097198753,
       "tag": "0027_whatsapp_instance_default_gestor",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1791222176440,
+      "tag": "0028_message_automation_balance",
+      "breakpoints": true
     }
   ]
 }

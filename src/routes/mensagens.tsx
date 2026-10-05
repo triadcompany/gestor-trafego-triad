@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil, Repeat, Play, Trash2, MessageSquare, BarChart3, FileText, MessagesSquare } from "lucide-react";
+import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil, Repeat, Play, Trash2, MessageSquare, BarChart3, FileText, MessagesSquare, Wallet } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DEFAULT_REPORT_TEMPLATE, REPORT_TEMPLATE_PLACEHOLDERS } from "@/lib/meta";
 import { fetchReportTemplates, upsertReportTemplate, deleteReportTemplate, type ReportTemplateRow } from "@/server/report-templates";
@@ -618,6 +618,11 @@ function recipientsSummary(r: MessageAutomationRow): string {
   const customLabel = custom.length === 0 ? "" : custom.length <= 2 ? custom.join(", ") : `${custom.length} destinos`;
   const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
+  if (r.content_type === "saldo_baixo") {
+    const n = r.report_client_names.length;
+    return `Avisa ${plural(n, "cliente", "clientes")} abaixo de R$ ${((r.balance_threshold ?? 50000) / 100).toLocaleString("pt-BR")}`;
+  }
+
   if (r.content_type === "group_summary") {
     const n = r.summary_client_ids.length;
     return `Resume ${plural(n, "grupo", "grupos")}${customLabel ? ` → ${customLabel}` : ""}`;
@@ -634,6 +639,7 @@ function recipientsSummary(r: MessageAutomationRow): string {
 }
 
 function contentLabel(r: MessageAutomationRow): string {
+  if (r.content_type === "saldo_baixo") return "Saldo baixo";
   if (r.content_type === "report") {
     const who = reportClientsLabel(r);
     return `Relatório ${r.report_period_days} dias${who ? ` · ${who}` : ""}`;
@@ -869,7 +875,7 @@ function AutomacoesTab() {
 }
 
 const CONTENT_TYPE_OPTIONS: Array<{
-  value: "text" | "report" | "report_pdf" | "group_summary";
+  value: "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo";
   label: string;
   hint: string;
   icon: typeof MessageSquare;
@@ -878,7 +884,10 @@ const CONTENT_TYPE_OPTIONS: Array<{
   { value: "report", label: "Relatório de métricas", hint: "Texto com números do período no WhatsApp", icon: BarChart3 },
   { value: "report_pdf", label: "Relatório PDF", hint: "O relatório completo em arquivo, anexado", icon: FileText },
   { value: "group_summary", label: "Resumo de grupo", hint: "Resumo das conversas do grupo por turno", icon: MessagesSquare },
+  { value: "saldo_baixo", label: "Saldo baixo", hint: "Avisa o cliente quando o saldo da conta de anúncio está abaixo do limite", icon: Wallet },
 ];
+
+const DEFAULT_SALDO_TEMPLATE = "⚠️ Olá! O saldo da conta de anúncio de {{cliente}} está em {{saldo}}. Recarregue pra não pausar as campanhas.";
 
 const WEEKDAYS: { value: number; label: string }[] = [
   { value: 1, label: "Seg" }, { value: 2, label: "Ter" }, { value: 3, label: "Qua" },
@@ -960,7 +969,7 @@ function AutomationComposerDialog({
   const qc = useQueryClient();
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [contentType, setContentType] = useState<"text" | "report" | "report_pdf" | "group_summary">("text");
+  const [contentType, setContentType] = useState<"text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo">("text");
   const [body, setBody] = useState("");
   const [reportClientIds, setReportClientIds] = useState<string[]>([]);
   const [reportPeriodDays, setReportPeriodDays] = useState<number>(7);
@@ -971,6 +980,7 @@ function AutomationComposerDialog({
   const [templateEditorMode, setTemplateEditorMode] = useState<"create" | "edit">("create");
   const reportBodyRef = useRef<HTMLTextAreaElement>(null);
   const [summaryTurno, setSummaryTurno] = useState<"manha" | "tarde" | "ambos">("manha");
+  const [balanceThresholdReais, setBalanceThresholdReais] = useState("500");
   const [summaryClientIds, setSummaryClientIds] = useState<string[]>([]);
   const [recurrenceType, setRecurrenceType] = useState<"weekly" | "daily" | "monthly">("weekly");
   const [weekdays, setWeekdays] = useState<number[]>([1]);
@@ -1015,7 +1025,7 @@ function AutomationComposerDialog({
 
   const reset = () => {
     setLoadedId(null);
-    setName(""); setContentType("text"); setBody(""); setReportClientIds([]); setReportPeriodDays(7); setPdfCaption("");
+    setName(""); setContentType("text"); setBody(""); setBalanceThresholdReais("500"); setReportClientIds([]); setReportPeriodDays(7); setPdfCaption("");
     setReportTemplateId(null); setReportBody(DEFAULT_REPORT_TEMPLATE);
     setSummaryTurno("manha"); setSummaryClientIds([]);
     setRecurrenceType("weekly"); setWeekdays([1]); setMonthdays([1]); setSendHour("10"); setSendMinute("00");
@@ -1026,7 +1036,8 @@ function AutomationComposerDialog({
     setLoadedId(editing.id);
     setName(editing.name);
     setContentType(editing.content_type);
-    setBody(editing.content_type === "text" ? (editing.body ?? "") : "");
+    setBody(editing.content_type === "text" || editing.content_type === "saldo_baixo" ? (editing.body ?? "") : "");
+    setBalanceThresholdReais(editing.balance_threshold ? String(editing.balance_threshold / 100) : "500");
     setReportClientIds(editing.report_client_ids.length > 0 ? editing.report_client_ids : editing.client_id ? [editing.client_id] : []);
     setReportPeriodDays(editing.report_period_days);
     setPdfCaption(editing.content_type === "report_pdf" ? (editing.body ?? "") : "");
@@ -1101,7 +1112,7 @@ function AutomationComposerDialog({
         mediaFiles.map(async (f) => ({ base64: await fileToBase64(f), mimetype: f.type, filename: f.name }))
       );
       const destinations = [
-        ...(["text", "report", "report_pdf"].includes(contentType) && reportClientIds.length > 0
+        ...(["text", "report", "report_pdf", "saldo_baixo"].includes(contentType) && reportClientIds.length > 0
           ? [{ kind: "client_group" as const, remoteJid: null, name: "Grupo do cliente" }]
           : []),
         ...customRecipients.map((r) => ({ kind: "custom" as const, remoteJid: r.remoteJid, name: r.name })),
@@ -1110,12 +1121,13 @@ function AutomationComposerDialog({
         id: editing?.id,
         name: name.trim(),
         contentType,
-        body: contentType === "text" ? body : contentType === "report" ? (reportTemplateId ? null : reportBody) : contentType === "report_pdf" ? (pdfCaption.trim() || null) : null,
+        body: contentType === "text" || contentType === "saldo_baixo" ? body : contentType === "report" ? (reportTemplateId ? null : reportBody) : contentType === "report_pdf" ? (pdfCaption.trim() || null) : null,
         reportTemplateId: contentType === "report" ? reportTemplateId : null,
         summaryTurno: contentType === "group_summary" ? summaryTurno : null,
         summaryClientIds: contentType === "group_summary" ? summaryClientIds : [],
         clientId: null,
-        reportClientIds: contentType === "report" || contentType === "report_pdf" || contentType === "text" ? reportClientIds : [],
+        reportClientIds: contentType === "report" || contentType === "report_pdf" || contentType === "text" || contentType === "saldo_baixo" ? reportClientIds : [],
+        balanceThreshold: contentType === "saldo_baixo" ? Math.round(Number(balanceThresholdReais.replace(",", ".")) * 100) : null,
         reportPeriodDays,
         recurrenceType,
         recurrenceDays: recurrenceType === "weekly" ? weekdays : recurrenceType === "monthly" ? monthdays : [],
@@ -1142,13 +1154,15 @@ function AutomationComposerDialog({
         ? reportClientIds.length > 0 && reportBody.trim().length > 0
         : contentType === "report_pdf"
           ? reportClientIds.length > 0
-          : summaryClientIds.length > 0;
+          : contentType === "saldo_baixo"
+            ? body.trim().length > 0 && reportClientIds.length > 0
+            : summaryClientIds.length > 0;
   const hasValidRecurrence =
     recurrenceType === "daily" ||
     (recurrenceType === "weekly" && weekdays.length > 0) ||
     (recurrenceType === "monthly" && monthdays.length > 0);
   const hasValidDestination =
-    (["text", "report", "report_pdf"].includes(contentType) && reportClientIds.length > 0) || customRecipients.length > 0;
+    (["text", "report", "report_pdf", "saldo_baixo"].includes(contentType) && reportClientIds.length > 0) || customRecipients.length > 0;
   // Bug antigo aqui: "a && b && c || d" — por precedência, o || de fora fazia
   // qualquer regra com destino avulso pular nome/conteúdo/recorrência vazios
   // (o servidor então rejeitava e o zod cru vazava pro toast). Corrigido com
@@ -1343,6 +1357,31 @@ function AutomationComposerDialog({
                 />
                 <p className="text-[11px] text-muted-foreground">Vai junto com o arquivo. Se deixar em branco, uso uma legenda padrão.</p>
               </div>
+            </div>
+          ) : contentType === "saldo_baixo" ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>Avisar quando o saldo estiver abaixo de</Label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">R$</span>
+                  <Input value={balanceThresholdReais} onChange={(e) => setBalanceThresholdReais(e.target.value)} inputMode="decimal" className="w-32" />
+                </div>
+                <p className="text-[11px] text-muted-foreground">Quem estiver igual ou acima disso não recebe nada.</p>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label>Mensagem</Label>
+                  <button type="button" className="text-xs text-primary hover:underline" onClick={() => setBody(DEFAULT_SALDO_TEMPLATE)}>Usar modelo padrão</button>
+                </div>
+                <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-[90px] resize-none" />
+                <p className="text-[11px] text-muted-foreground">{"Use {{cliente}} e {{saldo}} — são preenchidos na hora do envio com o saldo real."}</p>
+              </div>
+              <ReportClientsField
+                clients={clients}
+                selected={reportClientIds}
+                onChange={setReportClientIds}
+                hint="só os que estiverem abaixo do limite recebem a mensagem no grupo deles."
+              />
             </div>
           ) : (
             <div className="space-y-3">

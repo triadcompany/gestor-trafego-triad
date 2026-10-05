@@ -25,7 +25,8 @@ export interface MessageAutomationRow {
   id: string;
   name: string;
   active: boolean;
-  content_type: "text" | "report" | "report_pdf" | "group_summary";
+  content_type: "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo";
+  balance_threshold: number | null;
   body: string | null;
   client_id: string | null;
   client_name: string | null;
@@ -80,6 +81,7 @@ const _fetchMessageAutomations = createServerFn({ method: "GET" }).handler(async
     report_template_id: r.reportTemplateId,
     report_client_ids: r.reportClientIds,
     report_client_names: r.reportClientIds.map((id) => clientNameById.get(id) ?? "?"),
+    balance_threshold: r.balanceThreshold ?? null,
     summary_turno: (r.summaryTurno as "manha" | "tarde" | "ambos" | null) ?? null,
     summary_client_ids: r.summaryClientIds,
     recurrence_type: r.recurrenceType as "weekly" | "daily" | "monthly",
@@ -128,7 +130,8 @@ const mediaItemSchema = z.object({ base64: z.string(), mimetype: z.string(), fil
 const upsertSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  contentType: z.enum(["text", "report", "report_pdf", "group_summary"]),
+  contentType: z.enum(["text", "report", "report_pdf", "group_summary", "saldo_baixo"]),
+  balanceThreshold: z.number().int().positive().nullable().optional(),
   body: z.string().nullable().optional(),
   clientId: z.string().nullable().optional(),
   reportPeriodDays: z.number().int(),
@@ -163,7 +166,7 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
         .where(and(eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })));
       const okIds = new Set(acessiveis.map((c) => c.id));
       if (data.reportClientIds.some((id) => !okIds.has(id))) throw new Error("Cliente do relatório não encontrado ou sem acesso.");
-    } else if (data.contentType === "text" && data.reportClientIds.length > 0) {
+    } else if ((data.contentType === "text" || data.contentType === "saldo_baixo") && data.reportClientIds.length > 0) {
       const acessiveis = await db
         .select({ id: clients.id })
         .from(clients)
@@ -215,11 +218,12 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
       organizationId,
       name: data.name,
       contentType: data.contentType,
-      body: data.contentType === "text" || data.contentType === "report" || data.contentType === "report_pdf" ? (data.body?.trim() || null) : null,
+      body: data.contentType === "text" || data.contentType === "saldo_baixo" || data.contentType === "report" || data.contentType === "report_pdf" ? (data.body?.trim() || null) : null,
       clientId: data.contentType === "text" ? (data.clientId ?? null) : null,
       reportPeriodDays: data.reportPeriodDays,
+      balanceThreshold: data.contentType === "saldo_baixo" ? (data.balanceThreshold ?? 50000) : null,
       reportTemplateId: data.contentType === "report" ? (data.reportTemplateId ?? null) : null,
-      reportClientIds: data.contentType === "report" || data.contentType === "report_pdf" || data.contentType === "text" ? data.reportClientIds : [],
+      reportClientIds: data.contentType === "report" || data.contentType === "report_pdf" || data.contentType === "text" || data.contentType === "saldo_baixo" ? data.reportClientIds : [],
       summaryTurno: data.contentType === "group_summary" ? (data.summaryTurno ?? null) : null,
       summaryClientIds: data.contentType === "group_summary" ? data.summaryClientIds : [],
       recurrenceType: data.recurrenceType,
