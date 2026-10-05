@@ -163,6 +163,13 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
         .where(and(eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })));
       const okIds = new Set(acessiveis.map((c) => c.id));
       if (data.reportClientIds.some((id) => !okIds.has(id))) throw new Error("Cliente do relatório não encontrado ou sem acesso.");
+    } else if (data.contentType === "text" && data.reportClientIds.length > 0) {
+      const acessiveis = await db
+        .select({ id: clients.id })
+        .from(clients)
+        .where(and(eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })));
+      const okIds = new Set(acessiveis.map((c) => c.id));
+      if (data.reportClientIds.some((id) => !okIds.has(id))) throw new Error("Cliente da mensagem não encontrado ou sem acesso.");
     } else if (data.contentType === "group_summary") {
       if (!data.summaryTurno) throw new Error("Escolha o turno (manhã ou tarde).");
       if (data.summaryClientIds.length === 0) throw new Error("Selecione ao menos um cliente pro resumo.");
@@ -212,7 +219,7 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
       clientId: data.contentType === "text" ? (data.clientId ?? null) : null,
       reportPeriodDays: data.reportPeriodDays,
       reportTemplateId: data.contentType === "report" ? (data.reportTemplateId ?? null) : null,
-      reportClientIds: data.contentType === "report" || data.contentType === "report_pdf" ? data.reportClientIds : [],
+      reportClientIds: data.contentType === "report" || data.contentType === "report_pdf" || data.contentType === "text" ? data.reportClientIds : [],
       summaryTurno: data.contentType === "group_summary" ? (data.summaryTurno ?? null) : null,
       summaryClientIds: data.contentType === "group_summary" ? data.summaryClientIds : [],
       recurrenceType: data.recurrenceType,
