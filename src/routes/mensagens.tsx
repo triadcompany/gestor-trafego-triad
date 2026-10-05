@@ -902,7 +902,9 @@ function ReportClientsField({
   label?: string;
   hint?: string;
 }) {
+  const [query, setQuery] = useState("");
   const allSelected = clients.length > 0 && selected.length === clients.length;
+  const visible = clients.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()));
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
@@ -915,11 +917,19 @@ function ReportClientsField({
           {allSelected ? "Limpar seleção" : "Todos os clientes"}
         </button>
       </div>
+      <Input
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        placeholder="Buscar cliente pelo nome..."
+        className="h-8 text-sm"
+      />
       <div className="max-h-44 overflow-y-auto rounded-md border border-border divide-y divide-border">
         {clients.length === 0 ? (
           <p className="px-3 py-2 text-sm text-muted-foreground">Nenhum cliente.</p>
+        ) : visible.length === 0 ? (
+          <p className="px-3 py-2 text-sm text-muted-foreground">Nenhum cliente com esse nome.</p>
         ) : (
-          clients.map((c) => (
+          visible.map((c) => (
             <label key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer">
               <Checkbox
                 checked={selected.includes(c.id)}
