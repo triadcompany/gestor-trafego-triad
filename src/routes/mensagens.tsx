@@ -599,7 +599,9 @@ function recurrenceSummary(r: MessageAutomationRow): string {
   if (r.recurrence_type === "daily") return `Todo dia às ${hhmm}`;
   const days = [...r.recurrence_days].sort((a, b) => a - b);
   if (r.recurrence_type === "weekly") {
-    return `Toda ${days.map((d) => DOW_LABEL[d]).join(" e ")} às ${hhmm}`;
+    const names = days.map((d) => DOW_LABEL[d]);
+    const joined = names.length > 1 ? `${names.slice(0, -1).join(", ")} e ${names[names.length - 1]}` : names[0];
+    return `${joined.charAt(0).toUpperCase()}${joined.slice(1)} às ${hhmm}`;
   }
   return `Todo mês nos dias ${days.join(", ")} às ${hhmm}`;
 }
@@ -608,6 +610,27 @@ function reportClientsLabel(r: MessageAutomationRow): string {
   if (r.report_client_names.length === 1) return r.report_client_names[0];
   if (r.report_client_names.length > 1) return `${r.report_client_names.length} clientes`;
   return r.client_name ?? "";
+}
+
+// Quem recebe, em uma frase: "Manda no grupo de 26 clientes" ou "Resume 25 grupos → Equipe".
+function recipientsSummary(r: MessageAutomationRow): string {
+  const custom = r.destinations.filter((d) => d.kind === "custom").map((d) => d.name);
+  const customLabel = custom.length === 0 ? "" : custom.length <= 2 ? custom.join(", ") : `${custom.length} destinos`;
+  const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+  if (r.content_type === "group_summary") {
+    const n = r.summary_client_ids.length;
+    return `Resume ${plural(n, "grupo", "grupos")}${customLabel ? ` → ${customLabel}` : ""}`;
+  }
+  if (r.content_type === "text") {
+    const n = r.report_client_names.length || (r.client_name ? 1 : 0);
+    const groups = n > 0 ? `Manda no grupo de ${plural(n, "cliente", "clientes")}` : "";
+    if (groups && customLabel) return `${groups} + ${customLabel}`;
+    if (groups) return groups;
+    return customLabel ? `Manda para ${customLabel}` : "Sem destino";
+  }
+  const n = r.report_client_names.length || (r.client_name ? 1 : 0);
+  return `Relatório de ${plural(n, "cliente", "clientes")}${customLabel ? ` → ${customLabel}` : " · sem destino"}`;
 }
 
 function contentLabel(r: MessageAutomationRow): string {
@@ -782,35 +805,33 @@ function AutomacoesTab() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap mb-1">
                   <span className="font-medium text-sm">{a.name}</span>
-                  <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                    {contentLabel(a)}
-                  </span>
-                  {!a.active && (
-                    <span className="text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 rounded-full bg-muted text-muted-foreground">
-                      Pausada
-                    </span>
-                  )}
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-muted text-muted-foreground">{contentLabel(a)}</span>
+                  {!a.active && <span className="text-xs px-2 py-0.5 rounded-full bg-status-attention/15 text-status-attention">Pausada</span>}
                 </div>
                 <p className="text-xs text-muted-foreground">{recurrenceSummary(a)}</p>
                 <div className="flex items-center gap-1.5 mt-1.5 text-xs text-muted-foreground min-w-0">
                   <Users className="h-3 w-3 shrink-0" />
-                  <span className="truncate">{a.destinations.map((d) => d.name).join(", ") || "sem destino"}</span>
+                  <span className="truncate">{recipientsSummary(a)}</span>
                 </div>
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  {a.last_run_at ? `Rodou por último em ${formatDateTime(a.last_run_at)}` : "Nunca rodou"}
+                  {a.last_run_at ? `Último envio: ${formatDateTime(a.last_run_at)}` : "Ainda não foi enviada"}
                 </p>
               </div>
               <div className="flex flex-col items-end gap-2 shrink-0">
-                <Switch
-                  checked={a.active}
-                  onCheckedChange={(v) => toggleMut.mutate({ id: a.id, active: v })}
-                  aria-label="Ativar/pausar"
-                />
+                <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                  {a.active ? "Ativa" : "Pausada"}
+                  <Switch
+                    checked={a.active}
+                    onCheckedChange={(v) => toggleMut.mutate({ id: a.id, active: v })}
+                    aria-label={a.active ? "Pausar automação" : "Ativar automação"}
+                  />
+                </label>
                 <div className="flex items-center gap-1">
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8"
+                    title="Rodar agora (envia de verdade)"
                     onClick={() => {
                       const dest = a.destinations.map((d) => d.name).join(", ") || "nenhum destino configurado";
                       if (confirm(`Rodar "${a.name}" agora?\n\nIsso ENVIA de verdade, já, pra: ${dest}.\n\nNão é um teste — quem estiver do outro lado recebe a mensagem real.`)) {
@@ -822,13 +843,14 @@ function AutomacoesTab() {
                   >
                     {runningId === a.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => { setEditing(a); setComposerOpen(true); }} aria-label="Editar">
+                  <Button variant="ghost" size="icon" className="h-8 w-8" title="Editar" onClick={() => { setEditing(a); setComposerOpen(true); }} aria-label="Editar">
                     <Pencil className="h-3.5 w-3.5" />
                   </Button>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="h-8 w-8 text-status-critical hover:text-status-critical"
+                    title="Excluir"
                     onClick={() => { if (confirm(`Excluir a automação "${a.name}"?`)) deleteMut.mutate(a.id); }}
                     aria-label="Excluir"
                   >
