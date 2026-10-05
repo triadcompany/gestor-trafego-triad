@@ -1101,7 +1101,7 @@ function AutomationComposerDialog({
         mediaFiles.map(async (f) => ({ base64: await fileToBase64(f), mimetype: f.type, filename: f.name }))
       );
       const destinations = [
-        ...(contentType === "text" && reportClientIds.length > 0
+        ...(["text", "report", "report_pdf"].includes(contentType) && reportClientIds.length > 0
           ? [{ kind: "client_group" as const, remoteJid: null, name: "Grupo do cliente" }]
           : []),
         ...customRecipients.map((r) => ({ kind: "custom" as const, remoteJid: r.remoteJid, name: r.name })),
@@ -1147,7 +1147,8 @@ function AutomationComposerDialog({
     recurrenceType === "daily" ||
     (recurrenceType === "weekly" && weekdays.length > 0) ||
     (recurrenceType === "monthly" && monthdays.length > 0);
-  const hasValidDestination = (contentType === "text" && reportClientIds.length > 0) || customRecipients.length > 0;
+  const hasValidDestination =
+    (["text", "report", "report_pdf"].includes(contentType) && reportClientIds.length > 0) || customRecipients.length > 0;
   // Bug antigo aqui: "a && b && c || d" — por precedência, o || de fora fazia
   // qualquer regra com destino avulso pular nome/conteúdo/recorrência vazios
   // (o servidor então rejeitava e o zod cru vazava pro toast). Corrigido com

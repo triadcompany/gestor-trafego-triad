@@ -382,7 +382,7 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
       }
 
       const warnings: string[] = [];
-      const recipients: { remoteJid: string; name: string }[] = [];
+      let recipients: { remoteJid: string; name: string }[] = [];
       for (const dest of rule.destinations) {
         if (dest.kind === "custom" && rule.contentType === "text" && !isFirst) continue;
         if (dest.kind === "client_group") {
@@ -395,6 +395,7 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
           recipients.push({ remoteJid: dest.remoteJid, name: dest.name });
         }
       }
+      recipients = [...new Map(recipients.map((r) => [r.remoteJid, r])).values()];
       if (recipients.length === 0) {
         warnings.push(`Regra "${rule.name}" (${client.name}): nenhum destino resolvível — nada enviado.`);
         return { created: false, warnings };
