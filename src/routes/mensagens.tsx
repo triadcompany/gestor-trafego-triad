@@ -871,16 +871,20 @@ function ReportClientsField({
   clients,
   selected,
   onChange,
+  label = "Clientes",
+  hint,
 }: {
   clients: ClientRow[];
   selected: string[];
   onChange: (ids: string[]) => void;
+  label?: string;
+  hint?: string;
 }) {
   const allSelected = clients.length > 0 && selected.length === clients.length;
   return (
     <div className="space-y-1.5">
       <div className="flex items-center justify-between">
-        <Label>Clientes</Label>
+        <Label>{label}</Label>
         <button
           type="button"
           className="text-xs text-primary hover:underline"
@@ -905,7 +909,7 @@ function ReportClientsField({
         )}
       </div>
       <p className="text-[11px] text-muted-foreground">
-        {selected.length} selecionado{selected.length === 1 ? "" : "s"} — um relatório por cliente, cada um pro grupo dele.
+        {selected.length} selecionado{selected.length === 1 ? "" : "s"}{hint ? ` — ${hint}` : " — um relatório por cliente, cada um pro grupo dele."}
         {allSelected && " (todos agora — cliente novo não entra sozinho depois)"}
       </p>
     </div>
@@ -926,7 +930,6 @@ function AutomationComposerDialog({
   const [name, setName] = useState("");
   const [contentType, setContentType] = useState<"text" | "report" | "report_pdf" | "group_summary">("text");
   const [body, setBody] = useState("");
-  const [clientId, setClientId] = useState<string>("none");
   const [reportClientIds, setReportClientIds] = useState<string[]>([]);
   const [reportPeriodDays, setReportPeriodDays] = useState<number>(7);
   const [pdfCaption, setPdfCaption] = useState("");
@@ -943,7 +946,6 @@ function AutomationComposerDialog({
   const [sendHour, setSendHour] = useState("10");
   const [sendMinute, setSendMinute] = useState("00");
   const [instanceId, setInstanceId] = useState<string>("");
-  const [useClientGroup, setUseClientGroup] = useState(false);
   const [customRecipients, setCustomRecipients] = useState<EvolutionRecipient[]>([]);
   const [mediaFiles, setMediaFiles] = useState<File[]>([]);
   const [existingMedia, setExistingMedia] = useState<MediaItem[]>([]);
@@ -981,11 +983,11 @@ function AutomationComposerDialog({
 
   const reset = () => {
     setLoadedId(null);
-    setName(""); setContentType("text"); setBody(""); setClientId("none"); setReportClientIds([]); setReportPeriodDays(7); setPdfCaption("");
+    setName(""); setContentType("text"); setBody(""); setReportClientIds([]); setReportPeriodDays(7); setPdfCaption("");
     setReportTemplateId(null); setReportBody(DEFAULT_REPORT_TEMPLATE);
     setSummaryTurno("manha"); setSummaryClientIds([]);
     setRecurrenceType("weekly"); setWeekdays([1]); setMonthdays([1]); setSendHour("10"); setSendMinute("00");
-    setInstanceId(""); setUseClientGroup(false); setCustomRecipients([]); setMediaFiles([]); setExistingMedia([]);
+    setInstanceId(""); setCustomRecipients([]); setMediaFiles([]); setExistingMedia([]);
   };
 
   if (open && editing && loadedId !== editing.id) {
@@ -993,7 +995,6 @@ function AutomationComposerDialog({
     setName(editing.name);
     setContentType(editing.content_type);
     setBody(editing.content_type === "text" ? (editing.body ?? "") : "");
-    setClientId(editing.client_id ?? "none");
     setReportClientIds(editing.report_client_ids.length > 0 ? editing.report_client_ids : editing.client_id ? [editing.client_id] : []);
     setReportPeriodDays(editing.report_period_days);
     setPdfCaption(editing.content_type === "report_pdf" ? (editing.body ?? "") : "");
@@ -1013,7 +1014,6 @@ function AutomationComposerDialog({
     setSendHour(String(editing.send_hour).padStart(2, "0"));
     setSendMinute(String(editing.send_minute).padStart(2, "0"));
     setInstanceId(editing.whatsapp_instance_id ?? "");
-    setUseClientGroup(editing.destinations.some((d) => d.kind === "client_group"));
     setCustomRecipients(
       editing.destinations
         .filter((d) => d.kind === "custom" && d.remote_jid)
@@ -1069,7 +1069,7 @@ function AutomationComposerDialog({
         mediaFiles.map(async (f) => ({ base64: await fileToBase64(f), mimetype: f.type, filename: f.name }))
       );
       const destinations = [
-        ...(useClientGroup && clientId !== "none"
+        ...(contentType === "text" && reportClientIds.length > 0
           ? [{ kind: "client_group" as const, remoteJid: null, name: "Grupo do cliente" }]
           : []),
         ...customRecipients.map((r) => ({ kind: "custom" as const, remoteJid: r.remoteJid, name: r.name })),
@@ -1082,8 +1082,8 @@ function AutomationComposerDialog({
         reportTemplateId: contentType === "report" ? reportTemplateId : null,
         summaryTurno: contentType === "group_summary" ? summaryTurno : null,
         summaryClientIds: contentType === "group_summary" ? summaryClientIds : [],
-        clientId: contentType === "text" ? (clientId === "none" ? null : clientId) : null,
-        reportClientIds: contentType === "report" || contentType === "report_pdf" ? reportClientIds : [],
+        clientId: null,
+        reportClientIds: contentType === "report" || contentType === "report_pdf" || contentType === "text" ? reportClientIds : [],
         reportPeriodDays,
         recurrenceType,
         recurrenceDays: recurrenceType === "weekly" ? weekdays : recurrenceType === "monthly" ? monthdays : [],
@@ -1103,7 +1103,6 @@ function AutomationComposerDialog({
     onError: (e) => toast.error(humanizeError(e), { duration: 8000 }),
   });
 
-  const hasClient = clientId !== "none";
   const hasValidContent =
     contentType === "text"
       ? body.trim().length > 0 || mediaFiles.length > 0 || existingMedia.length > 0
@@ -1116,7 +1115,7 @@ function AutomationComposerDialog({
     recurrenceType === "daily" ||
     (recurrenceType === "weekly" && weekdays.length > 0) ||
     (recurrenceType === "monthly" && monthdays.length > 0);
-  const hasValidDestination = (useClientGroup && hasClient) || customRecipients.length > 0;
+  const hasValidDestination = (contentType === "text" && reportClientIds.length > 0) || customRecipients.length > 0;
   // Bug antigo aqui: "a && b && c || d" — por precedência, o || de fora fazia
   // qualquer regra com destino avulso pular nome/conteúdo/recorrência vazios
   // (o servidor então rejeitava e o zod cru vazava pro toast). Corrigido com
@@ -1193,16 +1192,12 @@ function AutomationComposerDialog({
                 <input ref={fileInputRef} type="file" accept="image/*,video/*,application/pdf" multiple className="hidden"
                   onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
               </div>
-              <div className="space-y-1.5">
-                <Label>Cliente <span className="text-muted-foreground font-normal text-xs ml-1.5">opcional — habilita "grupo do cliente"</span></Label>
-                <Select value={clientId} onValueChange={setClientId}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhum</SelectItem>
-                    {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+              <ReportClientsField
+                clients={clients}
+                selected={reportClientIds}
+                onChange={setReportClientIds}
+                hint="cada cliente recebe essa mensagem no grupo dele."
+              />
             </>
           ) : contentType === "report" ? (
             <div className="space-y-3">
@@ -1325,30 +1320,13 @@ function AutomationComposerDialog({
                   <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="tarde" /> Tarde (12h–17h30)</label>
                 </RadioGroup>
               </div>
-              <div className="space-y-1.5">
-                <Label>Clientes no resumo <span className="text-muted-foreground font-normal text-xs ml-1.5">os grupos desses clientes entram</span></Label>
-                <div className="max-h-44 overflow-y-auto rounded-md border border-border divide-y divide-border">
-                  {clients.length === 0 ? (
-                    <p className="px-3 py-2 text-sm text-muted-foreground">Nenhum cliente.</p>
-                  ) : (
-                    clients.map((c) => (
-                      <label key={c.id} className="flex items-center gap-2 px-3 py-2 text-sm cursor-pointer">
-                        <Checkbox
-                          checked={summaryClientIds.includes(c.id)}
-                          onCheckedChange={(v) =>
-                            setSummaryClientIds((prev) => (v === true ? [...prev, c.id] : prev.filter((x) => x !== c.id)))
-                          }
-                        />
-                        <span className="flex-1 truncate">{c.name}</span>
-                        {!c.whatsapp_group_id && <span className="text-[10px] text-muted-foreground shrink-0">sem grupo</span>}
-                      </label>
-                    ))
-                  )}
-                </div>
-                <p className="text-[11px] text-muted-foreground">
-                  {summaryClientIds.length} selecionado{summaryClientIds.length === 1 ? "" : "s"}. Clientes "sem grupo" aparecem no aviso do resumo, mas não são lidos.
-                </p>
-              </div>
+              <ReportClientsField
+                clients={clients}
+                selected={summaryClientIds}
+                onChange={setSummaryClientIds}
+                label="Clientes no resumo"
+                hint="os grupos desses clientes entram num resumo só. Clientes sem grupo aparecem no aviso do resumo, mas não são lidos."
+              />
             </div>
           )}
 
@@ -1409,12 +1387,6 @@ function AutomationComposerDialog({
 
           <div className="space-y-2.5 rounded-lg border border-border/60 bg-muted/10 p-3">
             <Label className="flex items-center gap-1.5"><Users className="h-3.5 w-3.5 text-muted-foreground" /> Destinos</Label>
-            {hasClient && (
-              <label className="flex items-center gap-2 text-sm cursor-pointer">
-                <Checkbox checked={useClientGroup} onCheckedChange={(v) => setUseClientGroup(v === true)} />
-                Enviar no grupo do WhatsApp do cliente
-              </label>
-            )}
             <RecipientSearch selected={customRecipients} onChange={setCustomRecipients} />
           </div>
 

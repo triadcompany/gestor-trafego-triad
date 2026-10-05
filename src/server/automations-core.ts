@@ -304,13 +304,18 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
   // Relatório (texto ou PDF) pode ter vários clientes-alvo: cada um gera seu
   // próprio texto/arquivo e sua própria mensagem, endereçada ao grupo daquele
   // cliente (destinos avulsos configurados na regra valem pra todos).
-  if (rule.contentType === "report" || rule.contentType === "report_pdf") {
-    const targetIds = rule.reportClientIds.length > 0 ? rule.reportClientIds : rule.clientId ? [rule.clientId] : [];
+  const fanOutIds = rule.reportClientIds.length > 0 ? rule.reportClientIds : rule.clientId ? [rule.clientId] : [];
+  const isFanOut = rule.contentType === "report" || rule.contentType === "report_pdf" || (rule.contentType === "text" && fanOutIds.length > 0);
+  if (isFanOut) {
+    const targetIds = fanOutIds;
     if (targetIds.length === 0) {
       return { created: false, warnings: [`Regra "${rule.name}": nenhum cliente selecionado.`] };
     }
 
-    const materializeForClient = async (clientId: string): Promise<MaterializeResult> => {
+    // Texto por cliente: cada cliente recebe no grupo dele. Destinos avulsos da
+    // regra (ex: um grupo interno) entram só na mensagem do primeiro cliente,
+    // senão a mesma mensagem chegava N vezes no mesmo grupo.
+    const materializeForClient = async (clientId: string, isFirst: boolean): Promise<MaterializeResult> => {
       const client = await db.query.clients.findFirst({
         where: eq(clients.id, clientId),
         columns: { id: true, name: true, metaAdAccountId: true, whatsappGroupId: true, cplMax: true },
@@ -320,57 +325,65 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
       const instance = await pickGestorWhatsappInstance({ organizationId: rule.organizationId, explicitInstanceId: rule.whatsappInstanceId });
       if (!instance) return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): nenhuma instância de WhatsApp do gestor ativa.`] };
 
-      const tokenRow = await pickMetaTokenRow({ organizationId: rule.organizationId, clientId: client.id });
-      if (!tokenRow) return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): nenhum token Meta ativo.`] };
-      if (tokenRow.expiresAt && new Date(tokenRow.expiresAt) < new Date()) {
-        return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): token Meta expirado.`] };
-      }
-
       let text: string;
       const extraMedia: Array<{ base64: string; mimetype: string; filename: string }> = [];
 
-      if (rule.contentType === "report_pdf") {
-        try {
-          const until = isoDateInBrasilia();
-          const since = daysAgoInBrasilia(rule.reportPeriodDays);
-          const campaigns = await fetchCampaigns(client.metaAdAccountId, tokenRow.accessToken, "today", { since, until });
-          const org = await db.query.organizations.findFirst({ where: eq(organizations.id, rule.organizationId), columns: { name: true } });
-          const doc = buildClientReportDoc({
-            clientName: client.name,
-            organizationName: org?.name ?? "Gestão de Tráfego",
-            since,
-            until,
-            cplMax: client.cplMax,
-            campaigns,
-          });
-          const base64 = Buffer.from(doc.output("arraybuffer")).toString("base64");
-          extraMedia.push({
-            base64,
-            mimetype: "application/pdf",
-            filename: `relatorio-${slugifyName(client.name)}-${since}_a_${until}.pdf`,
-          });
-          text = rule.body?.trim() || `📊 Relatório de campanhas — últimos ${rule.reportPeriodDays} dias`;
-        } catch (e) {
-          return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): falha ao gerar o PDF — ${e instanceof Error ? e.message : String(e)}`] };
+      if (rule.contentType === "text") {
+        text = rule.body?.trim() ?? "";
+        if (!text && rule.media.length === 0) {
+          return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): sem texto nem mídia.`] };
         }
       } else {
-        try {
-          let templateBody: string | null = null;
-          if (rule.reportTemplateId) {
-            const tpl = await db.query.reportTemplates.findFirst({ where: eq(reportTemplates.id, rule.reportTemplateId), columns: { body: true } });
-            templateBody = tpl?.body ?? null;
-          } else if (rule.body) {
-            templateBody = rule.body;
+        const tokenRow = await pickMetaTokenRow({ organizationId: rule.organizationId, clientId: client.id });
+        if (!tokenRow) return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): nenhum token Meta ativo.`] };
+        if (tokenRow.expiresAt && new Date(tokenRow.expiresAt) < new Date()) {
+          return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): token Meta expirado.`] };
+        }
+
+        if (rule.contentType === "report_pdf") {
+          try {
+            const until = isoDateInBrasilia();
+            const since = daysAgoInBrasilia(rule.reportPeriodDays);
+            const campaigns = await fetchCampaigns(client.metaAdAccountId, tokenRow.accessToken, "today", { since, until });
+            const org = await db.query.organizations.findFirst({ where: eq(organizations.id, rule.organizationId), columns: { name: true } });
+            const doc = buildClientReportDoc({
+              clientName: client.name,
+              organizationName: org?.name ?? "Gestão de Tráfego",
+              since,
+              until,
+              cplMax: client.cplMax,
+              campaigns,
+            });
+            const base64 = Buffer.from(doc.output("arraybuffer")).toString("base64");
+            extraMedia.push({
+              base64,
+              mimetype: "application/pdf",
+              filename: `relatorio-${slugifyName(client.name)}-${since}_a_${until}.pdf`,
+            });
+            text = rule.body?.trim() || `📊 Relatório de campanhas — últimos ${rule.reportPeriodDays} dias`;
+          } catch (e) {
+            return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): falha ao gerar o PDF — ${e instanceof Error ? e.message : String(e)}`] };
           }
-          text = await buildMetricsReportText({ metaAdAccountId: client.metaAdAccountId, name: client.name }, rule.reportPeriodDays, tokenRow.accessToken, templateBody);
-        } catch (e) {
-          return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): falha ao gerar relatório — ${e instanceof Error ? e.message : String(e)}`] };
+        } else {
+          try {
+            let templateBody: string | null = null;
+            if (rule.reportTemplateId) {
+              const tpl = await db.query.reportTemplates.findFirst({ where: eq(reportTemplates.id, rule.reportTemplateId), columns: { body: true } });
+              templateBody = tpl?.body ?? null;
+            } else if (rule.body) {
+              templateBody = rule.body;
+            }
+            text = await buildMetricsReportText({ metaAdAccountId: client.metaAdAccountId, name: client.name }, rule.reportPeriodDays, tokenRow.accessToken, templateBody);
+          } catch (e) {
+            return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): falha ao gerar relatório — ${e instanceof Error ? e.message : String(e)}`] };
+          }
         }
       }
 
       const warnings: string[] = [];
       const recipients: { remoteJid: string; name: string }[] = [];
       for (const dest of rule.destinations) {
+        if (dest.kind === "custom" && rule.contentType === "text" && !isFirst) continue;
         if (dest.kind === "client_group") {
           if (client.whatsappGroupId) {
             recipients.push({ remoteJid: client.whatsappGroupId, name: dest.name || "Grupo do cliente" });
@@ -394,9 +407,12 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
         await tx.insert(scheduledMessageRecipients).values(
           recipients.map((r) => ({ messageId: msg.id, remoteJid: r.remoteJid, name: r.name, status: "pending" as const }))
         );
-        if (extraMedia.length > 0) {
+        const media = rule.contentType === "text"
+          ? [...rule.media].sort((a, b) => a.sortOrder - b.sortOrder).map((m) => ({ base64: m.base64, mimetype: m.mimetype, filename: m.filename }))
+          : extraMedia;
+        if (media.length > 0) {
           await tx.insert(scheduledMessageMedia).values(
-            extraMedia.map((m, i) => ({ messageId: msg.id, base64: m.base64, mimetype: m.mimetype, filename: m.filename, sortOrder: i }))
+            media.map((m, i) => ({ messageId: msg.id, base64: m.base64, mimetype: m.mimetype, filename: m.filename, sortOrder: i }))
           );
         }
       });
@@ -404,7 +420,7 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
       return { created: true, warnings };
     };
 
-    const results = await Promise.all(targetIds.map(materializeForClient));
+    const results = await Promise.all(targetIds.map((id, i) => materializeForClient(id, i === 0)));
     return {
       created: results.some((r) => r.created),
       warnings: results.flatMap((r) => r.warnings),
