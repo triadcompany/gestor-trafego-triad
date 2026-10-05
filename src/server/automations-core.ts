@@ -296,6 +296,56 @@ export interface MaterializeResult {
 // Cria uma linha em scheduled_messages (pending, envio imediato) a partir da
 // regra. created=false (+ warnings) quando não dá pra montar — o chamador então
 // NÃO seta last_run_at, pra retentar no próximo tick.
+// Saldo baixo: os clientes marcados só entram na checagem. Quem estiver abaixo
+// do limite vira uma linha na mensagem, que sai UMA vez pros destinos da regra
+// (não no grupo de cada cliente).
+async function materializeSaldoBaixo(
+  rule: typeof messageAutomations.$inferSelect & { destinations: Array<{ kind: string; remoteJid: string | null; name: string }> },
+  clientIds: string[]
+): Promise<MaterializeResult> {
+  if (clientIds.length === 0) return { created: false, warnings: [`Regra "${rule.name}": nenhum cliente selecionado pra checar o saldo.`] };
+  const destinos = rule.destinations.filter((d) => d.kind === "custom" && d.remoteJid);
+  if (destinos.length === 0) return { created: false, warnings: [`Regra "${rule.name}": escolha pelo menos um destino (grupo ou contato) pra receber o aviso.`] };
+
+  const instance = await pickGestorWhatsappInstance({ organizationId: rule.organizationId, explicitInstanceId: rule.whatsappInstanceId });
+  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp do gestor ativa.`] };
+
+  const threshold = rule.balanceThreshold ?? 50000;
+  const warnings: string[] = [];
+  const avisos: string[] = [];
+  for (const clientId of clientIds) {
+    const client = await db.query.clients.findFirst({
+      where: eq(clients.id, clientId),
+      columns: { id: true, name: true, metaAdAccountId: true },
+    });
+    if (!client) { warnings.push(`Regra "${rule.name}": cliente ${clientId} não encontrado.`); continue; }
+    const tokenRow = await pickMetaTokenRow({ organizationId: rule.organizationId, clientId: client.id });
+    if (!tokenRow) { warnings.push(`Regra "${rule.name}" (${client.name}): nenhum token Meta ativo.`); continue; }
+    const info = await fetchAdAccountInfo(client.metaAdAccountId, tokenRow.accessToken);
+    if (info.balance === null) { warnings.push(`Regra "${rule.name}" (${client.name}): não foi possível ler o saldo na Meta.`); continue; }
+    await db.update(clients).set({ metaBalance: info.balance }).where(eq(clients.id, client.id));
+    if (info.balance >= threshold) continue;
+    const saldoFmt = (info.balance / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+    avisos.push((rule.body ?? "").replaceAll("{{cliente}}", client.name).replaceAll("{{saldo}}", saldoFmt).trim());
+  }
+
+  if (avisos.length === 0) {
+    return { created: false, warnings: [...warnings, `Regra "${rule.name}": nenhum cliente abaixo do limite agora — nada enviado.`], evaluated: true };
+  }
+
+  const text = avisos.join("\n\n");
+  await db.transaction(async (tx) => {
+    const [msg] = await tx
+      .insert(scheduledMessages)
+      .values({ organizationId: rule.organizationId, whatsappInstanceId: instance.instanceId, body: text, scheduledAt: new Date().toISOString(), status: "pending" })
+      .returning();
+    await tx.insert(scheduledMessageRecipients).values(
+      destinos.map((d) => ({ messageId: msg.id, remoteJid: d.remoteJid!, name: d.name, status: "pending" as const }))
+    );
+  });
+  return { created: true, warnings, evaluated: true };
+}
+
 export async function materializeAutomation(ruleId: string): Promise<MaterializeResult> {
   const rule = await db.query.messageAutomations.findFirst({
     where: eq(messageAutomations.id, ruleId),
@@ -307,7 +357,8 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
   // próprio texto/arquivo e sua própria mensagem, endereçada ao grupo daquele
   // cliente (destinos avulsos configurados na regra valem pra todos).
   const fanOutIds = rule.reportClientIds.length > 0 ? rule.reportClientIds : rule.clientId ? [rule.clientId] : [];
-  const isFanOut = rule.contentType === "report" || rule.contentType === "report_pdf" || ((rule.contentType === "text" || rule.contentType === "saldo_baixo") && fanOutIds.length > 0);
+  if (rule.contentType === "saldo_baixo") return materializeSaldoBaixo(rule, fanOutIds);
+  const isFanOut = rule.contentType === "report" || rule.contentType === "report_pdf" || (rule.contentType === "text" && fanOutIds.length > 0);
   if (isFanOut) {
     const targetIds = fanOutIds;
     if (targetIds.length === 0) {
@@ -330,19 +381,7 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
       let text: string;
       const extraMedia: Array<{ base64: string; mimetype: string; filename: string }> = [];
 
-      if (rule.contentType === "saldo_baixo") {
-        const tokenRow = await pickMetaTokenRow({ organizationId: rule.organizationId, clientId: client.id });
-        if (!tokenRow) return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): nenhum token Meta ativo.`] };
-        const info = await fetchAdAccountInfo(client.metaAdAccountId, tokenRow.accessToken);
-        if (info.balance === null) {
-          return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): não foi possível ler o saldo na Meta.`] };
-        }
-        await db.update(clients).set({ metaBalance: info.balance }).where(eq(clients.id, client.id));
-        if (info.balance >= (rule.balanceThreshold ?? 50000)) return { created: false, warnings: [], evaluated: true };
-        const saldoFmt = (info.balance / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
-        text = (rule.body ?? "").replaceAll("{{cliente}}", client.name).replaceAll("{{saldo}}", saldoFmt).trim();
-        if (!text) return { created: false, warnings: [`Regra "${rule.name}": sem texto na mensagem de saldo.`] };
-      } else if (rule.contentType === "text") {
+      if (rule.contentType === "text") {
         text = rule.body?.trim() ?? "";
         if (!text && rule.media.length === 0) {
           return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): sem texto nem mídia.`] };
@@ -438,9 +477,6 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
     const results = await Promise.all(targetIds.map((id, i) => materializeForClient(id, i === 0)));
     const created = results.some((r) => r.created);
     const warnings = results.flatMap((r) => r.warnings);
-    if (!created && rule.contentType === "saldo_baixo" && results.some((r) => r.evaluated)) {
-      warnings.push(`Regra "${rule.name}": nenhum cliente com saldo abaixo do limite agora — nada enviado.`);
-    }
     return { created, warnings, evaluated: results.some((r) => r.evaluated) };
   }
 
