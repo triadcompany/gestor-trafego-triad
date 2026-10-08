@@ -795,6 +795,28 @@ export interface EvolutionRecipient {
   isGroup: boolean;
 }
 
+// Cache curto da lista de grupos por instância — fetchAllGroups na Evolution
+// devolve TODOS os grupos (pode passar de 150) e não tem busca por texto no
+// servidor dela, então sem isso cada letra digitada refazia o download inteiro
+// de novo. 45s é o bastante pra uma busca inteira (várias teclas) reaproveitar
+// o mesmo fetch, sem deixar o resultado velho por muito tempo.
+const groupsCache = new Map<string, { data: Array<{ id?: string; subject?: string }>; expiresAt: number }>();
+
+async function fetchAllGroupsCached(url: string, apiKey: string, instance: string): Promise<Array<{ id?: string; subject?: string }>> {
+  const cacheKey = `${url}::${instance}`;
+  const cached = groupsCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+
+  const res = await fetch(`${url}/group/fetchAllGroups/${instance}?getParticipants=false`, {
+    method: "GET",
+    headers: { apikey: apiKey, "Content-Type": "application/json" },
+  });
+  const groups = (await res.json()) as Array<{ id?: string; subject?: string }>;
+  const data = Array.isArray(groups) ? groups : [];
+  groupsCache.set(cacheKey, { data, expiresAt: Date.now() + 45_000 });
+  return data;
+}
+
 const _searchEvolutionRecipients = createServerFn({ method: "GET" })
   .inputValidator(z.object({ query: z.string(), groupsOnly: z.boolean().optional() }))
   .handler(async ({ data }): Promise<EvolutionRecipient[]> => {
@@ -824,18 +846,12 @@ const _searchEvolutionRecipients = createServerFn({ method: "GET" })
     }
 
     try {
-      const res = await fetch(`${url}/group/fetchAllGroups/${instance}?getParticipants=false`, {
-        method: "GET",
-        headers,
-      });
-      const groups = (await res.json()) as Array<{ id?: string; subject?: string }>;
-      if (Array.isArray(groups)) {
-        for (const g of groups) {
-          if (!g.id) continue;
-          const name = g.subject || g.id;
-          if (q && !name.toLowerCase().includes(q)) continue;
-          results.push({ remoteJid: g.id, name, isGroup: true });
-        }
+      const groups = await fetchAllGroupsCached(url, apiKey, instance);
+      for (const g of groups) {
+        if (!g.id) continue;
+        const name = g.subject || g.id;
+        if (q && !name.toLowerCase().includes(q)) continue;
+        results.push({ remoteJid: g.id, name, isGroup: true });
       }
     } catch {
       // instância pode estar desconectada — segue só com contatos
