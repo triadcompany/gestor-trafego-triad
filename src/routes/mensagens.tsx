@@ -993,7 +993,7 @@ function AutomationComposerDialog({
   const [existingMedia, setExistingMedia] = useState<MediaItem[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { data: clients = [] } = useQuery({ queryKey: ["clients-all"], queryFn: fetchAllClients });
+  const { data: clients = [], isLoading: clientsLoading } = useQuery({ queryKey: ["clients-all"], queryFn: fetchAllClients });
   const { data: instances = [] } = useQuery({ queryKey: ["whatsapp-instances"], queryFn: fetchWhatsappInstances });
   const { data: templates = [] } = useQuery({ queryKey: ["report-templates"], queryFn: fetchReportTemplates });
 
@@ -1022,6 +1022,23 @@ function AutomationComposerDialog({
   useEffect(() => {
     if (!instanceId && gestorInstances.length > 0) setInstanceId(gestorInstances[0].id);
   }, [gestorInstances, instanceId]);
+
+  // Uma automação pode ter sido salva com um cliente que o gestor atual não
+  // acessa mais (dono mudou, cliente removido). Esses ids ficam "fantasmas":
+  // contam no total selecionado mas não aparecem na lista de checkboxes (que
+  // só lista clientes acessíveis agora), então o gestor não tem como
+  // desmarcá-los — e o salvamento falha com "cliente não encontrado ou sem
+  // acesso" mesmo que ele só tenha mexido em clientes válidos. Poda assim que
+  // a lista de clientes acessíveis carrega (nunca durante o loading, pra não
+  // zerar a seleção por causa de uma corrida de carregamento).
+  useEffect(() => {
+    if (clientsLoading || clients.length === 0) return;
+    const validIds = new Set(clients.map((c) => c.id));
+    setReportClientIds((prev) => {
+      const filtered = prev.filter((id) => validIds.has(id));
+      return filtered.length === prev.length ? prev : filtered;
+    });
+  }, [clients, clientsLoading]);
 
   const reset = () => {
     setLoadedId(null);
