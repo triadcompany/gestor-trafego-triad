@@ -1,5 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, desc, eq, gte, inArray, lte, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
@@ -8,6 +8,7 @@ import {
   clientTags,
   clients,
   conversationTemplates,
+  messageAutomations,
   metaLeadAttributions,
   metricsDaily,
   profiles,
@@ -490,7 +491,20 @@ const _deleteClient = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const { organizationId, role, userId } = await requireOrgContext();
     await assertClientAccessible(data.id, { organizationId, role, userId });
-    await db.delete(clients).where(eq(clients.id, data.id));
+    await db.transaction(async (tx) => {
+      // report_client_ids/summary_client_ids são uuid[] — Postgres não tem FK
+      // por elemento de array, então sem isso o cliente excluído fica
+      // "fantasma": some de tudo que o usuário vê, mas trava o próximo save
+      // da automação com "cliente não encontrado ou sem acesso".
+      await tx
+        .update(messageAutomations)
+        .set({
+          reportClientIds: sql`array_remove(${messageAutomations.reportClientIds}, ${data.id}::uuid)`,
+          summaryClientIds: sql`array_remove(${messageAutomations.summaryClientIds}, ${data.id}::uuid)`,
+        })
+        .where(eq(messageAutomations.organizationId, organizationId));
+      await tx.delete(clients).where(eq(clients.id, data.id));
+    });
   });
 
 export async function deleteClient(id: string): Promise<void> {
