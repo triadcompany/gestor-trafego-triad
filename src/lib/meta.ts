@@ -1042,6 +1042,7 @@ export async function fetchCampaigns(
 export interface MetaTargeting {
   age_min?: number;
   age_max?: number;
+  age_range?: [number, number]; // formato alternativo que a Meta usa quando targeting_automation.advantage_audience está ligado
   genders?: number[]; // 1 = male, 2 = female, [] = all
   geo_locations?: {
     countries?: string[];
@@ -2350,6 +2351,16 @@ export async function duplicateCampaign(
     delete targeting.publisher_platforms;
     delete targeting.facebook_positions;
     delete targeting.instagram_positions;
+    // age_range só existe com advantage_audience ligado — como esse campo vai ser
+    // desligado embaixo, converte pra age_min/age_max (equivalente manual) antes de
+    // descartar, senão a Meta rejeita com "targeting_automation must be enabled to
+    // use the field age_range" (erro 100.1487079).
+    if (Array.isArray(targeting.age_range)) {
+      const [min, max] = targeting.age_range;
+      if (typeof min === "number") targeting.age_min = min;
+      if (typeof max === "number") targeting.age_max = max;
+      delete targeting.age_range;
+    }
     // Público Advantage sempre desabilitado
     targeting.targeting_automation = { advantage_audience: 0 };
 
@@ -2495,6 +2506,14 @@ export async function duplicateAdSet(
   delete targeting.publisher_platforms;
   delete targeting.facebook_positions;
   delete targeting.instagram_positions;
+  // age_range só existe com advantage_audience ligado — ver comentário equivalente
+  // em duplicateCampaign sobre o erro 100.1487079.
+  if (Array.isArray(targeting.age_range)) {
+    const [min, max] = targeting.age_range;
+    if (typeof min === "number") targeting.age_min = min;
+    if (typeof max === "number") targeting.age_max = max;
+    delete targeting.age_range;
+  }
   targeting.targeting_automation = { advantage_audience: 0 };
 
   const effectiveDestinationType = adSet.destination_type ?? "";
