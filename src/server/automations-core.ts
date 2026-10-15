@@ -17,7 +17,7 @@ import {
   scheduledMessages,
   whatsappInstances,
 } from "@/db/schema";
-import { buildMetricsReportText, fetchAdAccountInfo, fetchCampaigns } from "@/lib/meta";
+import { buildMetricsReportText, fetchAdAccountInfo, fetchCampaigns, mapWithConcurrency } from "@/lib/meta";
 import { isoDateInBrasilia, daysAgoInBrasilia } from "@/lib/brasilia-date";
 import { buildClientReportDoc, slug as slugifyName } from "@/lib/client-report-pdf";
 
@@ -474,7 +474,16 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
       return { created: true, warnings };
     };
 
-    const results = await Promise.all(targetIds.map((id, i) => materializeForClient(id, i === 0)));
+    // Concorrência limitada, não Promise.all sem limite: uma automação com
+    // 20+ clientes disparando fetchCampaigns pra todos ao mesmo tempo é o que
+    // mais faz bater no rate limit por conta da Meta (mesmo padrão já
+    // resolvido em syncAllClients, ver comentário lá).
+    const settled = await mapWithConcurrency(targetIds, 3, (id, i) => materializeForClient(id, i === 0));
+    const results = settled.map((r) =>
+      r.status === "fulfilled"
+        ? r.value
+        : { created: false, warnings: [`Regra "${rule.name}": erro inesperado — ${r.reason instanceof Error ? r.reason.message : String(r.reason)}`] }
+    );
     const created = results.some((r) => r.created);
     const warnings = results.flatMap((r) => r.warnings);
     return { created, warnings, evaluated: results.some((r) => r.evaluated) };

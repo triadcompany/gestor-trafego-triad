@@ -960,37 +960,32 @@ export async function fetchCampaigns(
 
   const insightsParams = new URLSearchParams(insightsBase);
 
-  const [campaignsRes, insightsRes] = await Promise.all([
-    fetch(`${BASE_URL}/${adAccountId}/campaigns?${campaignsParams}`),
-    fetch(`${BASE_URL}/${adAccountId}/insights?${insightsParams}`),
-  ]);
+  // Sequencial, não Promise.all: disparar as duas chamadas pra mesma conta ao
+  // mesmo tempo já estoura sozinho um limite de "1 chamada simultânea por 30s"
+  // (error 613) em contas com acesso Standard. fetchMetaJson também dá
+  // retry/backoff automático em erros transitórios de rate limit.
+  const campaignsJson = await fetchMetaJson<{
+    data?: Array<{
+      id: string;
+      name: string;
+      status: string;
+      daily_budget?: string;
+      objective: string;
+    }>;
+    error?: { message: string };
+  }>(`${BASE_URL}/${adAccountId}/campaigns?${campaignsParams}`);
 
-  if (!campaignsRes.ok) throw new Error(`Erro ao buscar campanhas: ${campaignsRes.status}`);
-  if (!insightsRes.ok) throw new Error(`Erro ao buscar métricas de campanhas: ${insightsRes.status}`);
-
-  const [campaignsJson, insightsJson] = await Promise.all([
-    campaignsRes.json() as Promise<{
-      data?: Array<{
-        id: string;
-        name: string;
-        status: string;
-        daily_budget?: string;
-        objective: string;
-      }>;
-      error?: { message: string };
-    }>,
-    insightsRes.json() as Promise<{
-      data?: Array<{
-        campaign_id: string;
-        spend?: string;
-        impressions?: string;
-        inline_link_clicks?: string;
-        ctr?: string;
-        cpm?: string;
-        actions?: Array<{ action_type: string; value: string }>;
-      }>;
-    }>,
-  ]);
+  const insightsJson = await fetchMetaJson<{
+    data?: Array<{
+      campaign_id: string;
+      spend?: string;
+      impressions?: string;
+      inline_link_clicks?: string;
+      ctr?: string;
+      cpm?: string;
+      actions?: Array<{ action_type: string; value: string }>;
+    }>;
+  }>(`${BASE_URL}/${adAccountId}/insights?${insightsParams}`);
 
   if (campaignsJson.error) throw new Error(campaignsJson.error.message);
 
@@ -1919,8 +1914,9 @@ function formatMetaError(e: MetaApiError): string {
 }
 
 // Error codes the Meta API considers transient (safe to retry).
-// 1/2: internal/service errors; 4/17/341: rate limiting.
-const META_RETRYABLE_CODES = new Set([1, 2, 4, 17, 341]);
+// 1/2: internal/service errors; 4/17/341/613: rate limiting (613 é o limite de
+// chamadas simultâneas por conta — "1 calls per 30 seconds" no Standard Access).
+const META_RETRYABLE_CODES = new Set([1, 2, 4, 17, 341, 613]);
 
 class MetaApiCallError extends Error {
   constructor(message: string, public readonly code?: number) {
@@ -1970,7 +1966,7 @@ async function fetchMetaJson<T>(url: string): Promise<T> {
 // de disparar tudo de uma vez (Promise.all/allSettled sem limite), que é
 // exatamente o padrão que estoura o rate limit por conta quando a organização
 // tem várias contas de anúncio sincronizando ao mesmo tempo.
-async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
+export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<PromiseSettledResult<R>[]> {
   const results: PromiseSettledResult<R>[] = new Array(items.length);
   let next = 0;
   async function worker() {
