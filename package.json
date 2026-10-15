@@ -3,6 +3,10 @@
   "private": true,
   "sideEffects": false,
   "type": "module",
+  "overrides": {
+    "chokidar": "^3.6.0",
+    "lru-cache": "^5.1.1"
+  },
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
