@@ -53,12 +53,7 @@ function PrivacyPage() {
           <li>Contas de anúncio, campanhas, conjuntos de anúncios, anúncios e métricas de desempenho (gasto, impressões, cliques, conversas iniciadas) das contas de anúncio que o gestor administra;</li>
           <li>Páginas do Facebook e contas comerciais do Instagram vinculadas às contas de anúncio gerenciadas.</li>
         </Ul>
-        <H3>2.2 Ao conectar o Instagram (funil de comentário → Direct)</H3>
-        <Ul>
-          <li>Comentários públicos recebidos em publicações do Instagram da agência, e o texto das mensagens trocadas no Direct dentro do funil configurado;</li>
-          <li>Identificador público (não o nome real, salvo quando a pessoa o informa na conversa) de quem comenta ou envia mensagem.</li>
-        </Ul>
-        <H3>2.3 Ao conectar um número de WhatsApp (via Evolution API, self-hosted)</H3>
+        <H3>2.2 Ao conectar um número de WhatsApp (via Evolution API, self-hosted)</H3>
         <Ul>
           <li>Mensagens trocadas nos grupos e conversas usados para rastrear leads e automatizar relatórios/respostas;</li>
           <li>Número de telefone de contatos e grupos conectados.</li>
@@ -69,8 +64,8 @@ function PrivacyPage() {
         <Ul>
           <li>Exibir métricas e permitir a criação/edição/duplicação de campanhas de anúncio em nome do gestor autenticado;</li>
           <li>Atribuir leads recebidos no WhatsApp às campanhas de anúncio correspondentes;</li>
-          <li>Disparar automações de mensagem configuradas pelo próprio gestor (relatórios periódicos, resumos, respostas automáticas de comentário/Direct no Instagram);</li>
-          <li>Classificar a intenção de uma resposta dentro de um funil de Instagram configurado, usando IA (ver seção 4).</li>
+          <li>Disparar automações de mensagem configuradas pelo próprio gestor (relatórios periódicos, resumos, alertas de saldo);</li>
+          <li>Responder perguntas do gestor sobre os próprios dados através do assistente de IA do sistema (ver seção 4).</li>
         </Ul>
         <P>Não vendemos, alugamos nem usamos esses dados para publicidade de terceiros.</P>
 
@@ -78,7 +73,7 @@ function PrivacyPage() {
         <Ul>
           <li><strong className="text-foreground">Meta Platforms, Inc.</strong> — fonte dos dados (Graph API / Marketing API), conforme a autorização dada pelo próprio gestor no login;</li>
           <li><strong className="text-foreground">Evolution API</strong> — gateway de WhatsApp próprio da agência (self-hosted), usado só pra enviar/receber as mensagens das automações configuradas;</li>
-          <li><strong className="text-foreground">OpenAI</strong> — usada apenas quando o gestor liga explicitamente a opção "Classificar com IA" num bloco de condição do funil de Instagram, para interpretar a resposta de um lead e decidir qual caminho do funil seguir. Só o texto da mensagem é enviado, sem identificadores adicionais.</li>
+          <li><strong className="text-foreground">OpenAI</strong> — usada pelo assistente de IA do sistema, que responde perguntas do gestor sobre campanhas, leads e métricas da própria conta. Só o texto da conversa e os dados necessários pra responder são enviados.</li>
         </Ul>
         <P>Nenhum desses terceiros usa os dados para fins próprios — só processam em nome da agência.</P>
 

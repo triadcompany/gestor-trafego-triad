@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X, Sun, Moon, MessageCircle, Target, ChevronsLeft, Instagram } from "lucide-react";
+import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, CalendarDays, TrendingUp, Menu, X, Sun, Moon, MessageCircle, Target, ChevronsLeft } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { logout, getCurrentUser } from "@/server/session";
+import { logout } from "@/server/session";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { fetchCurrentProfile } from "@/lib/queries";
@@ -43,15 +43,6 @@ const navGroups = [
     ],
   },
 ] as const;
-
-// Só aparece pra platform admin (Triad Company) — ferramenta interna, não é
-// recurso multi-tenant. Ver docs/superpowers/specs/2026-09-21-funil-instagram-design.md.
-const adminNavGroup = {
-  label: "Admin",
-  items: [
-    { to: "/admin/instagram-funil", label: "Funil Instagram", icon: Instagram, exact: false },
-  ],
-} as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -98,12 +89,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     staleTime: Infinity,
   });
 
-  const { data: currentUser } = useQuery({
-    queryKey: ["current-user"],
-    queryFn: getCurrentUser,
-    staleTime: 1000 * 60,
-  });
-  const visibleNavGroups = currentUser?.isPlatformAdmin ? [...navGroups, adminNavGroup] : navGroups;
+  const visibleNavGroups = navGroups;
 
   const { theme, toggleTheme } = useTheme();
 

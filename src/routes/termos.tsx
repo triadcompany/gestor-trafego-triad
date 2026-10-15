@@ -39,8 +39,8 @@ function TermsPage() {
         <P>
           O Gestor de Tráfego é uma ferramenta interna de gestão de tráfego pago: permite criar, duplicar e
           acompanhar campanhas de anúncio na Meta (Facebook/Instagram), rastrear leads recebidos via
-          WhatsApp, automatizar mensagens e relatórios, e operar um funil de comentário → Direct no
-          Instagram. Não é um produto vendido a terceiros nem disponibilizado ao público.
+          WhatsApp e automatizar mensagens e relatórios. Não é um produto vendido a terceiros nem
+          disponibilizado ao público.
         </P>
 
         <H2>2. Quem pode usar</H2>

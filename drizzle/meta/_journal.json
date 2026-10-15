@@ -204,6 +204,13 @@
       "when": 1791222176440,
       "tag": "0028_message_automation_balance",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1792090936052,
+      "tag": "0029_drop_instagram_funnel",
+      "breakpoints": true
     }
   ]
 }
