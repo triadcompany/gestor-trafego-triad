@@ -21,7 +21,6 @@ import { Route as MensagensRouteImport } from './routes/mensagens'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DiagnosticoMetaRouteImport } from './routes/diagnostico-meta'
 import { Route as AgenteRouteImport } from './routes/agente'
-import { Route as AgendaRouteImport } from './routes/agenda'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ClientsIndexRouteImport } from './routes/clients.index'
 import { Route as RTokenRouteImport } from './routes/r.$token'
@@ -31,7 +30,6 @@ import { Route as CampaignsNewRouteImport } from './routes/campaigns.new'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AdminOrganizationsRouteImport } from './routes/admin.organizations'
 import { Route as CampaignsEditIdRouteImport } from './routes/campaigns.edit.$id'
-import { Route as AuthGoogleCallbackRouteImport } from './routes/auth.google.callback'
 
 const VendasRoute = VendasRouteImport.update({
   id: '/vendas',
@@ -93,11 +91,6 @@ const AgenteRoute = AgenteRouteImport.update({
   path: '/agente',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AgendaRoute = AgendaRouteImport.update({
-  id: '/agenda',
-  path: '/agenda',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -143,15 +136,9 @@ const CampaignsEditIdRoute = CampaignsEditIdRouteImport.update({
   path: '/campaigns/edit/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AuthGoogleCallbackRoute = AuthGoogleCallbackRouteImport.update({
-  id: '/auth/google/callback',
-  path: '/auth/google/callback',
-  getParentRoute: () => rootRouteImport,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
-  '/agenda': typeof AgendaRoute
   '/agente': typeof AgenteRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
@@ -171,12 +158,10 @@ export interface FileRoutesByFullPath {
   '/connect/$token': typeof ConnectTokenRoute
   '/r/$token': typeof RTokenRoute
   '/clients/': typeof ClientsIndexRoute
-  '/auth/google/callback': typeof AuthGoogleCallbackRoute
   '/campaigns/edit/$id': typeof CampaignsEditIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
-  '/agenda': typeof AgendaRoute
   '/agente': typeof AgenteRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
@@ -196,13 +181,11 @@ export interface FileRoutesByTo {
   '/connect/$token': typeof ConnectTokenRoute
   '/r/$token': typeof RTokenRoute
   '/clients': typeof ClientsIndexRoute
-  '/auth/google/callback': typeof AuthGoogleCallbackRoute
   '/campaigns/edit/$id': typeof CampaignsEditIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
-  '/agenda': typeof AgendaRoute
   '/agente': typeof AgenteRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
@@ -222,14 +205,12 @@ export interface FileRoutesById {
   '/connect/$token': typeof ConnectTokenRoute
   '/r/$token': typeof RTokenRoute
   '/clients/': typeof ClientsIndexRoute
-  '/auth/google/callback': typeof AuthGoogleCallbackRoute
   '/campaigns/edit/$id': typeof CampaignsEditIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/agenda'
     | '/agente'
     | '/diagnostico-meta'
     | '/login'
@@ -249,12 +230,10 @@ export interface FileRouteTypes {
     | '/connect/$token'
     | '/r/$token'
     | '/clients/'
-    | '/auth/google/callback'
     | '/campaigns/edit/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
-    | '/agenda'
     | '/agente'
     | '/diagnostico-meta'
     | '/login'
@@ -274,12 +253,10 @@ export interface FileRouteTypes {
     | '/connect/$token'
     | '/r/$token'
     | '/clients'
-    | '/auth/google/callback'
     | '/campaigns/edit/$id'
   id:
     | '__root__'
     | '/'
-    | '/agenda'
     | '/agente'
     | '/diagnostico-meta'
     | '/login'
@@ -299,13 +276,11 @@ export interface FileRouteTypes {
     | '/connect/$token'
     | '/r/$token'
     | '/clients/'
-    | '/auth/google/callback'
     | '/campaigns/edit/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
-  AgendaRoute: typeof AgendaRoute
   AgenteRoute: typeof AgenteRoute
   DiagnosticoMetaRoute: typeof DiagnosticoMetaRoute
   LoginRoute: typeof LoginRoute
@@ -325,7 +300,6 @@ export interface RootRouteChildren {
   ConnectTokenRoute: typeof ConnectTokenRoute
   RTokenRoute: typeof RTokenRoute
   ClientsIndexRoute: typeof ClientsIndexRoute
-  AuthGoogleCallbackRoute: typeof AuthGoogleCallbackRoute
   CampaignsEditIdRoute: typeof CampaignsEditIdRoute
 }
 
@@ -415,13 +389,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AgenteRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/agenda': {
-      id: '/agenda'
-      path: '/agenda'
-      fullPath: '/agenda'
-      preLoaderRoute: typeof AgendaRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -485,19 +452,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CampaignsEditIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/auth/google/callback': {
-      id: '/auth/google/callback'
-      path: '/auth/google/callback'
-      fullPath: '/auth/google/callback'
-      preLoaderRoute: typeof AuthGoogleCallbackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
-  AgendaRoute: AgendaRoute,
   AgenteRoute: AgenteRoute,
   DiagnosticoMetaRoute: DiagnosticoMetaRoute,
   LoginRoute: LoginRoute,
@@ -517,7 +476,6 @@ const rootRouteChildren: RootRouteChildren = {
   ConnectTokenRoute: ConnectTokenRoute,
   RTokenRoute: RTokenRoute,
   ClientsIndexRoute: ClientsIndexRoute,
-  AuthGoogleCallbackRoute: AuthGoogleCallbackRoute,
   CampaignsEditIdRoute: CampaignsEditIdRoute,
 }
 export const routeTree = rootRouteImport

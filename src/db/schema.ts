@@ -418,18 +418,6 @@ export const agentMessages = pgTable("agent_messages", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-export const googleCalendarTokens = pgTable("google_calendar_tokens", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id")
-    .notNull()
-    .unique()
-    .references(() => users.id, { onDelete: "cascade" }),
-  accessToken: text("access_token").notNull(),
-  refreshToken: text("refresh_token"),
-  expiresAt: timestamp("expires_at").notNull(),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
 export const n8nJobs = pgTable("n8n_jobs", {
   id: uuid("id").primaryKey(),
   organizationId: uuid("organization_id")
@@ -699,10 +687,6 @@ export const agentMessagesRelations = relations(agentMessages, ({ one }) => ({
     fields: [agentMessages.conversationId],
     references: [agentConversations.id],
   }),
-}));
-
-export const googleCalendarTokensRelations = relations(googleCalendarTokens, ({ one }) => ({
-  user: one(users, { fields: [googleCalendarTokens.userId], references: [users.id] }),
 }));
 
 export const n8nJobsRelations = relations(n8nJobs, ({ one }) => ({

@@ -211,6 +211,13 @@
       "when": 1792090936052,
       "tag": "0029_drop_instagram_funnel",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1792182748365,
+      "tag": "0030_drop_google_calendar",
+      "breakpoints": true
     }
   ]
 }
