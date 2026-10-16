@@ -85,13 +85,33 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
+          client_id: { type: "string", description: "ID do cliente no sistema (dono da campanha/ad set)" },
           ad_set_id: { type: "string", description: "ID do ad set Meta" },
           ad_set_name: { type: "string", description: "Nome legível do ad set" },
           daily_budget_brl: { type: "number", description: "Novo orçamento diário em R$" },
           current_budget_brl: { type: "number", description: "Orçamento atual em R$ (para exibir na confirmação)" },
           client_name: { type: "string", description: "Nome do cliente (para exibir na confirmação)" },
         },
-        required: ["ad_set_id", "ad_set_name", "daily_budget_brl", "client_name"],
+        required: ["client_id", "ad_set_id", "ad_set_name", "daily_budget_brl", "client_name"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "set_campaign_budget",
+      description: "Altera o orçamento diário de uma campanha (CBO — orçamento no nível da campanha, não do ad set). SEMPRE requer confirmação do usuário antes de executar.",
+      parameters: {
+        type: "object",
+        properties: {
+          client_id: { type: "string", description: "ID do cliente no sistema (dono da campanha)" },
+          campaign_id: { type: "string", description: "ID da campanha Meta" },
+          campaign_name: { type: "string", description: "Nome legível da campanha" },
+          daily_budget_brl: { type: "number", description: "Novo orçamento diário em R$" },
+          current_budget_brl: { type: "number", description: "Orçamento atual em R$ (para exibir na confirmação)" },
+          client_name: { type: "string", description: "Nome do cliente (para exibir na confirmação)" },
+        },
+        required: ["client_id", "campaign_id", "campaign_name", "daily_budget_brl", "client_name"],
       },
     },
   },
@@ -103,11 +123,12 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
+          client_id: { type: "string", description: "ID do cliente no sistema (dono da campanha)" },
           campaign_id: { type: "string", description: "ID da campanha Meta" },
           campaign_name: { type: "string", description: "Nome legível da campanha" },
           client_name: { type: "string", description: "Nome do cliente" },
         },
-        required: ["campaign_id", "campaign_name", "client_name"],
+        required: ["client_id", "campaign_id", "campaign_name", "client_name"],
       },
     },
   },
@@ -119,11 +140,12 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
       parameters: {
         type: "object",
         properties: {
+          client_id: { type: "string", description: "ID do cliente no sistema (dono da campanha)" },
           campaign_id: { type: "string", description: "ID da campanha Meta" },
           campaign_name: { type: "string", description: "Nome legível da campanha" },
           client_name: { type: "string", description: "Nome do cliente" },
         },
-        required: ["campaign_id", "campaign_name", "client_name"],
+        required: ["client_id", "campaign_id", "campaign_name", "client_name"],
       },
     },
   },
@@ -240,6 +262,7 @@ export const TOOL_DEFINITIONS: ChatCompletionTool[] = [
 
 export const WRITE_TOOLS = new Set([
   "update_ad_budget",
+  "set_campaign_budget",
   "pause_campaign",
   "activate_campaign",
   "create_task",
@@ -254,6 +277,16 @@ export const WRITE_TOOLS = new Set([
 export type ToolResult =
   | { type: "result"; data: unknown }
   | { type: "error"; message: string };
+
+// fetchClients() já filtra por organização + dono (clientAccessCondition) — então
+// um client_id que não pertence ao gestor logado nunca aparece aqui, mesmo que o
+// pending_action volte adulterado do navegador. Toda ação que mexe numa campanha/ad
+// set Meta passa por aqui antes de resolver o token, pra nunca usar o token padrão
+// da org num cliente que o gestor não deveria tocar.
+async function resolveClient(clientId: string) {
+  const clients = await fetchClients();
+  return clients.find((c) => c.id === clientId) ?? null;
+}
 
 export async function executeTool(
   name: string,
@@ -283,9 +316,8 @@ export async function executeTool(
       }
 
       case "get_client_campaigns": {
-        const clients = await fetchClients();
-        const client = clients.find((c) => c.id === args.client_id);
-        if (!client) return { type: "error", message: "Cliente não encontrado." };
+        const client = await resolveClient(args.client_id as string);
+        if (!client) return { type: "error", message: "Cliente não encontrado ou sem acesso." };
         const token = await getMetaToken(client.id);
         if (!token) return { type: "error", message: "Token Meta não configurado." };
         const datePreset = (args.date_preset as string | undefined) ?? "today";
@@ -330,22 +362,38 @@ export async function executeConfirmedAction(
   try {
     switch (name) {
       case "update_ad_budget": {
-        const token = await getMetaToken();
+        const client = await resolveClient(args.client_id as string);
+        if (!client) return { type: "error", message: "Cliente não encontrado ou sem acesso." };
+        const token = await getMetaToken(client.id);
         if (!token) return { type: "error", message: "Token Meta não configurado." };
         const budgetCents = Math.round((args.daily_budget_brl as number) * 100);
         await updateMetaObject(args.ad_set_id as string, { daily_budget: String(budgetCents) }, token);
         return { type: "result", data: { success: true } };
       }
 
+      case "set_campaign_budget": {
+        const client = await resolveClient(args.client_id as string);
+        if (!client) return { type: "error", message: "Cliente não encontrado ou sem acesso." };
+        const token = await getMetaToken(client.id);
+        if (!token) return { type: "error", message: "Token Meta não configurado." };
+        const budgetCents = Math.round((args.daily_budget_brl as number) * 100);
+        await updateMetaObject(args.campaign_id as string, { daily_budget: String(budgetCents) }, token);
+        return { type: "result", data: { success: true } };
+      }
+
       case "pause_campaign": {
-        const token = await getMetaToken();
+        const client = await resolveClient(args.client_id as string);
+        if (!client) return { type: "error", message: "Cliente não encontrado ou sem acesso." };
+        const token = await getMetaToken(client.id);
         if (!token) return { type: "error", message: "Token Meta não configurado." };
         await updateMetaObject(args.campaign_id as string, { status: "PAUSED" }, token);
         return { type: "result", data: { success: true } };
       }
 
       case "activate_campaign": {
-        const token = await getMetaToken();
+        const client = await resolveClient(args.client_id as string);
+        if (!client) return { type: "error", message: "Cliente não encontrado ou sem acesso." };
+        const token = await getMetaToken(client.id);
         if (!token) return { type: "error", message: "Token Meta não configurado." };
         await updateMetaObject(args.campaign_id as string, { status: "ACTIVE" }, token);
         return { type: "result", data: { success: true } };
@@ -377,9 +425,8 @@ export async function executeConfirmedAction(
       }
 
       case "create_campaign": {
-        const clients = await fetchClients();
-        const client = clients.find((c) => c.id === args.client_id);
-        if (!client) return { type: "error", message: "Cliente não encontrado." };
+        const client = await resolveClient(args.client_id as string);
+        if (!client) return { type: "error", message: "Cliente não encontrado ou sem acesso." };
         if (!client.meta_page_id) return { type: "error", message: `Cliente "${client.name}" não tem Page ID configurado. Edite o cadastro do cliente.` };
         if (!client.meta_whatsapp_number) return { type: "error", message: `Cliente "${client.name}" não tem WhatsApp Business configurado. Edite o cadastro do cliente.` };
         const token = await getMetaToken(client.id);
@@ -438,6 +485,8 @@ export function describeAction(name: string, args: JsonArgs): string {
   switch (name) {
     case "update_ad_budget":
       return `Alterar orçamento do ad set "${args.ad_set_name}" de R$ ${args.current_budget_brl ?? "?"} → R$ ${args.daily_budget_brl}/dia (${args.client_name})`;
+    case "set_campaign_budget":
+      return `Alterar orçamento da campanha "${args.campaign_name}" de R$ ${args.current_budget_brl ?? "?"} → R$ ${args.daily_budget_brl}/dia (${args.client_name})`;
     case "pause_campaign":
       return `Pausar campanha "${args.campaign_name}" (${args.client_name})`;
     case "activate_campaign":
