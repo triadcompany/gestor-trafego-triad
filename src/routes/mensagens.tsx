@@ -913,18 +913,31 @@ function ReportClientsField({
 }) {
   const [query, setQuery] = useState("");
   const allSelected = clients.length > 0 && selected.length === clients.length;
+  const pixClients = clients.filter((c) => c.payment_method === "pix");
+  const allPixSelected = pixClients.length > 0 && pixClients.every((c) => selected.includes(c.id));
   const visible = clients.filter((c) => c.name.toLowerCase().includes(query.trim().toLowerCase()));
   return (
     <div className="space-y-1.5">
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-2">
         <Label>{label}</Label>
-        <button
-          type="button"
-          className="text-xs text-primary hover:underline"
-          onClick={() => onChange(allSelected ? [] : clients.map((c) => c.id))}
-        >
-          {allSelected ? "Limpar seleção" : "Todos os clientes"}
-        </button>
+        <div className="flex items-center gap-3">
+          {pixClients.length > 0 && (
+            <button
+              type="button"
+              className="text-xs text-primary hover:underline"
+              onClick={() => onChange(allPixSelected ? [] : pixClients.map((c) => c.id))}
+            >
+              {allPixSelected ? "Limpar seleção" : "Clientes com Pix"}
+            </button>
+          )}
+          <button
+            type="button"
+            className="text-xs text-primary hover:underline"
+            onClick={() => onChange(allSelected ? [] : clients.map((c) => c.id))}
+          >
+            {allSelected ? "Limpar seleção" : "Todos os clientes"}
+          </button>
+        </div>
       </div>
       <Input
         value={query}
@@ -945,6 +958,9 @@ function ReportClientsField({
                 onCheckedChange={(v) => onChange(v === true ? [...selected, c.id] : selected.filter((x) => x !== c.id))}
               />
               <span className="flex-1 truncate">{c.name}</span>
+              <Badge variant="outline" className="text-[10px] px-1.5 py-0 font-normal shrink-0">
+                {c.payment_method === "pix" ? "Pix" : "Cartão"}
+              </Badge>
             </label>
           ))
         )}
