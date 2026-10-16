@@ -1,12 +1,15 @@
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RefreshCw, AlertTriangle, AlertCircle, CheckCircle2 } from "lucide-react";
+import { RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { fetchClientBalances, type ClientBalance } from "@/lib/queries";
-import { getLastSyncedAt } from "@/lib/meta";
+import { getLastSyncedAt, getBalanceThresholds, saveBalanceThresholds, type BalanceThresholds } from "@/lib/meta";
 import { triggerMetaSync } from "@/server/meta-sync";
 import { STATUS_COLORS } from "@/lib/status-colors";
 
@@ -23,10 +26,10 @@ function brl(centavos: number) {
   return (centavos / 100).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
-function balanceStatus(balance: number | null): "on-target" | "attention" | "critical" | "no-data" {
+function balanceStatus(balance: number | null, thresholds: BalanceThresholds): "on-target" | "attention" | "critical" | "no-data" {
   if (balance === null) return "no-data";
-  if (balance < 20000) return "critical";   // < R$200
-  if (balance < 50000) return "attention";  // < R$500
+  if (balance < thresholds.criticalCents) return "critical";
+  if (balance < thresholds.attentionCents) return "attention";
   return "on-target";
 }
 
@@ -41,9 +44,9 @@ function estimatedDays(balance: number | null, spendToday: number): string {
   return `~${days.toFixed(1)} dia${days !== 1 ? "s" : ""}`;
 }
 
-function sortByStatus(a: ClientBalance, b: ClientBalance) {
+function sortByStatus(a: ClientBalance, b: ClientBalance, thresholds: BalanceThresholds) {
   const order = { critical: 0, attention: 1, "on-target": 2, "no-data": 3 };
-  return order[balanceStatus(a.meta_balance)] - order[balanceStatus(b.meta_balance)];
+  return order[balanceStatus(a.meta_balance, thresholds)] - order[balanceStatus(b.meta_balance, thresholds)];
 }
 
 function SaldosPage() {
@@ -58,6 +61,13 @@ function SaldosPage() {
     queryKey: ["client-balances"],
     queryFn: fetchClientBalances,
   });
+
+  const { data: thresholds = { criticalCents: 20000, attentionCents: 50000 } } = useQuery({
+    queryKey: ["balance-thresholds"],
+    queryFn: getBalanceThresholds,
+  });
+
+  const [configOpen, setConfigOpen] = useState(false);
 
   const syncMutation = useMutation({
     mutationFn: () => triggerMetaSync(),
@@ -78,12 +88,11 @@ function SaldosPage() {
     // cartao always last; among pix, sort by criticality
     if (a.payment_method === "cartao" && b.payment_method !== "cartao") return 1;
     if (a.payment_method !== "cartao" && b.payment_method === "cartao") return -1;
-    return sortByStatus(a, b);
+    return sortByStatus(a, b, thresholds);
   });
   const maxBalance = Math.max(...pixClients.map((b) => b.meta_balance ?? 0), 1);
-  const totalBalance = pixClients.reduce((s, b) => s + (b.meta_balance ?? 0), 0);
-  const criticalCount = pixClients.filter((b) => balanceStatus(b.meta_balance) === "critical").length;
-  const attentionCount = pixClients.filter((b) => balanceStatus(b.meta_balance) === "attention").length;
+  const criticalCount = pixClients.filter((b) => balanceStatus(b.meta_balance, thresholds) === "critical").length;
+  const attentionCount = pixClients.filter((b) => balanceStatus(b.meta_balance, thresholds) === "attention").length;
 
   const syncedLabel = lastSyncedAt
     ? lastSyncedAt.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })
@@ -101,36 +110,44 @@ function SaldosPage() {
               {syncedLabel ? `Atualizado às ${syncedLabel}` : "Nunca sincronizado"} · automático a cada hora
             </p>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => syncMutation.mutate()}
-            disabled={syncMutation.isPending}
-            className="gap-2 shrink-0"
-          >
-            <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
-            Atualizar agora
-          </Button>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfigOpen((v) => !v)}
+              className="gap-2"
+            >
+              <SlidersHorizontal className="h-3.5 w-3.5" />
+              Configurar limites
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => syncMutation.mutate()}
+              disabled={syncMutation.isPending}
+              className="gap-2"
+            >
+              <RefreshCw className={`h-3.5 w-3.5 ${syncMutation.isPending ? "animate-spin" : ""}`} />
+              Atualizar agora
+            </Button>
+          </div>
         </div>
 
+        {configOpen && <ThresholdsConfig thresholds={thresholds} onClose={() => setConfigOpen(false)} />}
+
         {/* Summary cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-          <SummaryCard
-            label="Total disponível"
-            value={isLoading ? null : brl(totalBalance)}
-            sub={`${balances.length} conta${balances.length !== 1 ? "s" : ""} ativa${balances.length !== 1 ? "s" : ""}`}
-          />
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
           <SummaryCard
             label="Contas críticas"
             value={isLoading ? null : String(criticalCount)}
-            sub="abaixo de R$ 200"
+            sub={`abaixo de ${brl(thresholds.criticalCents)}`}
             valueClass={criticalCount > 0 ? "text-status-critical" : undefined}
             icon={criticalCount > 0 ? <AlertTriangle className="h-4 w-4 text-status-critical" /> : undefined}
           />
           <SummaryCard
             label="Em atenção"
             value={isLoading ? null : String(attentionCount)}
-            sub="R$ 200 – R$ 500"
+            sub={`${brl(thresholds.criticalCents)} – ${brl(thresholds.attentionCents)}`}
             valueClass={attentionCount > 0 ? "text-status-attention" : undefined}
             icon={attentionCount > 0 ? <AlertCircle className="h-4 w-4 text-status-attention" /> : undefined}
           />
@@ -170,6 +187,7 @@ function SaldosPage() {
                 key={client.id}
                 client={client}
                 maxBalance={maxBalance}
+                thresholds={thresholds}
               />
             ))
           )}
@@ -180,9 +198,9 @@ function SaldosPage() {
         {/* Legend */}
         <div className="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-4 pt-4 border-t border-border">
           {[
-            { color: "bg-status-on-target", label: "Saldo ≥ R$ 500" },
-            { color: "bg-status-attention", label: "R$ 200 – R$ 500" },
-            { color: "bg-status-critical", label: "Crítico < R$ 200" },
+            { color: "bg-status-on-target", label: `Saldo ≥ ${brl(thresholds.attentionCents)}` },
+            { color: "bg-status-attention", label: `${brl(thresholds.criticalCents)} – ${brl(thresholds.attentionCents)}` },
+            { color: "bg-status-critical", label: `Crítico < ${brl(thresholds.criticalCents)}` },
           ].map(({ color, label }) => (
             <div key={label} className="flex items-center gap-2 text-xs font-mono text-muted-foreground">
               <div className={`w-2 h-2 rounded-full ${color}`} />
@@ -192,6 +210,65 @@ function SaldosPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function ThresholdsConfig({ thresholds, onClose }: { thresholds: BalanceThresholds; onClose: () => void }) {
+  const queryClient = useQueryClient();
+  const [criticalReais, setCriticalReais] = useState(String(thresholds.criticalCents / 100));
+  const [attentionReais, setAttentionReais] = useState(String(thresholds.attentionCents / 100));
+
+  const saveMutation = useMutation({
+    mutationFn: saveBalanceThresholds,
+    onSuccess: () => {
+      toast.success("Limites atualizados.");
+      queryClient.invalidateQueries({ queryKey: ["balance-thresholds"] });
+      onClose();
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar limites"),
+  });
+
+  const handleSave = () => {
+    const criticalCents = Math.round(Number(criticalReais.replace(",", ".")) * 100);
+    const attentionCents = Math.round(Number(attentionReais.replace(",", ".")) * 100);
+    if (!criticalCents || !attentionCents || criticalCents <= 0 || attentionCents <= 0) {
+      toast.error("Informe valores válidos.");
+      return;
+    }
+    if (attentionCents <= criticalCents) {
+      toast.error('O limite "em atenção" precisa ser maior que o "crítico".');
+      return;
+    }
+    saveMutation.mutate({ criticalCents, attentionCents });
+  };
+
+  return (
+    <div className="rounded-xl border border-border bg-card p-4 mb-6 flex flex-col sm:flex-row sm:items-end gap-3">
+      <div className="flex-1 space-y-1">
+        <Label className="text-xs">Crítico — abaixo de (R$)</Label>
+        <Input
+          value={criticalReais}
+          onChange={(e) => setCriticalReais(e.target.value)}
+          inputMode="decimal"
+          className="h-9"
+        />
+      </div>
+      <div className="flex-1 space-y-1">
+        <Label className="text-xs">Em atenção — abaixo de (R$)</Label>
+        <Input
+          value={attentionReais}
+          onChange={(e) => setAttentionReais(e.target.value)}
+          inputMode="decimal"
+          className="h-9"
+        />
+      </div>
+      <div className="flex gap-2 shrink-0">
+        <Button variant="ghost" size="sm" onClick={onClose}>Cancelar</Button>
+        <Button size="sm" onClick={handleSave} disabled={saveMutation.isPending}>
+          {saveMutation.isPending ? "Salvando..." : "Salvar"}
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -224,9 +301,9 @@ function SummaryCard({
   );
 }
 
-function BalanceRow({ client, maxBalance }: { client: ClientBalance; maxBalance: number }) {
+function BalanceRow({ client, maxBalance, thresholds }: { client: ClientBalance; maxBalance: number; thresholds: BalanceThresholds }) {
   const isCard = client.payment_method === "cartao";
-  const status = isCard ? "no-data" : balanceStatus(client.meta_balance);
+  const status = isCard ? "no-data" : balanceStatus(client.meta_balance, thresholds);
   const colors = STATUS_COLORS[status];
   const barPct = !isCard && client.meta_balance !== null ? Math.max((client.meta_balance / maxBalance) * 100, 2) : 0;
 

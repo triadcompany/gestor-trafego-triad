@@ -276,6 +276,45 @@ export async function getLastSyncedAt(): Promise<Date | null> {
   return rows["last_synced_at"] ? new Date(rows["last_synced_at"]) : null;
 }
 
+// ── Limites de saldo (página Saldos Meta) — centavos ───────────
+
+export interface BalanceThresholds {
+  criticalCents: number;
+  attentionCents: number;
+}
+
+const DEFAULT_BALANCE_THRESHOLDS: BalanceThresholds = { criticalCents: 20000, attentionCents: 50000 };
+
+export async function getBalanceThresholds(): Promise<BalanceThresholds> {
+  const rows = await _getConfigValues({
+    data: { keys: ["balance_critical_threshold", "balance_attention_threshold"] },
+  });
+  return {
+    criticalCents: rows["balance_critical_threshold"]
+      ? parseInt(rows["balance_critical_threshold"], 10)
+      : DEFAULT_BALANCE_THRESHOLDS.criticalCents,
+    attentionCents: rows["balance_attention_threshold"]
+      ? parseInt(rows["balance_attention_threshold"], 10)
+      : DEFAULT_BALANCE_THRESHOLDS.attentionCents,
+  };
+}
+
+const _saveBalanceThresholds = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ criticalCents: z.number().int().positive(), attentionCents: z.number().int().positive() }))
+  .handler(async ({ data }) => {
+    if (data.attentionCents <= data.criticalCents) {
+      throw new Error("O limite \"em atenção\" precisa ser maior que o \"crítico\".");
+    }
+    await setConfigValues([
+      { key: "balance_critical_threshold", value: String(data.criticalCents) },
+      { key: "balance_attention_threshold", value: String(data.attentionCents) },
+    ]);
+  });
+
+export async function saveBalanceThresholds(data: BalanceThresholds): Promise<void> {
+  await _saveBalanceThresholds({ data });
+}
+
 // ── Account info (balance + payment method) ───────────────────
 
 export interface AdAccountBalanceInfo {
