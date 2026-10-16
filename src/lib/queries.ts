@@ -530,6 +530,7 @@ export interface ClientBalance {
   payment_method: "pix" | "cartao";
   meta_balance: number | null;
   spendToday: number;
+  meta_ad_account_id: string;
 }
 
 const _fetchClientBalances = createServerFn({ method: "GET" }).handler(async () => {
@@ -543,6 +544,7 @@ const _fetchClientBalances = createServerFn({ method: "GET" }).handler(async () 
       segment: clients.segment,
       paymentMethod: clients.paymentMethod,
       metaBalance: clients.metaBalance,
+      metaAdAccountId: clients.metaAdAccountId,
     })
     .from(clients)
     .where(and(eq(clients.active, true), eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })))
@@ -565,6 +567,7 @@ const _fetchClientBalances = createServerFn({ method: "GET" }).handler(async () 
     payment_method: (c.paymentMethod ?? "pix") as "pix" | "cartao",
     meta_balance: c.metaBalance ?? null,
     spendToday: metricsMap.get(c.id) ?? 0,
+    meta_ad_account_id: c.metaAdAccountId,
   }));
 });
 
