@@ -17,18 +17,13 @@ import {
   CheckCircle2,
   XCircle,
   Trash2,
-  Wallet,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
   runMetaDiagnostics,
   clearLastMetaError,
-  fetchRawAccountBalance,
-  getMetaToken,
   type PermissionStatus,
-  type RawAccountBalance,
 } from "@/lib/meta";
-import { fetchAllClients } from "@/lib/queries";
 
 export const Route = createFileRoute("/diagnostico-meta")({
   head: () => ({
@@ -334,137 +329,10 @@ function DiagnosticoMetaPage() {
                 </div>
               </Card>
             </Section>
-
-            {/* Raw balance fields */}
-            <BalanceDiagnosticSection hasToken={data.hasToken} />
           </div>
         )}
       </div>
     </AppShell>
-  );
-}
-
-function BalanceDiagnosticSection({ hasToken }: { hasToken: boolean }) {
-  const { data: clients = [], isLoading: loadingClients } = useQuery({
-    queryKey: ["clients-all"],
-    queryFn: fetchAllClients,
-    enabled: hasToken,
-  });
-
-  const { data: token } = useQuery({
-    queryKey: ["meta-token-raw"],
-    queryFn: () => getMetaToken(),
-    enabled: hasToken,
-  });
-
-  const { data: rawData, isLoading: loadingRaw, refetch, isFetching } = useQuery({
-    queryKey: ["raw-balance-fields", token],
-    queryFn: async () => {
-      if (!token) return [];
-      const results = await Promise.all(
-        clients
-          .filter((c) => c.active)
-          .map(async (c) => ({
-            id: c.id,
-            name: c.name,
-            adAccountId: c.meta_ad_account_id,
-            raw: await fetchRawAccountBalance(c.meta_ad_account_id, token),
-          }))
-      );
-      return results;
-    },
-    enabled: false, // manual trigger only
-  });
-
-  if (!hasToken) return null;
-
-  return (
-    <Section title="Campos brutos de saldo (debug)" icon={<Wallet className="h-4 w-4" />}>
-      <Card className="p-5 space-y-3">
-        <p className="text-sm text-muted-foreground">
-          Mostra os campos <code className="font-mono text-xs">balance</code> e{" "}
-          <code className="font-mono text-xs">funding_source_details</code> diretamente da API Meta,
-          sem conversão. Use para identificar qual campo corresponde ao saldo real mostrado no Ads Manager.
-        </p>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => refetch()}
-          disabled={isFetching || loadingClients || !token}
-          className="gap-2"
-        >
-          <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} />
-          Buscar campos brutos
-        </Button>
-
-        {loadingRaw || isFetching ? (
-          <div className="space-y-2 pt-2">
-            {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-16 w-full" />)}
-          </div>
-        ) : rawData && rawData.length > 0 ? (
-          <div className="space-y-2 pt-1">
-            {rawData.map((item) => (
-              <RawBalanceRow key={item.id} {...item} />
-            ))}
-          </div>
-        ) : rawData && rawData.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nenhum cliente ativo encontrado.</p>
-        ) : null}
-      </Card>
-    </Section>
-  );
-}
-
-function RawBalanceRow({
-  name,
-  adAccountId,
-  raw,
-}: {
-  name: string;
-  adAccountId: string;
-  raw: RawAccountBalance;
-}) {
-  const brl = (raw: string | undefined) => {
-    if (!raw) return "—";
-    const cents = parseInt(raw, 10);
-    return isNaN(cents) ? raw : `R$${(cents / 100).toFixed(2)} (raw: ${raw})`;
-  };
-
-  return (
-    <div className="rounded-md border border-border p-3 text-xs font-mono space-y-1">
-      <div className="font-semibold text-sm font-sans text-foreground mb-1">{name}</div>
-      <code className="text-[10px] text-muted-foreground">{adAccountId}</code>
-      {raw.error ? (
-        <div className="text-destructive">Erro: {raw.error}</div>
-      ) : (
-        <>
-          <div>
-            <span className="text-muted-foreground">display_string → parseado: </span>
-            <span className="text-status-on-target font-semibold">
-              {raw.displayBalanceCents !== null
-                ? `R$${(raw.displayBalanceCents / 100).toFixed(2)}`
-                : "—"}
-            </span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">display_string (raw): </span>
-            <span className="text-foreground">{raw.funding_source_details?.display_string ?? "—"}</span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">balance: </span>
-            <span className="text-foreground">{brl(raw.balance ?? undefined)}</span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">funding_source_details.amount: </span>
-            <span className="text-foreground">{brl(raw.funding_source_details?.amount)}</span>
-          </div>
-          <div>
-            <span className="text-muted-foreground">funding_source_details.type: </span>
-            <span className="text-foreground">{raw.funding_source_details?.type ?? "—"}</span>
-          </div>
-        </>
-      )}
-    </div>
   );
 }
 
