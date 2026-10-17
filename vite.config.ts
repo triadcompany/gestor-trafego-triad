@@ -1,9 +1,12 @@
+import { readFileSync } from "fs";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
 import { defineConfig, loadEnv } from "vite";
 import viteReact from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import tsConfigPaths from "vite-tsconfig-paths";
 import { nitro } from "nitro/vite";
+
+const pkg = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf-8"));
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "VITE_");
@@ -13,7 +16,9 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    define: envDefine,
+    // __APP_VERSION__ espelha o campo "version" do package.json — sobe a cada
+    // implantação (ver src/routes/settings.tsx, aba Sistema).
+    define: { ...envDefine, __APP_VERSION__: JSON.stringify(pkg.version) },
     resolve: {
       alias: { "@": `${process.cwd()}/src` },
       dedupe: [
