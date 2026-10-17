@@ -40,6 +40,8 @@ export interface MessageAutomationRow {
   recurrence_days: number[];
   send_hour: number;
   send_minute: number;
+  send_hour_2: number | null;
+  send_minute_2: number | null;
   whatsapp_instance_id: string | null;
   last_run_at: string | null;
   media_count: number;
@@ -88,6 +90,8 @@ const _fetchMessageAutomations = createServerFn({ method: "GET" }).handler(async
     recurrence_days: r.recurrenceDays,
     send_hour: r.sendHour,
     send_minute: r.sendMinute,
+    send_hour_2: r.sendHour2,
+    send_minute_2: r.sendMinute2,
     whatsapp_instance_id: r.whatsappInstanceId,
     last_run_at: r.lastRunAt,
     media_count: r.media.length,
@@ -214,6 +218,20 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
       if (!tpl || tpl.organizationId !== organizationId) throw new Error("Modelo de relatório não encontrado.");
     }
 
+    // Resumo de grupo não deixa o gestor escolher horário — sai sempre às
+    // 12:00 (manhã) e/ou 17:30 (tarde), derivado do turno. "Ambos" usa os
+    // dois slots de horário da linha (sendHour/Minute + sendHour2/Minute2),
+    // cada um disparando separado com o resumo só daquele período — nunca
+    // ignora o valor que o cliente mandou pra essa automação.
+    const groupSummarySchedule =
+      data.contentType === "group_summary"
+        ? data.summaryTurno === "tarde"
+          ? { sendHour: 17, sendMinute: 30, sendHour2: null, sendMinute2: null }
+          : data.summaryTurno === "ambos"
+            ? { sendHour: 12, sendMinute: 0, sendHour2: 17, sendMinute2: 30 }
+            : { sendHour: 12, sendMinute: 0, sendHour2: null, sendMinute2: null } // manha (default)
+        : null;
+
     const values = {
       organizationId,
       name: data.name,
@@ -228,8 +246,10 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
       summaryClientIds: data.contentType === "group_summary" ? data.summaryClientIds : [],
       recurrenceType: data.recurrenceType,
       recurrenceDays: data.recurrenceType === "daily" ? [] : data.recurrenceDays,
-      sendHour: data.sendHour,
-      sendMinute: data.sendMinute,
+      sendHour: groupSummarySchedule ? groupSummarySchedule.sendHour : data.sendHour,
+      sendMinute: groupSummarySchedule ? groupSummarySchedule.sendMinute : data.sendMinute,
+      sendHour2: groupSummarySchedule ? groupSummarySchedule.sendHour2 : null,
+      sendMinute2: groupSummarySchedule ? groupSummarySchedule.sendMinute2 : null,
       whatsappInstanceId: data.whatsappInstanceId ?? null,
     };
 

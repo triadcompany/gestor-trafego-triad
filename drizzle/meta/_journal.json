@@ -218,6 +218,13 @@
       "when": 1792182748365,
       "tag": "0030_drop_google_calendar",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1792245537973,
+      "tag": "0031_message_automation_second_slot",
+      "breakpoints": true
     }
   ]
 }

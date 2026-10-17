@@ -171,13 +171,21 @@ function occurrenceInstant(sp: { year: number; month: number; day: number }, hou
 
 type AutomationRuleRow = typeof messageAutomations.$inferSelect;
 
-export function ruleDueNow(rule: AutomationRuleRow, base = new Date()): boolean {
+// slot "secondary" = sendHour2/sendMinute2/lastRunAt2 — segundo disparo do
+// mesmo dia, só existe quando contentType='group_summary' e turno='ambos'
+// (manhã sai pelo slot "primary" normal, tarde por este). Sem sendHour2
+// configurado, o slot secundário nunca fica "devido".
+export function ruleDueNow(rule: AutomationRuleRow, base = new Date(), slot: "primary" | "secondary" = "primary"): boolean {
+  const hour = slot === "secondary" ? rule.sendHour2 : rule.sendHour;
+  const minute = slot === "secondary" ? rule.sendMinute2 : rule.sendMinute;
+  if (hour === null || minute === null) return false;
   const sp = nowInSaoPaulo(base);
-  const occ = occurrenceInstant(sp, rule.sendHour, rule.sendMinute);
+  const occ = occurrenceInstant(sp, hour, minute);
   if (base < occ) return false;
   if (rule.recurrenceType === "weekly" && !rule.recurrenceDays.includes(sp.isoDow)) return false;
   if (rule.recurrenceType === "monthly" && !rule.recurrenceDays.includes(sp.day)) return false;
-  if (rule.lastRunAt && new Date(rule.lastRunAt) >= occ) return false;
+  const lastRun = slot === "secondary" ? rule.lastRunAt2 : rule.lastRunAt;
+  if (lastRun && new Date(lastRun) >= occ) return false;
   return true;
 }
 
@@ -346,7 +354,7 @@ async function materializeSaldoBaixo(
   return { created: true, warnings, evaluated: true };
 }
 
-export async function materializeAutomation(ruleId: string): Promise<MaterializeResult> {
+export async function materializeAutomation(ruleId: string, slot: "primary" | "secondary" = "primary"): Promise<MaterializeResult> {
   const rule = await db.query.messageAutomations.findFirst({
     where: eq(messageAutomations.id, ruleId),
     with: { destinations: true, media: { columns: { base64: true, mimetype: true, filename: true, sortOrder: true } } },
@@ -509,11 +517,13 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
     if (rule.summaryClientIds.length === 0) {
       return { created: false, warnings: [`Regra "${rule.name}": nenhum cliente selecionado pro resumo.`] };
     }
+    // Slot "secondary" só existe pro turno='ambos' e é sempre a tarde (o
+    // slot "primary" cobre a manhã sozinha, a tarde sozinha, ou a manhã
+    // dentro do 'ambos') — cada disparo manda só o período daquele horário,
+    // nunca os dois juntos numa mensagem só.
+    const turno: "manha" | "tarde" = slot === "secondary" ? "tarde" : rule.summaryTurno === "tarde" ? "tarde" : "manha";
     try {
-      const turnos: Array<"manha" | "tarde"> = rule.summaryTurno === "ambos" ? ["manha", "tarde"] : [rule.summaryTurno === "tarde" ? "tarde" : "manha"];
-      const partes: string[] = [];
-      for (const turno of turnos) partes.push(await buildGroupSummaryText(rule, instance, turno));
-      text = partes.join("\n\n━━━━━━━━━━━━\n\n");
+      text = await buildGroupSummaryText(rule, instance, turno);
     } catch (e) {
       return { created: false, warnings: [`Regra "${rule.name}": falha ao montar resumo — ${e instanceof Error ? e.message : String(e)}`] };
     }
@@ -567,10 +577,11 @@ export async function materializeAutomation(ruleId: string): Promise<Materialize
   return { created: true, warnings };
 }
 
-export async function materializeAndStamp(ruleId: string): Promise<MaterializeResult> {
-  const r = await materializeAutomation(ruleId);
+export async function materializeAndStamp(ruleId: string, slot: "primary" | "secondary" = "primary"): Promise<MaterializeResult> {
+  const r = await materializeAutomation(ruleId, slot);
   if (r.created || r.evaluated) {
-    await db.update(messageAutomations).set({ lastRunAt: new Date().toISOString() }).where(eq(messageAutomations.id, ruleId));
+    const stamp = slot === "secondary" ? { lastRunAt2: new Date().toISOString() } : { lastRunAt: new Date().toISOString() };
+    await db.update(messageAutomations).set(stamp).where(eq(messageAutomations.id, ruleId));
   }
   return r;
 }
@@ -679,14 +690,20 @@ export async function runAutomationsTick(): Promise<TickResult> {
   const result: TickResult = { rulesChecked: rules.length, rulesFired: 0, messagesCreated: 0, saleSuggestionsCreated: 0, warnings: [] };
 
   for (const rule of rules) {
-    if (!ruleDueNow(rule)) continue;
-    result.rulesFired++;
-    try {
-      const r = await materializeAndStamp(rule.id);
-      result.warnings.push(...r.warnings);
-      if (r.created) result.messagesCreated++;
-    } catch (e) {
-      result.warnings.push(`Regra "${rule.name}": erro inesperado — ${e instanceof Error ? e.message : String(e)}`);
+    // Slot secundário (tarde do 'ambos') é independente do primário — os dois
+    // são checados sempre; ruleDueNow descarta "secondary" sozinha quando
+    // sendHour2 não está configurado (qualquer regra que não seja resumo de
+    // grupo com turno='ambos').
+    for (const slot of ["primary", "secondary"] as const) {
+      if (!ruleDueNow(rule, undefined, slot)) continue;
+      result.rulesFired++;
+      try {
+        const r = await materializeAndStamp(rule.id, slot);
+        result.warnings.push(...r.warnings);
+        if (r.created) result.messagesCreated++;
+      } catch (e) {
+        result.warnings.push(`Regra "${rule.name}": erro inesperado — ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
   }
 

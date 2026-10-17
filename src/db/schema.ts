@@ -520,15 +520,23 @@ export const messageAutomations = pgTable("message_automations", {
   // texto/arquivo e sua própria mensagem, endereçada ao grupo daquele
   // cliente. Vazio + clientId preenchido = automação antiga (1 cliente só).
   reportClientIds: uuid("report_client_ids").array().notNull().default([]),
-  summaryTurno: text("summary_turno"), // 'manha' | 'tarde' — só p/ group_summary
+  summaryTurno: text("summary_turno"), // 'manha' | 'tarde' | 'ambos' — só p/ group_summary
   balanceThreshold: integer("balance_threshold"), // centavos — só p/ saldo_baixo; nulo = R$ 500
 summaryClientIds: uuid("summary_client_ids").array().notNull().default([]), // clientes cujos grupos entram no resumo
   recurrenceType: text("recurrence_type").notNull(), // 'weekly' | 'daily' | 'monthly'
   recurrenceDays: integer("recurrence_days").array().notNull().default([]), // weekly: 1..7 (1=segunda); monthly: 1..28
   sendHour: integer("send_hour").notNull(), // 0..23, fuso America/Sao_Paulo
   sendMinute: integer("send_minute").notNull(), // 0..59
+  // Segundo horário de disparo no mesmo dia — só usado quando
+  // contentType='group_summary' e summaryTurno='ambos' (manhã sai no
+  // sendHour/sendMinute normal às 12:00, tarde sai neste segundo slot às
+  // 17:30). Nulo pra qualquer outro caso — uma automação continua disparando
+  // uma vez só por padrão.
+  sendHour2: integer("send_hour_2"),
+  sendMinute2: integer("send_minute_2"),
   whatsappInstanceId: uuid("whatsapp_instance_id").references(() => whatsappInstances.id, { onDelete: "set null" }),
   lastRunAt: timestamp("last_run_at"),
+  lastRunAt2: timestamp("last_run_at_2"), // carimbo do segundo slot (sendHour2/sendMinute2)
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

@@ -595,7 +595,10 @@ function RecipientSearch({
 const DOW_LABEL: Record<number, string> = { 1: "seg", 2: "ter", 3: "qua", 4: "qui", 5: "sex", 6: "sáb", 7: "dom" };
 
 function recurrenceSummary(r: MessageAutomationRow): string {
-  const hhmm = `${String(r.send_hour).padStart(2, "0")}:${String(r.send_minute).padStart(2, "0")}`;
+  const hhmm =
+    r.send_hour_2 !== null && r.send_minute_2 !== null
+      ? `${String(r.send_hour).padStart(2, "0")}:${String(r.send_minute).padStart(2, "0")} e ${String(r.send_hour_2).padStart(2, "0")}:${String(r.send_minute_2).padStart(2, "0")}`
+      : `${String(r.send_hour).padStart(2, "0")}:${String(r.send_minute).padStart(2, "0")}`;
   if (r.recurrence_type === "daily") return `Todo dia às ${hhmm}`;
   const days = [...r.recurrence_days].sort((a, b) => a - b);
   if (r.recurrence_type === "weekly") {
@@ -1426,7 +1429,7 @@ function AutomationComposerDialog({
                   <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="ambos" /> Os dois</label>
                 </RadioGroup>
                 {summaryTurno === "ambos" && (
-                  <p className="text-[11px] text-muted-foreground">Os dois saem numa mensagem só, com manhã e tarde em blocos. Agende depois das 17h30 pra pegar o dia todo.</p>
+                  <p className="text-[11px] text-muted-foreground">Saem duas mensagens separadas no mesmo dia: às 12:00 com o resumo da manhã, e às 17:30 com o resumo da tarde.</p>
                 )}
               </div>
               <ReportClientsField
@@ -1476,22 +1479,32 @@ function AutomationComposerDialog({
               </div>
             )}
 
-            <div className="flex items-center gap-2">
-              <Label className="text-xs text-muted-foreground">Horário (Brasília)</Label>
-              <Select value={sendHour} onValueChange={setSendHour}>
-                <SelectTrigger className="w-20 h-8"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => <SelectItem key={h} value={h}>{h}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <span>:</span>
-              <Select value={sendMinute} onValueChange={setSendMinute}>
-                <SelectTrigger className="w-20 h-8"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"].map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
+            {contentType === "group_summary" ? (
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Horário (Brasília)</Label>
+                <span className="text-sm font-medium">
+                  {summaryTurno === "tarde" ? "17:30" : summaryTurno === "ambos" ? "12:00 e 17:30" : "12:00"}
+                </span>
+                <span className="text-[11px] text-muted-foreground">— definido pelo turno, não dá pra escolher outro horário</span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Label className="text-xs text-muted-foreground">Horário (Brasília)</Label>
+                <Select value={sendHour} onValueChange={setSendHour}>
+                  <SelectTrigger className="w-20 h-8"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {Array.from({ length: 24 }, (_, i) => String(i).padStart(2, "0")).map((h) => <SelectItem key={h} value={h}>{h}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <span>:</span>
+                <Select value={sendMinute} onValueChange={setSendMinute}>
+                  <SelectTrigger className="w-20 h-8"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["00", "05", "10", "15", "20", "25", "30", "35", "40", "45", "50", "55"].map((m) => <SelectItem key={m} value={m}>{m}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
           </div>
 
           <div className="space-y-2.5 rounded-lg border border-border/60 bg-muted/10 p-3">
