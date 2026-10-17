@@ -6,12 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
-import { RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, SlidersHorizontal, CreditCard } from "lucide-react";
+import { RefreshCw, AlertTriangle, AlertCircle, CheckCircle2, SlidersHorizontal } from "lucide-react";
 import { toast } from "sonner";
 import { fetchClientBalances, type ClientBalance } from "@/lib/queries";
 import { getLastSyncedAt, getBalanceThresholds, saveBalanceThresholds, type BalanceThresholds } from "@/lib/meta";
 import { triggerMetaSync } from "@/server/meta-sync";
 import { STATUS_COLORS } from "@/lib/status-colors";
+import { BillingLinkButton } from "@/components/BillingLinkButton";
 
 export const Route = createFileRoute("/saldos")({
   head: () => ({
@@ -311,9 +312,6 @@ function BalanceRow({ client, maxBalance, thresholds }: { client: ClientBalance;
   const statusLabel = { "on-target": "Ok", attention: "Atenção", critical: "Crítico", "no-data": "—" }[status];
   const StatusIcon = { "on-target": CheckCircle2, attention: AlertCircle, critical: AlertTriangle, "no-data": null }[status];
 
-  const actId = client.meta_ad_account_id.replace("act_", "");
-  const billingUrl = `https://business.facebook.com/billing_hub/accounts/details/?business_id=1034484698873057&asset_id=${actId}&payment_account_id=${actId}&placement=ads_manager&entrypoint=ads_ecosystem_navigation_ads_billing_tool_plugin&payment_account_id_from_jsmodule=${actId}`;
-
   return (
     <div className="grid grid-cols-[1fr_140px_110px_110px_90px_36px] gap-0 px-5 py-3.5 border-b border-border last:border-0 hover:bg-muted/20 transition-colors">
       {/* Cliente */}
@@ -373,15 +371,7 @@ function BalanceRow({ client, maxBalance, thresholds }: { client: ClientBalance;
 
       {/* Pix */}
       <div className="flex items-center justify-end">
-        <a
-          href={billingUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="p-1.5 rounded-md bg-muted/50 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors"
-          title="Ir para página de cobrança"
-        >
-          <CreditCard className="w-4 h-4" />
-        </a>
+        <BillingLinkButton clientId={client.id} />
       </div>
     </div>
   );

@@ -216,6 +216,43 @@ export async function requireMetaToken(clientId?: string): Promise<string> {
   return token;
 }
 
+// Link de cobrança (PIX/cartão) de uma conta de anúncio no Business Manager.
+// O business_id tem que ser o dono DAQUELA conta especificamente — cada
+// cliente tem o próprio Business Manager na Meta (não é um só compartilhado
+// pela agência), então não dá pra fixar um valor só. Sem o business_id
+// certo, a Meta não erra nem avisa: só mostra silenciosamente a conta de
+// outro Business Manager qualquer que já estiver ativo na sessão do
+// navegador — por isso sempre busca o business dono na hora, via API.
+const _getClientBillingUrl = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async ({ data }) => {
+    const { organizationId, role, userId } = await requireOrgContext();
+    const client = await db.query.clients.findFirst({
+      where: eq(clientsTable.id, data.clientId),
+      columns: { id: true, organizationId: true, ownerUserId: true, metaAdAccountId: true },
+    });
+    if (!canAccessClient({ organizationId, role, userId }, client)) {
+      throw new Error("Cliente não encontrado ou sem acesso.");
+    }
+    const token = await getMetaToken(client!.id);
+    if (!token) throw new Error("Token Meta não configurado.");
+
+    const qs = new URLSearchParams({ fields: "business", access_token: token });
+    const res = await fetch(`${BASE_URL}/${client!.metaAdAccountId}?${qs}`);
+    const json = (await res.json()) as { business?: { id: string }; error?: MetaApiError };
+    if (json.error) throw new Error(formatMetaError(json.error));
+    if (!json.business?.id) {
+      throw new Error("Essa conta de anúncio não tem um Business Manager vinculado na Meta.");
+    }
+
+    const actId = client!.metaAdAccountId.replace("act_", "");
+    return `https://business.facebook.com/billing_hub/accounts/details/?business_id=${json.business.id}&asset_id=${actId}&payment_account_id=${actId}&placement=ads_manager&entrypoint=ads_ecosystem_navigation_ads_billing_tool_plugin&payment_account_id_from_jsmodule=${actId}`;
+  });
+
+export async function getClientBillingUrl(clientId: string): Promise<string> {
+  return _getClientBillingUrl({ data: { clientId } });
+}
+
 const _getConfigValues = createServerFn({ method: "GET" })
   .inputValidator(z.object({ keys: z.array(z.string()) }))
   .handler(async ({ data }) => getConfigValues(data.keys));

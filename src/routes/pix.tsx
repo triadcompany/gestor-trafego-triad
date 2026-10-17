@@ -3,7 +3,8 @@ import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Skeleton } from "@/components/ui/skeleton";
 import { fetchPixClients, type PixClient } from "@/lib/queries";
-import { Settings, CreditCard } from "lucide-react";
+import { Settings } from "lucide-react";
+import { BillingLinkButton } from "@/components/BillingLinkButton";
 
 export const Route = createFileRoute("/pix")({
   head: () => ({
@@ -142,8 +143,6 @@ function SummaryCard({
 
 function PixRowItem({ row }: { row: PixRow }) {
   const isToday = row.daysUntil === 0;
-  const actId = row.client.meta_ad_account_id.replace("act_", "");
-  const billingUrl = `https://business.facebook.com/billing_hub/accounts/details/?business_id=1034484698873057&asset_id=${actId}&payment_account_id=${actId}&placement=ads_manager&entrypoint=ads_ecosystem_navigation_ads_billing_tool_plugin&payment_account_id_from_jsmodule=${actId}`;
 
   return (
     <div
@@ -182,15 +181,10 @@ function PixRowItem({ row }: { row: PixRow }) {
         <div className="text-xs sm:text-sm tabular-nums text-right">
           <DueLabel days={row.daysUntil} date={row.nextDate} />
         </div>
-        <a
-          href={billingUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="hidden sm:flex p-1.5 rounded-md bg-muted/50 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors flex-shrink-0"
-          title="Ir para página de cobrança"
-        >
-          <CreditCard className="w-4 h-4" />
-        </a>
+        <BillingLinkButton
+          clientId={row.client.id}
+          className="hidden sm:flex p-1.5 rounded-md bg-muted/50 text-muted-foreground hover:bg-primary/10 hover:text-primary transition-colors flex-shrink-0 disabled:opacity-50"
+        />
       </div>
     </div>
   );
