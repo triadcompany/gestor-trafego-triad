@@ -263,7 +263,7 @@ export const sales = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     clientId: uuid("client_id")
       .notNull()
-      .references(() => clients.id),
+      .references(() => clients.id, { onDelete: "cascade" }),
     date: date("date").notNull(),
     value: numericMoney("value", 12, 2),
     obs: text("obs"),
@@ -278,7 +278,7 @@ export const salesGoals = pgTable(
     id: uuid("id").primaryKey().defaultRandom(),
     clientId: uuid("client_id")
       .notNull()
-      .references(() => clients.id),
+      .references(() => clients.id, { onDelete: "cascade" }),
     month: text("month").notNull(),
     goal: integer("goal").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),

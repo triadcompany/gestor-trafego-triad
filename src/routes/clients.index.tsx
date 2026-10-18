@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { AppShell } from "@/components/AppShell";
 import { StatusDot } from "@/components/StatusDot";
 import { Button } from "@/components/ui/button";
@@ -131,6 +132,7 @@ function ClientsList() {
       queryClient.invalidateQueries({ queryKey: ["clients-all"] });
       queryClient.invalidateQueries({ queryKey: ["clients-dashboard"] });
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao excluir cliente."),
   });
 
   const openNew = () => {

@@ -225,6 +225,13 @@
       "when": 1792245537973,
       "tag": "0031_message_automation_second_slot",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1792342748654,
+      "tag": "0032_sales_client_cascade",
+      "breakpoints": true
     }
   ]
 }
