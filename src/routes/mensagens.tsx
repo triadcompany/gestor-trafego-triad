@@ -1057,6 +1057,10 @@ function AutomationComposerDialog({
       const filtered = prev.filter((id) => validIds.has(id));
       return filtered.length === prev.length ? prev : filtered;
     });
+    setSummaryClientIds((prev) => {
+      const filtered = prev.filter((id) => validIds.has(id));
+      return filtered.length === prev.length ? prev : filtered;
+    });
   }, [clients, clientsLoading]);
 
   const reset = () => {
