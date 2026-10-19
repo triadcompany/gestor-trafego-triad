@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -8,9 +8,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Switch } from "@/components/ui/switch";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import { ArrowUp, ArrowDown, ArrowLeftRight, SlidersHorizontal, Check, X, Copy, Pencil, Scale, Search } from "lucide-react";
+import { Label } from "@/components/ui/label";
+import { ArrowUp, ArrowDown, ArrowLeftRight, SlidersHorizontal, Check, X, Copy, Pencil, Scale, Search, Tag } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchAllAdSets,
@@ -30,6 +31,7 @@ import {
 import { brl } from "@/lib/mock-data";
 import { statusTextClass } from "@/lib/status-colors";
 import { fetchEntityLeadStats, type EntityLeadStats } from "@/server/lead-attribution";
+import { fetchCampaignSaleStats, markCampaignSold } from "@/server/mark-sold";
 import {
   AVAILABLE_COLUMNS,
   COLUMN_LABELS,
@@ -216,6 +218,7 @@ export function CampaignsExplorer({
   const [sortColumn, setSortColumn] = useState<"name" | ColumnKey | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [compareOpen, setCompareOpen] = useState(false);
+  const [markSoldRow, setMarkSoldRow] = useState<Row | null>(null);
   const queryClient = useQueryClient();
 
   const toggleSort = (col: "name" | ColumnKey) => {
@@ -559,6 +562,7 @@ export function CampaignsExplorer({
                     onDuplicateAdSet={level === "adset" ? () => duplicateAdSetMutation.mutate(row) : undefined}
                     onDuplicateAd={level === "ad" ? () => duplicateAdMutation.mutate(row) : undefined}
                     onDuplicateFlipObjective={level === "campaign" ? () => duplicateFlipObjectiveMutation.mutate(row) : undefined}
+                    onMarkSold={level === "campaign" ? () => setMarkSoldRow(row) : undefined}
                     duplicatingFlip={duplicateFlipObjectiveMutation.isPending && duplicateFlipObjectiveMutation.variables?.id === row.id}
                     duplicating={
                       (level === "adset" && duplicateAdSetMutation.isPending && duplicateAdSetMutation.variables?.id === row.id) ||
@@ -628,7 +632,88 @@ export function CampaignsExplorer({
           </div>
         </DialogContent>
       </Dialog>
+
+      <MarkSoldDialog
+        row={markSoldRow}
+        clientId={clientId}
+        onOpenChange={(open) => !open && setMarkSoldRow(null)}
+      />
     </div>
+  );
+}
+
+function MarkSoldDialog({
+  row,
+  clientId,
+  onOpenChange,
+}: {
+  row: Row | null;
+  clientId: string;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [carName, setCarName] = useState("");
+
+  useEffect(() => {
+    if (row) setCarName(row.name);
+  }, [row]);
+
+  const { data: stats, isLoading: statsLoading } = useQuery({
+    queryKey: ["campaign-sale-stats", clientId, row?.id],
+    queryFn: () => fetchCampaignSaleStats(clientId, row!.id),
+    enabled: !!row,
+  });
+
+  const confirmMutation = useMutation({
+    mutationFn: () => markCampaignSold(clientId, row!.id, carName),
+    onSuccess: () => {
+      toast.success("Venda registrada e mensagem enviada.");
+      onOpenChange(false);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao registrar venda", { duration: 10000 }),
+  });
+
+  return (
+    <Dialog open={!!row} onOpenChange={(open) => !open && onOpenChange(false)}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Marcar como vendido</DialogTitle>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Nome do carro</Label>
+            <Input value={carName} onChange={(e) => setCarName(e.target.value)} autoFocus />
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-lg border border-border p-3">
+              <div className="text-xs text-muted-foreground mb-0.5">Investimento (total da campanha)</div>
+              <div className="text-sm font-semibold tabular-nums">
+                {statsLoading ? "…" : stats ? brl(stats.spend) : "—"}
+              </div>
+            </div>
+            <div className="rounded-lg border border-border p-3">
+              <div className="text-xs text-muted-foreground mb-0.5">Conversas iniciadas (total)</div>
+              <div className="text-sm font-semibold tabular-nums">
+                {statsLoading ? "…" : stats ? stats.leads : "—"}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={confirmMutation.isPending}>
+            Cancelar
+          </Button>
+          <Button
+            onClick={() => confirmMutation.mutate()}
+            disabled={!carName.trim() || statsLoading || confirmMutation.isPending}
+          >
+            {confirmMutation.isPending ? "Enviando..." : "Confirmar venda"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -757,6 +842,7 @@ function ExplorerRow({
   onDuplicateAdSet,
   onDuplicateAd,
   onDuplicateFlipObjective,
+  onMarkSold,
   duplicating,
   duplicatingFlip,
 }: {
@@ -774,6 +860,7 @@ function ExplorerRow({
   onDuplicateAdSet?: () => void;
   onDuplicateAd?: () => void;
   onDuplicateFlipObjective?: () => void;
+  onMarkSold?: () => void;
   duplicating?: boolean;
   duplicatingFlip?: boolean;
 }) {
@@ -944,6 +1031,15 @@ function ExplorerRow({
               onClick={onDuplicateFlipObjective}
             >
               <ArrowLeftRight className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-7 w-7"
+              title="Marcar como vendido"
+              onClick={onMarkSold}
+            >
+              <Tag className="h-3.5 w-3.5" />
             </Button>
           </div>
         ) : (

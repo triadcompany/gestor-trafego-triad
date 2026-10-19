@@ -277,13 +277,15 @@ export type SendDestination = "operacional" | "client_group";
 export async function getSendDestinations(): Promise<{
   campaignsListDestination: SendDestination;
   weeklyReportDestination: SendDestination;
+  saleNotificationDestination: SendDestination;
 }> {
   const rows = await _getConfigValues({
-    data: { keys: ["campaigns_list_destination", "weekly_report_destination"] },
+    data: { keys: ["campaigns_list_destination", "weekly_report_destination", "sale_notification_destination"] },
   });
   return {
     campaignsListDestination: (rows["campaigns_list_destination"] as SendDestination) || "operacional",
     weeklyReportDestination: (rows["weekly_report_destination"] as SendDestination) || "operacional",
+    saleNotificationDestination: (rows["sale_notification_destination"] as SendDestination) || "operacional",
   };
 }
 
@@ -292,18 +294,21 @@ const _saveSendDestinations = createServerFn({ method: "POST" })
     z.object({
       campaignsListDestination: z.enum(["operacional", "client_group"]),
       weeklyReportDestination: z.enum(["operacional", "client_group"]),
+      saleNotificationDestination: z.enum(["operacional", "client_group"]),
     })
   )
   .handler(async ({ data }) => {
     await setConfigValues([
       { key: "campaigns_list_destination", value: data.campaignsListDestination },
       { key: "weekly_report_destination", value: data.weeklyReportDestination },
+      { key: "sale_notification_destination", value: data.saleNotificationDestination },
     ]);
   });
 
 export async function saveSendDestinations(data: {
   campaignsListDestination: SendDestination;
   weeklyReportDestination: SendDestination;
+  saleNotificationDestination: SendDestination;
 }): Promise<void> {
   await _saveSendDestinations({ data });
 }

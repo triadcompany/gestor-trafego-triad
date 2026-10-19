@@ -1398,15 +1398,15 @@ function SendDestinationsSection() {
         <div className="flex items-center gap-3">
           <Send className="h-5 w-5 text-muted-foreground shrink-0" />
           <p className="text-sm text-muted-foreground">
-            Escolha pra onde vão as mensagens dos botões "Enviar lista de campanhas ativas" e "Enviar relatório
-            semanal" na página do cliente. Se o destino for "Grupo do cliente" e o cliente ainda não tiver um
-            grupo vinculado, a mensagem cai automaticamente no Operacional. "Operacional" manda pro grupo
-            configurado na própria instância de WhatsApp de quem está enviando — cada gestor tem o seu, configure
-            em "Instâncias WhatsApp" abaixo, editando a instância dele.
+            Escolha pra onde vão as mensagens dos botões "Enviar lista de campanhas ativas", "Enviar relatório
+            semanal" e "Marcar como vendido" na página do cliente. Se o destino for "Grupo do cliente" e o cliente
+            ainda não tiver um grupo vinculado, a mensagem cai automaticamente no Operacional. "Operacional" manda
+            pro grupo configurado na própria instância de WhatsApp de quem está enviando — cada gestor tem o seu,
+            configure em "Instâncias WhatsApp" abaixo, editando a instância dele.
           </p>
         </div>
 
-        <div className="grid sm:grid-cols-2 gap-4">
+        <div className="grid sm:grid-cols-3 gap-4">
           <div className="space-y-1.5">
             <Label>Lista de campanhas ativas</Label>
             <Select
@@ -1416,6 +1416,7 @@ function SendDestinationsSection() {
                 saveSendDestinationsMutation.mutate({
                   campaignsListDestination: v as SendDestination,
                   weeklyReportDestination: sendDestinations?.weeklyReportDestination ?? "operacional",
+                  saleNotificationDestination: sendDestinations?.saleNotificationDestination ?? "operacional",
                 })
               }
             >
@@ -1437,6 +1438,29 @@ function SendDestinationsSection() {
                 saveSendDestinationsMutation.mutate({
                   campaignsListDestination: sendDestinations?.campaignsListDestination ?? "operacional",
                   weeklyReportDestination: v as SendDestination,
+                  saleNotificationDestination: sendDestinations?.saleNotificationDestination ?? "operacional",
+                })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="operacional">Operacional</SelectItem>
+                <SelectItem value="client_group">Grupo do cliente</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label>Venda registrada</Label>
+            <Select
+              value={sendDestinations?.saleNotificationDestination ?? "operacional"}
+              disabled={isLoadingSendDestinations || saveSendDestinationsMutation.isPending}
+              onValueChange={(v) =>
+                saveSendDestinationsMutation.mutate({
+                  campaignsListDestination: sendDestinations?.campaignsListDestination ?? "operacional",
+                  weeklyReportDestination: sendDestinations?.weeklyReportDestination ?? "operacional",
+                  saleNotificationDestination: v as SendDestination,
                 })
               }
             >
