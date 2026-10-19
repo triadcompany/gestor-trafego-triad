@@ -12,6 +12,7 @@ export interface OrganizationRow {
   active: boolean;
   createdAt: string;
   memberCount: number;
+  monthlyValue: number;
 }
 
 const _fetchOrganizations = createServerFn({ method: "GET" }).handler(async (): Promise<OrganizationRow[]> => {
@@ -29,6 +30,7 @@ const _fetchOrganizations = createServerFn({ method: "GET" }).handler(async (): 
     active: o.active,
     createdAt: o.createdAt,
     memberCount: counts.get(o.id) ?? 0,
+    monthlyValue: o.monthlyValue,
   }));
 });
 
@@ -71,4 +73,15 @@ const _setOrganizationActive = createServerFn({ method: "POST" })
 
 export async function setOrganizationActive(id: string, active: boolean): Promise<void> {
   await _setOrganizationActive({ data: { id, active } });
+}
+
+const _setOrganizationMonthlyValue = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string(), monthlyValue: z.number().min(0) }))
+  .handler(async ({ data }) => {
+    await requirePlatformAdmin();
+    await db.update(organizations).set({ monthlyValue: data.monthlyValue }).where(eq(organizations.id, data.id));
+  });
+
+export async function setOrganizationMonthlyValue(id: string, monthlyValue: number): Promise<void> {
+  await _setOrganizationMonthlyValue({ data: { id, monthlyValue } });
 }

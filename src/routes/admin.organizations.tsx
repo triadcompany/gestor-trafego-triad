@@ -15,15 +15,19 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Plus, LogIn, LogOut, Building2 } from "lucide-react";
+import { Plus, LogIn, LogOut, Building2, DollarSign, CheckCircle2 } from "lucide-react";
 import { toast } from "sonner";
-import { fetchOrganizations, createOrganization, setOrganizationActive } from "@/server/admin";
+import { fetchOrganizations, createOrganization, setOrganizationActive, setOrganizationMonthlyValue } from "@/server/admin";
 import { getCurrentUser, enterOrganization, exitOrganization } from "@/server/session";
 
 export const Route = createFileRoute("/admin/organizations")({
   head: () => ({ meta: [{ title: "Organizações — Admin" }] }),
   component: AdminOrganizationsPage,
 });
+
+function brl(value: number) {
+  return value.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
 
 function AdminOrganizationsPage() {
   const navigate = useNavigate();
@@ -61,6 +65,15 @@ function AdminOrganizationsPage() {
     mutationFn: ({ id, active }: { id: string; active: boolean }) => setOrganizationActive(id, active),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-organizations"] }),
   });
+
+  const monthlyValueMutation = useMutation({
+    mutationFn: ({ id, monthlyValue }: { id: string; monthlyValue: number }) => setOrganizationMonthlyValue(id, monthlyValue),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["admin-organizations"] }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar valor"),
+  });
+
+  const activeOrgs = orgs.filter((o) => o.active);
+  const mrr = activeOrgs.reduce((sum, o) => sum + o.monthlyValue, 0);
 
   const enterMutation = useMutation({
     mutationFn: (organizationId: string) => enterOrganization({ data: { organizationId } }),
@@ -137,6 +150,31 @@ function AdminOrganizationsPage() {
           </div>
         )}
 
+        {!isLoading && orgs.length > 0 && (
+          <div className="grid grid-cols-2 gap-3 mb-4">
+            <Card className="p-4 flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-status-on-target/10 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="h-4.5 w-4.5 text-status-on-target" />
+              </div>
+              <div>
+                <p className="text-xl font-semibold tracking-tight leading-none">{activeOrgs.length}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  organiza{activeOrgs.length === 1 ? "ção ativa" : "ções ativas"} de {orgs.length}
+                </p>
+              </div>
+            </Card>
+            <Card className="p-4 flex items-center gap-3">
+              <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                <DollarSign className="h-4.5 w-4.5 text-primary" />
+              </div>
+              <div>
+                <p className="text-xl font-semibold tracking-tight leading-none">{brl(mrr)}</p>
+                <p className="text-xs text-muted-foreground mt-1">MRR (organizações ativas)</p>
+              </div>
+            </Card>
+          </div>
+        )}
+
         <Card className="divide-y divide-border">
           {isLoading ? (
             <div className="px-5 py-4 text-sm text-muted-foreground">Carregando...</div>
@@ -151,6 +189,10 @@ function AdminOrganizationsPage() {
                     {o.memberCount} usuário{o.memberCount === 1 ? "" : "s"} · criada em {new Date(o.createdAt).toLocaleDateString("pt-BR")}
                   </p>
                 </div>
+                <MonthlyValueInput
+                  value={o.monthlyValue}
+                  onSave={(v) => monthlyValueMutation.mutate({ id: o.id, monthlyValue: v })}
+                />
                 <Badge
                   variant="outline"
                   className={o.active ? "border-status-on-target/40 text-status-on-target" : "border-muted-foreground/30 text-muted-foreground"}
@@ -169,5 +211,44 @@ function AdminOrganizationsPage() {
         </Card>
       </div>
     </AppShell>
+  );
+}
+
+// Valor mensal da organização — clique pra editar, salva ao sair do campo ou
+// apertar Enter. Mostra formatado (R$) em repouso, input numérico ao editar.
+function MonthlyValueInput({ value, onSave }: { value: number; onSave: (v: number) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(String(value));
+
+  const commit = () => {
+    setEditing(false);
+    const parsed = Number(draft.replace(",", "."));
+    if (!isNaN(parsed) && parsed >= 0 && parsed !== value) onSave(parsed);
+    else setDraft(String(value));
+  };
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => { setDraft(String(value)); setEditing(true); }}
+        className="text-sm font-mono text-muted-foreground hover:text-foreground hover:underline underline-offset-2 shrink-0 w-24 text-right"
+        title="Clique pra editar a mensalidade"
+      >
+        {brl(value)}
+      </button>
+    );
+  }
+
+  return (
+    <Input
+      autoFocus
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); if (e.key === "Escape") { setDraft(String(value)); setEditing(false); } }}
+      className="h-8 w-24 text-right font-mono text-sm shrink-0"
+      inputMode="decimal"
+    />
   );
 }

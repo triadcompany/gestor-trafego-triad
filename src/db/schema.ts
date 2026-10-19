@@ -32,6 +32,10 @@ export const organizations = pgTable("organizations", {
   name: text("name").notNull(),
   active: boolean("active").notNull().default(true),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  // R$ — mensalidade cobrada dessa organização pelo uso do sistema. Editado à
+  // mão pelo platform admin (não tem integração de pagamento); soma das
+  // organizações ativas = MRR no dashboard /admin/organizations.
+  monthlyValue: numericMoney("monthly_value", 10, 2).notNull().default(0),
 });
 
 // Substitui auth.users do Supabase. Guarda credenciais próprias (bcrypt).

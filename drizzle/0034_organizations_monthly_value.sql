@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ADD COLUMN "monthly_value" numeric(10, 2) DEFAULT 0 NOT NULL;

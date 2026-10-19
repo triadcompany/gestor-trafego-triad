@@ -1,7 +1,7 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, TrendingUp, Menu, X, Sun, Moon, MessageCircle, Target, ChevronsLeft } from "lucide-react";
+import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, TrendingUp, Menu, X, Sun, Moon, MessageCircle, Target, ChevronsLeft, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { logout } from "@/server/session";
+import { logout, getCurrentUser } from "@/server/session";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect } from "react";
 import { fetchCurrentProfile } from "@/lib/queries";
@@ -42,6 +42,15 @@ const navGroups = [
     ],
   },
 ] as const;
+
+// Só aparece pro platform admin (dono do sistema) — gerencia as organizações
+// que usam o produto (ver /admin/organizations e requirePlatformAdmin).
+const adminNavGroup = {
+  label: "Admin",
+  items: [
+    { to: "/admin/organizations", label: "Organizações", icon: Building2, exact: false },
+  ],
+} as const;
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -88,7 +97,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     staleTime: Infinity,
   });
 
-  const visibleNavGroups = navGroups;
+  const { data: currentUser } = useQuery({
+    queryKey: ["current-user"],
+    queryFn: getCurrentUser,
+    staleTime: 1000 * 60,
+  });
+  const visibleNavGroups = currentUser?.isPlatformAdmin ? [...navGroups, adminNavGroup] : navGroups;
 
   const { theme, toggleTheme } = useTheme();
 
