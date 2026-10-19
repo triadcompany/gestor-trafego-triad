@@ -9,7 +9,7 @@ import { db } from "@/db/client";
 import { clients, sales, appConfig } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 import { canAccessClient } from "@/lib/client-access";
-import { getMetaToken, fetchCampaigns } from "@/lib/meta";
+import { getMetaToken, fetchCampaignLifetimeStats } from "@/lib/meta";
 import { isoDateInBrasilia } from "@/lib/brasilia-date";
 import {
   resolveClientWhatsappInstance,
@@ -17,16 +17,7 @@ import {
   resolveOperationalGroupId,
 } from "@/lib/whatsapp-messages";
 
-export interface CampaignSaleStats {
-  spend: number;
-  leads: number;
-}
-
-async function getCampaignLifetimeStats(adAccountId: string, token: string, campaignId: string): Promise<CampaignSaleStats> {
-  const campaigns = await fetchCampaigns(adAccountId, token, "maximum");
-  const found = campaigns.find((c) => c.id === campaignId);
-  return { spend: found?.spend ?? 0, leads: found?.leads ?? 0 };
-}
+export type CampaignSaleStats = { spend: number; leads: number };
 
 const _fetchCampaignSaleStats = createServerFn({ method: "GET" })
   .inputValidator(z.object({ clientId: z.string(), campaignId: z.string() }))
@@ -34,12 +25,12 @@ const _fetchCampaignSaleStats = createServerFn({ method: "GET" })
     const { organizationId, role, userId } = await requireOrgContext();
     const client = await db.query.clients.findFirst({
       where: eq(clients.id, data.clientId),
-      columns: { organizationId: true, ownerUserId: true, metaAdAccountId: true },
+      columns: { organizationId: true, ownerUserId: true },
     });
     if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
     const token = await getMetaToken(data.clientId);
     if (!token) throw new Error("Token Meta não encontrado.");
-    return getCampaignLifetimeStats(client.metaAdAccountId, token, data.campaignId);
+    return fetchCampaignLifetimeStats(data.campaignId, token);
   });
 
 export async function fetchCampaignSaleStats(clientId: string, campaignId: string): Promise<CampaignSaleStats> {
@@ -52,13 +43,13 @@ const _markCampaignSold = createServerFn({ method: "POST" })
     const { organizationId, role, userId } = await requireOrgContext();
     const client = await db.query.clients.findFirst({
       where: eq(clients.id, data.clientId),
-      columns: { organizationId: true, ownerUserId: true, name: true, metaAdAccountId: true, whatsappGroupId: true },
+      columns: { organizationId: true, ownerUserId: true, name: true, whatsappGroupId: true },
     });
     if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
 
     const token = await getMetaToken(data.clientId);
     if (!token) throw new Error("Token Meta não encontrado.");
-    const { spend, leads } = await getCampaignLifetimeStats(client.metaAdAccountId, token, data.campaignId);
+    const { spend, leads } = await fetchCampaignLifetimeStats(data.campaignId, token);
     const carName = data.carName.trim();
 
     await db.insert(sales).values({

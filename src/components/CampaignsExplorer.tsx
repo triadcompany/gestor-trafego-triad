@@ -642,6 +642,15 @@ export function CampaignsExplorer({
   );
 }
 
+// Nome do carro sugerido a partir do nome da campanha: pega só o que estiver
+// no primeiro "[...]" (convenção de nomenclatura dos clientes, ex: "[ARGO
+// 2019] [VENDAS-WHATS]" -> "ARGO 2019"); sem colchetes, usa o nome inteiro.
+// Sempre editável no dialog antes de confirmar.
+function extractCarNameFromCampaign(campaignName: string): string {
+  const match = campaignName.match(/^\s*\[([^\]]+)\]/);
+  return match ? match[1].trim() : campaignName;
+}
+
 function MarkSoldDialog({
   row,
   clientId,
@@ -654,7 +663,7 @@ function MarkSoldDialog({
   const [carName, setCarName] = useState("");
 
   useEffect(() => {
-    if (row) setCarName(row.name);
+    if (row) setCarName(extractCarNameFromCampaign(row.name));
   }, [row]);
 
   const { data: stats, isLoading: statsLoading } = useQuery({
