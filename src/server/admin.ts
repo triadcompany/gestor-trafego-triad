@@ -1,10 +1,14 @@
 import { createServerFn } from "@tanstack/react-start";
-import { eq } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
 import { organizations, profiles, users } from "@/db/schema";
 import { hashPassword } from "@/lib/auth";
 import { requirePlatformAdmin } from "./session";
+
+// Organização dona do sistema — nunca pode ser excluída por essa tela, mesmo
+// por um platform admin, pra não ter risco de apagar a própria empresa.
+const PROTECTED_ORG_ID = "c8f7908d-df29-49a4-993b-10b2dbca8a67";
 
 export interface OrganizationRow {
   id: string;
@@ -84,4 +88,31 @@ const _setOrganizationMonthlyValue = createServerFn({ method: "POST" })
 
 export async function setOrganizationMonthlyValue(id: string, monthlyValue: number): Promise<void> {
   await _setOrganizationMonthlyValue({ data: { id, monthlyValue } });
+}
+
+// Apaga a organização e tudo que pertence a ela (clientes, campanhas
+// salvas, vendas, automações, instâncias de WhatsApp — via cascade nas FKs).
+// `profiles.organization_id` não tem cascade (fica nulo de propósito só pro
+// platform admin puro), então os usuários da organização têm que ser
+// apagados primeiro — isso já cascata pra apagar o profile de cada um.
+const _deleteOrganization = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string() }))
+  .handler(async ({ data }) => {
+    await requirePlatformAdmin();
+    if (data.id === PROTECTED_ORG_ID) throw new Error("Essa organização não pode ser excluída.");
+    await db.transaction(async (tx) => {
+      const orgUsers = await tx
+        .select({ id: users.id })
+        .from(users)
+        .innerJoin(profiles, eq(profiles.id, users.id))
+        .where(eq(profiles.organizationId, data.id));
+      if (orgUsers.length > 0) {
+        await tx.delete(users).where(inArray(users.id, orgUsers.map((u) => u.id)));
+      }
+      await tx.delete(organizations).where(eq(organizations.id, data.id));
+    });
+  });
+
+export async function deleteOrganization(id: string): Promise<void> {
+  await _deleteOrganization({ data: { id } });
 }
