@@ -1,4 +1,4 @@
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { and, asc, desc, eq, inArray, isNull } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
@@ -40,6 +40,7 @@ export interface ResolvedWhatsappInstance {
   url: string;
   apiKey: string;
   instance: string;
+  operationalGroupId: string | null;
 }
 
 const _resolveWhatsappInstance = createServerFn({ method: "GET" })
@@ -55,7 +56,9 @@ const _resolveWhatsappInstance = createServerFn({ method: "GET" })
       if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
       if (client.whatsappInstanceId) {
         const row = await db.query.whatsappInstances.findFirst({ where: eq(whatsappInstances.id, client.whatsappInstanceId) });
-        if (row?.active) return { instanceId: row.id, url: row.evolutionUrl, apiKey: row.evolutionKey, instance: row.instanceName };
+        if (row?.active) {
+          return { instanceId: row.id, url: row.evolutionUrl, apiKey: row.evolutionKey, instance: row.instanceName, operationalGroupId: row.operationalGroupId };
+        }
       }
     }
 
@@ -75,10 +78,10 @@ const _resolveWhatsappInstance = createServerFn({ method: "GET" })
     const candidates = rows.map((r) => r.instance);
     const chosen = candidates.find((i) => i.assignedUserId === userId) ?? candidates[0];
     if (!chosen) throw new Error("Nenhuma instância de WhatsApp do gestor configurada. Acesse Configurações.");
-    return { instanceId: chosen.id, url: chosen.evolutionUrl, apiKey: chosen.evolutionKey, instance: chosen.instanceName };
+    return { instanceId: chosen.id, url: chosen.evolutionUrl, apiKey: chosen.evolutionKey, instance: chosen.instanceName, operationalGroupId: chosen.operationalGroupId };
   });
 
-/** Instância do GESTOR (padrão da organização) — pra automação/mensagem interna. Nunca usa a instância própria de um cliente. */
+/** Instância do GESTOR (padrão da organização, ou a atribuída ao usuário logado) — pra automação/mensagem interna. Nunca usa a instância própria de um cliente. */
 export async function resolveGestorWhatsappInstance(): Promise<ResolvedWhatsappInstance> {
   return _resolveWhatsappInstance({ data: {} });
 }
@@ -87,6 +90,45 @@ export async function resolveGestorWhatsappInstance(): Promise<ResolvedWhatsappI
 export async function resolveClientWhatsappInstance(clientId: string): Promise<ResolvedWhatsappInstance> {
   return _resolveWhatsappInstance({ data: { clientId } });
 }
+
+// Resolve uma instância ESPECÍFICA pelo id (não "a do gestor logado" nem "a do
+// cliente") — usado em telas de administração, como buscar os grupos que uma
+// instância em particular enxerga (editar o grupo operacional dela) mesmo que
+// não seja a instância padrão nem a do usuário atual.
+const _resolveWhatsappInstanceById = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ instanceId: z.string() }))
+  .handler(async ({ data }): Promise<ResolvedWhatsappInstance> => {
+    const { organizationId } = await requireOrgContext();
+    const row = await db.query.whatsappInstances.findFirst({ where: eq(whatsappInstances.id, data.instanceId) });
+    if (!row || row.organizationId !== organizationId) throw new Error("Instância não encontrada.");
+    return { instanceId: row.id, url: row.evolutionUrl, apiKey: row.evolutionKey, instance: row.instanceName, operationalGroupId: row.operationalGroupId };
+  });
+
+export async function resolveWhatsappInstanceById(instanceId: string): Promise<ResolvedWhatsappInstance> {
+  return _resolveWhatsappInstanceById({ data: { instanceId } });
+}
+
+// Grupo "Operacional" pra uma instância já resolvida — o próprio da instância
+// (um por gestor) se tiver sido configurado; senão cai no valor antigo único
+// em app_config (organizações/instâncias que ainda não migraram pro grupo por
+// gestor). Compartilhado entre os envios manuais (lista de campanhas,
+// relatório semanal) pra não duplicar esse fallback em cada um.
+// createServerOnlyFn (não createServerFn): chamada só de dentro de outro
+// handler de servidor (nunca via RPC direto do navegador) — este módulo
+// também é importado por componentes de cliente (ex: ClientFormDialog),
+// então uma função solta usando `db` aqui vazaria o driver do Postgres pro
+// bundle do navegador.
+export const resolveOperationalGroupId = createServerOnlyFn(async function resolveOperationalGroupId(
+  resolved: ResolvedWhatsappInstance,
+  organizationId: string
+): Promise<string | null> {
+  if (resolved.operationalGroupId) return resolved.operationalGroupId;
+  const legacy = await db
+    .select({ value: appConfig.value })
+    .from(appConfig)
+    .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, "whatsapp_group_operacional_id")));
+  return legacy[0]?.value ?? null;
+});
 
 // ── Instâncias WhatsApp ────────────────────────────────────────────
 // Todas as organizações usam o MESMO servidor Evolution (env EVOLUTION_API_URL /
@@ -147,6 +189,8 @@ export interface WhatsappInstanceRow {
   clientId: string | null;
   clientName: string | null;
   isDefaultGestor: boolean;
+  operationalGroupId: string | null;
+  operationalGroupName: string | null;
 }
 
 const _fetchWhatsappInstances = createServerFn({ method: "GET" }).handler(async (): Promise<WhatsappInstanceRow[]> => {
@@ -162,6 +206,8 @@ const _fetchWhatsappInstances = createServerFn({ method: "GET" }).handler(async 
       clientId: clients.id,
       clientName: clients.name,
       isDefaultGestor: whatsappInstances.isDefaultGestor,
+      operationalGroupId: whatsappInstances.operationalGroupId,
+      operationalGroupName: whatsappInstances.operationalGroupName,
     })
     .from(whatsappInstances)
     .leftJoin(clients, eq(clients.whatsappInstanceId, whatsappInstances.id))
@@ -378,6 +424,23 @@ const _renameWhatsappInstance = createServerFn({ method: "POST" })
 
 export async function renameWhatsappInstance(id: string, label: string, assignedUserId?: string | null): Promise<void> {
   await _renameWhatsappInstance({ data: { id, label, assignedUserId } });
+}
+
+// Grupo que essa instância usa pros envios manuais com destino "Operacional"
+// (lista de campanhas ativas, relatório semanal) — ver comentário no schema.
+const _setInstanceOperationalGroup = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ id: z.string(), groupId: z.string().nullable(), groupName: z.string().nullable() }))
+  .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext();
+    await loadInstanceInOrg(data.id, organizationId);
+    await db
+      .update(whatsappInstances)
+      .set({ operationalGroupId: data.groupId, operationalGroupName: data.groupName })
+      .where(eq(whatsappInstances.id, data.id));
+  });
+
+export async function setInstanceOperationalGroup(id: string, groupId: string | null, groupName: string | null): Promise<void> {
+  await _setInstanceOperationalGroup({ data: { id, groupId, groupName } });
 }
 
 // Troca qual cliente está vinculado a essa instância (usado pelo rastreamento de
@@ -818,9 +881,15 @@ async function fetchAllGroupsCached(url: string, apiKey: string, instance: strin
 }
 
 const _searchEvolutionRecipients = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ query: z.string(), groupsOnly: z.boolean().optional() }))
+  .inputValidator(z.object({ query: z.string(), groupsOnly: z.boolean().optional(), instanceId: z.string().optional() }))
   .handler(async ({ data }): Promise<EvolutionRecipient[]> => {
-    const { url, apiKey, instance } = await resolveGestorWhatsappInstance();
+    // Sem instanceId: comportamento de sempre (instância do gestor logado).
+    // Com instanceId: busca os grupos de UMA instância específica — usado na
+    // tela de editar instância, pra configurar o grupo operacional de um
+    // gestor que não é necessariamente quem está logado agora.
+    const { url, apiKey, instance } = data.instanceId
+      ? await resolveWhatsappInstanceById(data.instanceId)
+      : await resolveGestorWhatsappInstance();
     const headers = { apikey: apiKey, "Content-Type": "application/json" };
     const q = data.query.trim().toLowerCase();
 
@@ -860,8 +929,8 @@ const _searchEvolutionRecipients = createServerFn({ method: "GET" })
     return results.slice(0, 30);
   });
 
-export async function searchEvolutionRecipients(query: string, groupsOnly?: boolean): Promise<EvolutionRecipient[]> {
-  return _searchEvolutionRecipients({ data: { query, groupsOnly } });
+export async function searchEvolutionRecipients(query: string, groupsOnly?: boolean, instanceId?: string): Promise<EvolutionRecipient[]> {
+  return _searchEvolutionRecipients({ data: { query, groupsOnly, instanceId } });
 }
 
 const _sendActiveCampaignsList = createServerFn({ method: "POST" })
@@ -875,28 +944,27 @@ const _sendActiveCampaignsList = createServerFn({ method: "POST" })
     if (!client || !canAccessClient({ organizationId, role, userId }, client)) throw new Error("Cliente não encontrado.");
 
     const rows = await db
-      .select({ key: appConfig.key, value: appConfig.value })
+      .select({ value: appConfig.value })
       .from(appConfig)
-      .where(and(eq(appConfig.organizationId, organizationId), inArray(appConfig.key, ["whatsapp_group_operacional_id", "campaigns_list_destination"])));
-    const configValues = Object.fromEntries(rows.map((r) => [r.key, r.value]));
-    const destination = configValues["campaigns_list_destination"] || "operacional";
-    const operacionalGroupId = configValues["whatsapp_group_operacional_id"];
-
-    let groupId = operacionalGroupId;
-    if (destination === "client_group" && client.whatsappGroupId) {
-      groupId = client.whatsappGroupId;
-    }
-    if (!groupId) {
-      throw new Error("Grupo de destino não configurado (whatsapp_group_operacional_id em Configurações).");
-    }
+      .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, "campaigns_list_destination")));
+    const destination = rows[0]?.value || "operacional";
 
     // O grupo "operacional" é interno da equipe — precisa sair pela instância
-    // do gestor (padrão da organização), nunca pela instância própria do
-    // cliente (que normalmente nem é membro desse grupo). Só quando o destino
-    // é o grupo do PRÓPRIO cliente é que faz sentido usar a instância dele.
-    const { url, apiKey, instance } = destination === "client_group"
+    // do gestor (padrão da organização, ou a atribuída a quem está logado),
+    // nunca pela instância própria do cliente (que normalmente nem é membro
+    // desse grupo). Só quando o destino é o grupo do PRÓPRIO cliente é que
+    // faz sentido usar a instância dele.
+    const resolved = destination === "client_group"
       ? await resolveClientWhatsappInstance(data.clientId)
       : await resolveGestorWhatsappInstance();
+    const { url, apiKey, instance } = resolved;
+
+    const groupId = destination === "client_group" && client.whatsappGroupId
+      ? client.whatsappGroupId
+      : await resolveOperationalGroupId(resolved, organizationId);
+    if (!groupId) {
+      throw new Error("Grupo operacional não configurado pra essa instância. Configure em Configurações → Instâncias WhatsApp.");
+    }
 
     const text = `📋 ${data.campaignNames.length} Campanhas ativas — ${data.clientName}\n\n${data.campaignNames.map((n) => `• ${n}`).join("\n")}`;
 

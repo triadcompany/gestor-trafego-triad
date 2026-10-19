@@ -108,6 +108,13 @@ export const whatsappInstances = pgTable("whatsapp_instances", {
   // e é zerado assim que a instância conecta (ver connect.$token.tsx).
   connectToken: text("connect_token").unique(),
   connectTokenExpiresAt: timestamp("connect_token_expires_at"),
+  // Grupo que essa instância usa quando o destino de um envio manual é
+  // "Operacional" — cada gestor tem o próprio, não é mais um grupo único
+  // fixo pra organização inteira (ver resolveGestorWhatsappInstance). Nulo =
+  // ainda não configurado; nesse caso cai no appConfig legado
+  // 'whatsapp_group_operacional_id' como fallback.
+  operationalGroupId: text("operational_group_id"),
+  operationalGroupName: text("operational_group_name"),
 });
 
 export const clients = pgTable("clients", {

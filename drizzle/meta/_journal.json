@@ -232,6 +232,13 @@
       "when": 1792342748654,
       "tag": "0032_sales_client_cascade",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1792370330753,
+      "tag": "0033_whatsapp_instance_operational_group",
+      "breakpoints": true
     }
   ]
 }

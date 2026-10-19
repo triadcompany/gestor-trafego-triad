@@ -60,14 +60,17 @@ import {
   createWhatsappInstance,
   renameWhatsappInstance,
   setInstanceClient,
+  setInstanceOperationalGroup,
   setDefaultGestorInstance,
   deleteWhatsappInstance,
   fetchWhatsappInstanceQr,
   fetchWhatsappInstanceState,
   generateInstanceConnectLink,
   type WhatsappInstanceRow,
+  type EvolutionRecipient,
 } from "@/lib/whatsapp-messages";
 import { fetchAllClients } from "@/lib/queries";
+import { WhatsappGroupPicker } from "@/components/ClientFormDialog";
 import { getN8nWebhookUrl, saveN8nWebhookUrl } from "@/lib/n8n";
 import {
   agentListConversations,
@@ -533,6 +536,7 @@ function WhatsappInstancesSection() {
   const [editLabel, setEditLabel] = useState("");
   const [editAssignedUserId, setEditAssignedUserId] = useState<string>("none");
   const [editClientId, setEditClientId] = useState<string>("none");
+  const [editOperationalGroup, setEditOperationalGroup] = useState<EvolutionRecipient | null>(null);
 
   const { data: instances = [], isLoading } = useQuery({ queryKey: ["whatsapp-instances"], queryFn: fetchWhatsappInstances });
   const { data: members = [] } = useQuery({ queryKey: ["org-members"], queryFn: fetchOrgMembers });
@@ -593,6 +597,7 @@ function WhatsappInstancesSection() {
     setEditLabel(i.label);
     setEditAssignedUserId(i.assignedUserId ?? "none");
     setEditClientId(i.clientId ?? "none");
+    setEditOperationalGroup(i.operationalGroupId ? { remoteJid: i.operationalGroupId, name: i.operationalGroupName ?? i.operationalGroupId, isGroup: true } : null);
   };
 
   const editMutation = useMutation({
@@ -602,6 +607,9 @@ function WhatsappInstancesSection() {
       const nextClientId = editClientId === "none" ? null : editClientId;
       if (nextClientId !== editing.clientId) {
         await setInstanceClient(editing.id, nextClientId);
+      }
+      if (editOperationalGroup?.remoteJid !== editing.operationalGroupId) {
+        await setInstanceOperationalGroup(editing.id, editOperationalGroup?.remoteJid ?? null, editOperationalGroup?.name ?? null);
       }
     },
     onSuccess: () => {
@@ -759,6 +767,13 @@ function WhatsappInstancesSection() {
               </Select>
               <p className="text-[11px] text-muted-foreground">Define o WhatsApp "padrão" desse gestor quando ele manda uma mensagem sem escolher instância manualmente.</p>
             </div>
+            {editClientId === "none" && (
+              <div className="space-y-1.5">
+                <Label>Grupo operacional</Label>
+                <WhatsappGroupPicker value={editOperationalGroup} onChange={setEditOperationalGroup} instanceId={editing?.id} />
+                <p className="text-[11px] text-muted-foreground">Pra onde vão os envios manuais com destino "Operacional" (lista de campanhas, relatório semanal) quando essa instância é quem está enviando. Cada gestor configura o próprio.</p>
+              </div>
+            )}
             <div className="space-y-1.5">
               <Label>Cliente</Label>
               <Select value={editClientId} onValueChange={setEditClientId}>
@@ -1385,7 +1400,9 @@ function SendDestinationsSection() {
           <p className="text-sm text-muted-foreground">
             Escolha pra onde vão as mensagens dos botões "Enviar lista de campanhas ativas" e "Enviar relatório
             semanal" na página do cliente. Se o destino for "Grupo do cliente" e o cliente ainda não tiver um
-            grupo vinculado, a mensagem cai automaticamente no grupo Operacional.
+            grupo vinculado, a mensagem cai automaticamente no Operacional. "Operacional" manda pro grupo
+            configurado na própria instância de WhatsApp de quem está enviando — cada gestor tem o seu, configure
+            em "Instâncias WhatsApp" abaixo, editando a instância dele.
           </p>
         </div>
 

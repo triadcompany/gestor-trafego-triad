@@ -656,23 +656,24 @@ const _sendWeeklyMetricsReport = createServerFn({ method: "POST" })
     const token = await requireMetaToken(data.clientId);
     const text = await buildMetricsReportText(client, 7, token);
 
-    const configRows = await getConfigValues(["whatsapp_group_operacional_id", "weekly_report_destination"]);
+    const configRows = await getConfigValues(["weekly_report_destination"]);
     const destination = (configRows["weekly_report_destination"] as SendDestination) || "operacional";
-    const groupId =
-      destination === "client_group" && client.whatsappGroupId
-        ? client.whatsappGroupId
-        : configRows["whatsapp_group_operacional_id"];
-    if (!groupId) {
-      throw new Error("Grupo de destino não configurado (whatsapp_group_operacional_id em Configurações).");
-    }
 
     // Grupo "operacional" é interno da equipe — sai pela instância do gestor,
     // nunca pela instância de rastreamento do cliente (que normalmente nem é
     // membro desse grupo). Só o grupo do PRÓPRIO cliente usa a instância dele.
-    const { resolveGestorWhatsappInstance, resolveClientWhatsappInstance } = await import("./whatsapp-messages");
-    const { url, apiKey, instance } = destination === "client_group"
+    const { resolveGestorWhatsappInstance, resolveClientWhatsappInstance, resolveOperationalGroupId } = await import("./whatsapp-messages");
+    const resolved = destination === "client_group"
       ? await resolveClientWhatsappInstance(data.clientId)
       : await resolveGestorWhatsappInstance();
+    const { url, apiKey, instance } = resolved;
+
+    const groupId = destination === "client_group" && client.whatsappGroupId
+      ? client.whatsappGroupId
+      : await resolveOperationalGroupId(resolved, organizationId);
+    if (!groupId) {
+      throw new Error("Grupo operacional não configurado pra essa instância. Configure em Configurações → Instâncias WhatsApp.");
+    }
 
     const res = await fetch(`${url}/message/sendText/${instance}`, {
       method: "POST",

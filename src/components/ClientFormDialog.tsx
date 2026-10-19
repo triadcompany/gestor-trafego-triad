@@ -448,12 +448,18 @@ export function ClientFormDialog({
   );
 }
 
-function WhatsappGroupPicker({
+export function WhatsappGroupPicker({
   value,
   onChange,
+  instanceId,
 }: {
   value: EvolutionRecipient | null;
   onChange: (group: EvolutionRecipient | null) => void;
+  // Sem isso, busca os grupos da instância do gestor logado (padrão). Passe
+  // pra buscar os grupos de uma instância específica — usado em
+  // Configurações pra escolher o grupo operacional de UM gestor em
+  // particular, que pode não ser quem está logado agora.
+  instanceId?: string;
 }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<EvolutionRecipient[]>([]);
@@ -467,7 +473,7 @@ function WhatsappGroupPicker({
     timer.current = setTimeout(async () => {
       setSearching(true);
       try {
-        const data = await searchEvolutionRecipients(q, true);
+        const data = await searchEvolutionRecipients(q, true, instanceId);
         setResults(data);
       } catch {
         setResults([]);

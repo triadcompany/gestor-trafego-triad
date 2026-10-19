@@ -454,7 +454,7 @@ function ClientDetail() {
         .map((c) => extractCampaignLabel(c.name));
       await sendActiveCampaignsList(client.id, client.name, activeNames);
     },
-    onSuccess: () => toast.success("Lista enviada para o grupo Operacional Triad Company."),
+    onSuccess: () => toast.success("Lista de campanhas enviada."),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar lista", { duration: 8000 }),
   });
 
@@ -463,7 +463,7 @@ function ClientDetail() {
       if (!client) throw new Error("Cliente não carregado.");
       await sendWeeklyMetricsReport(client.id);
     },
-    onSuccess: () => toast.success("Relatório semanal enviado para o grupo Operacional Triad Company."),
+    onSuccess: () => toast.success("Relatório semanal enviado."),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar relatório", { duration: 8000 }),
   });
 
