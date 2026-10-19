@@ -25,6 +25,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ClientsIndexRouteImport } from './routes/clients.index'
 import { Route as RTokenRouteImport } from './routes/r.$token'
 import { Route as ConnectTokenRouteImport } from './routes/connect.$token'
+import { Route as ClientsImportarRouteImport } from './routes/clients.importar'
 import { Route as ClientsIdRouteImport } from './routes/clients.$id'
 import { Route as CampaignsNewRouteImport } from './routes/campaigns.new'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
@@ -111,6 +112,11 @@ const ConnectTokenRoute = ConnectTokenRouteImport.update({
   path: '/connect/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ClientsImportarRoute = ClientsImportarRouteImport.update({
+  id: '/clients/importar',
+  path: '/clients/importar',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ClientsIdRoute = ClientsIdRouteImport.update({
   id: '/clients/$id',
   path: '/clients/$id',
@@ -155,6 +161,7 @@ export interface FileRoutesByFullPath {
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
   '/clients/$id': typeof ClientsIdRoute
+  '/clients/importar': typeof ClientsImportarRoute
   '/connect/$token': typeof ConnectTokenRoute
   '/r/$token': typeof RTokenRoute
   '/clients/': typeof ClientsIndexRoute
@@ -178,6 +185,7 @@ export interface FileRoutesByTo {
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
   '/clients/$id': typeof ClientsIdRoute
+  '/clients/importar': typeof ClientsImportarRoute
   '/connect/$token': typeof ConnectTokenRoute
   '/r/$token': typeof RTokenRoute
   '/clients': typeof ClientsIndexRoute
@@ -202,6 +210,7 @@ export interface FileRoutesById {
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
   '/clients/$id': typeof ClientsIdRoute
+  '/clients/importar': typeof ClientsImportarRoute
   '/connect/$token': typeof ConnectTokenRoute
   '/r/$token': typeof RTokenRoute
   '/clients/': typeof ClientsIndexRoute
@@ -227,6 +236,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/campaigns/new'
     | '/clients/$id'
+    | '/clients/importar'
     | '/connect/$token'
     | '/r/$token'
     | '/clients/'
@@ -250,6 +260,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/campaigns/new'
     | '/clients/$id'
+    | '/clients/importar'
     | '/connect/$token'
     | '/r/$token'
     | '/clients'
@@ -273,6 +284,7 @@ export interface FileRouteTypes {
     | '/auth/callback'
     | '/campaigns/new'
     | '/clients/$id'
+    | '/clients/importar'
     | '/connect/$token'
     | '/r/$token'
     | '/clients/'
@@ -297,6 +309,7 @@ export interface RootRouteChildren {
   AuthCallbackRoute: typeof AuthCallbackRoute
   CampaignsNewRoute: typeof CampaignsNewRoute
   ClientsIdRoute: typeof ClientsIdRoute
+  ClientsImportarRoute: typeof ClientsImportarRoute
   ConnectTokenRoute: typeof ConnectTokenRoute
   RTokenRoute: typeof RTokenRoute
   ClientsIndexRoute: typeof ClientsIndexRoute
@@ -417,6 +430,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConnectTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/clients/importar': {
+      id: '/clients/importar'
+      path: '/clients/importar'
+      fullPath: '/clients/importar'
+      preLoaderRoute: typeof ClientsImportarRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/clients/$id': {
       id: '/clients/$id'
       path: '/clients/$id'
@@ -473,6 +493,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthCallbackRoute: AuthCallbackRoute,
   CampaignsNewRoute: CampaignsNewRoute,
   ClientsIdRoute: ClientsIdRoute,
+  ClientsImportarRoute: ClientsImportarRoute,
   ConnectTokenRoute: ConnectTokenRoute,
   RTokenRoute: RTokenRoute,
   ClientsIndexRoute: ClientsIndexRoute,

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Power, Search, Trash2 } from "lucide-react";
+import { Plus, Pencil, Power, Search, Trash2, Download } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -150,20 +150,28 @@ function ClientsList() {
       <div className="px-4 md:px-8 py-6 max-w-7xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Clientes</h1>
-          <Dialog open={open} onOpenChange={setOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="gap-2" onClick={openNew}>
-                <Plus className="h-4 w-4" />
-                Novo Cliente
-              </Button>
-            </DialogTrigger>
-            <ClientFormDialog
-              key={editing?.id ?? "new"}
-              client={editing}
-              onSave={(clientData, tagIds) => saveMutation.mutate({ clientData, tagIds })}
-              saving={saveMutation.isPending}
-            />
-          </Dialog>
+          <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="gap-2" asChild>
+              <Link to="/clients/importar">
+                <Download className="h-4 w-4" />
+                Importar do Facebook
+              </Link>
+            </Button>
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="gap-2" onClick={openNew}>
+                  <Plus className="h-4 w-4" />
+                  Novo Cliente
+                </Button>
+              </DialogTrigger>
+              <ClientFormDialog
+                key={editing?.id ?? "new"}
+                client={editing}
+                onSave={(clientData, tagIds) => saveMutation.mutate({ clientData, tagIds })}
+                saving={saveMutation.isPending}
+              />
+            </Dialog>
+          </div>
         </div>
 
         <div className="flex gap-4 mb-4 text-sm text-muted-foreground">
