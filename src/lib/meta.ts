@@ -1116,13 +1116,14 @@ export async function fetchCampaigns(
 
 // Gasto e conversas iniciadas de UMA campanha específica, desde sempre (usado
 // no "Marcar como vendido" — o investimento total que gerou a venda, não só
-// o que estiver filtrado na tela). Edge de insights direto na campanha, com
-// time_range explícito em vez de date_preset=maximum — mesmo caminho (bem
-// testado) que todo outro período deste app já usa.
+// o que estiver filtrado na tela). Edge de insights direto na campanha. Usa
+// date_preset=maximum (não um time_range manual desde 2000 — a Meta recusa
+// qualquer "since" com mais de 37 meses, erro 3018) — confirmado ao vivo que
+// funciona direto na edge da campanha.
 export async function fetchCampaignLifetimeStats(campaignId: string, token: string): Promise<{ spend: number; leads: number }> {
   const params = new URLSearchParams({
     fields: "spend,actions",
-    time_range: JSON.stringify({ since: "2000-01-01", until: isoDateInBrasilia() }),
+    date_preset: "maximum",
     access_token: token,
   });
   const json = await fetchMetaJson<{
