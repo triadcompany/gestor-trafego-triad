@@ -79,7 +79,7 @@ import {
   agentSaveAssistantPrompt,
   type AssistantConfig,
 } from "@/lib/agent-chat";
-import { fetchOrgMembers, createOrgMember, updateOrgMemberRole, setOrgMemberActive } from "@/server/team";
+import { fetchOrgMembers, createOrgMember, updateOrgMemberRole, setOrgMemberActive, resetOrgMemberPassword } from "@/server/team";
 import { getCurrentUser } from "@/server/session";
 import { startMetaOAuth } from "@/server/meta-oauth";
 
@@ -887,6 +887,8 @@ function UsersSection() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [resettingMember, setResettingMember] = useState<{ id: string; fullName: string } | null>(null);
+  const [newPassword, setNewPassword] = useState("");
 
   const { data: members = [], isLoading } = useQuery({ queryKey: ["org-members"], queryFn: fetchOrgMembers });
 
@@ -913,6 +915,16 @@ function UsersSection() {
     mutationFn: ({ userId, active }: { userId: string; active: boolean }) => setOrgMemberActive(userId, active),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["org-members"] }),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao alterar acesso"),
+  });
+
+  const resetPasswordMutation = useMutation({
+    mutationFn: () => resetOrgMemberPassword(resettingMember!.id, newPassword),
+    onSuccess: () => {
+      toast.success("Senha resetada! Compartilhe a nova senha com a pessoa por fora do sistema.");
+      setResettingMember(null);
+      setNewPassword("");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao resetar senha"),
   });
 
   return (
@@ -983,6 +995,14 @@ function UsersSection() {
                 size="sm"
                 variant="ghost"
                 className="text-xs"
+                onClick={() => { setResettingMember({ id: m.id, fullName: m.fullName }); setNewPassword(""); }}
+              >
+                Resetar senha
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="text-xs"
                 onClick={() => activeMutation.mutate({ userId: m.id, active: !m.active })}
               >
                 {m.active ? "Desativar" : "Ativar"}
@@ -991,6 +1011,30 @@ function UsersSection() {
           ))
         )}
       </Card>
+
+      <Dialog open={!!resettingMember} onOpenChange={(v) => !v && setResettingMember(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Resetar senha de {resettingMember?.fullName}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1.5">
+              <Label>Nova senha</Label>
+              <Input type="text" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="mín. 8 caracteres" autoFocus />
+              <p className="text-[11px] text-muted-foreground">Compartilhe a nova senha com a pessoa por fora do sistema — ela pode trocar depois.</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button
+              onClick={() => resetPasswordMutation.mutate()}
+              disabled={newPassword.length < 8 || resetPasswordMutation.isPending}
+            >
+              {resetPasswordMutation.isPending ? <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> : null}
+              Resetar senha
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

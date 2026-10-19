@@ -79,3 +79,17 @@ const _setOrgMemberActive = createServerFn({ method: "POST" })
 export async function setOrgMemberActive(userId: string, active: boolean): Promise<void> {
   await _setOrgMemberActive({ data: { userId, active } });
 }
+
+const _resetOrgMemberPassword = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ userId: z.string(), newPassword: z.string().min(8) }))
+  .handler(async ({ data }) => {
+    const { organizationId } = await requireOrgContext("admin");
+    const member = await db.query.profiles.findFirst({ where: eq(profiles.id, data.userId) });
+    if (!member || member.organizationId !== organizationId) throw new Error("Usuário não encontrado.");
+    const passwordHash = await hashPassword(data.newPassword);
+    await db.update(users).set({ passwordHash }).where(eq(users.id, data.userId));
+  });
+
+export async function resetOrgMemberPassword(userId: string, newPassword: string): Promise<void> {
+  await _resetOrgMemberPassword({ data: { userId, newPassword } });
+}
