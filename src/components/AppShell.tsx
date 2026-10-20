@@ -12,7 +12,7 @@ const navGroups = [
   {
     label: "Visão",
     items: [
-      { to: "/", label: "Dashboard", icon: LayoutDashboard, exact: true },
+      { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
     ],
   },
   {

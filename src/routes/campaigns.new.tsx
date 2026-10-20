@@ -827,7 +827,7 @@ function NewCampaign() {
           <p className="text-xs text-muted-foreground mb-6">ID: {createdId}</p>
           <div className="flex gap-3 justify-center flex-wrap">
             <Button variant="outline" asChild>
-              <Link to="/">Voltar ao dashboard</Link>
+              <Link to="/dashboard">Voltar ao dashboard</Link>
             </Button>
             <Button
               onClick={() =>
@@ -877,7 +877,7 @@ function NewCampaign() {
     <AppShell>
       <div className="px-4 md:px-8 py-6 max-w-2xl mx-auto">
         <Link
-          to="/"
+          to="/dashboard"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -1162,7 +1162,7 @@ function NewCampaign() {
 
             <div className="flex justify-between gap-3">
               <Button variant="outline" asChild>
-                <Link to="/">Cancelar</Link>
+                <Link to="/dashboard">Cancelar</Link>
               </Button>
               {mode === "duplicate" ? (
                 <Button

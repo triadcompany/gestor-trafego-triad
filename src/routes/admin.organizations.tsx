@@ -92,7 +92,7 @@ function AdminOrganizationsPage() {
     mutationFn: (organizationId: string) => enterOrganization({ data: { organizationId } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["current-user"] });
-      navigate({ to: "/" });
+      navigate({ to: "/dashboard" });
     },
   });
 

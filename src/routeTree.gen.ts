@@ -20,6 +20,7 @@ import { Route as PixRouteImport } from './routes/pix'
 import { Route as MensagensRouteImport } from './routes/mensagens'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DiagnosticoMetaRouteImport } from './routes/diagnostico-meta'
+import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AgenteRouteImport } from './routes/agente'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ClientsIndexRouteImport } from './routes/clients.index'
@@ -87,6 +88,11 @@ const DiagnosticoMetaRoute = DiagnosticoMetaRouteImport.update({
   path: '/diagnostico-meta',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AgenteRoute = AgenteRouteImport.update({
   id: '/agente',
   path: '/agente',
@@ -146,6 +152,7 @@ const CampaignsEditIdRoute = CampaignsEditIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/agente': typeof AgenteRoute
+  '/dashboard': typeof DashboardRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
@@ -170,6 +177,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agente': typeof AgenteRoute
+  '/dashboard': typeof DashboardRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
@@ -195,6 +203,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/agente': typeof AgenteRoute
+  '/dashboard': typeof DashboardRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
@@ -221,6 +230,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/agente'
+    | '/dashboard'
     | '/diagnostico-meta'
     | '/login'
     | '/mensagens'
@@ -245,6 +255,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/agente'
+    | '/dashboard'
     | '/diagnostico-meta'
     | '/login'
     | '/mensagens'
@@ -269,6 +280,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/agente'
+    | '/dashboard'
     | '/diagnostico-meta'
     | '/login'
     | '/mensagens'
@@ -294,6 +306,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AgenteRoute: typeof AgenteRoute
+  DashboardRoute: typeof DashboardRoute
   DiagnosticoMetaRoute: typeof DiagnosticoMetaRoute
   LoginRoute: typeof LoginRoute
   MensagensRoute: typeof MensagensRoute
@@ -395,6 +408,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DiagnosticoMetaRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/agente': {
       id: '/agente'
       path: '/agente'
@@ -478,6 +498,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgenteRoute: AgenteRoute,
+  DashboardRoute: DashboardRoute,
   DiagnosticoMetaRoute: DiagnosticoMetaRoute,
   LoginRoute: LoginRoute,
   MensagensRoute: MensagensRoute,

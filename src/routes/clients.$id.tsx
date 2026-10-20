@@ -485,7 +485,7 @@ function ClientDetail() {
       <AppShell>
         <div className="p-8 text-center">
           <p className="text-muted-foreground">Cliente não encontrado.</p>
-          <Link to="/" className="text-primary underline mt-2 inline-block">Voltar</Link>
+          <Link to="/dashboard" className="text-primary underline mt-2 inline-block">Voltar</Link>
         </div>
       </AppShell>
     );
@@ -513,7 +513,7 @@ function ClientDetail() {
     <AppShell>
       <div className="px-4 md:px-8 py-6 max-w-7xl mx-auto">
         <Link
-          to="/"
+          to="/dashboard"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"
         >
           <ArrowLeft className="h-4 w-4" />

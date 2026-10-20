@@ -57,6 +57,15 @@ export const Route = createRootRoute({
     if (location.pathname === "/login" || location.pathname.startsWith("/auth/") || location.pathname.startsWith("/connect/") || location.pathname.startsWith("/r/")) {
       return;
     }
+    // "/" é a landing page pública — visitante deslogado vê o site de
+    // marketing, usuário logado é mandado direto pro dashboard.
+    if (location.pathname === "/") {
+      const user = await getCurrentUser();
+      if (user) {
+        throw redirect({ to: "/dashboard" });
+      }
+      return;
+    }
     const user = await getCurrentUser();
     if (!user) {
       throw redirect({ to: "/login" });

@@ -22,7 +22,7 @@ function Login() {
 
   useEffect(() => {
     getCurrentUser().then((user) => {
-      if (user) navigate({ to: "/" });
+      if (user) navigate({ to: "/dashboard" });
     });
   }, [navigate]);
 
@@ -41,7 +41,7 @@ function Login() {
       return;
     }
 
-    navigate({ to: "/" });
+    navigate({ to: "/dashboard" });
   };
 
   return (
