@@ -59,6 +59,7 @@ import {
   type SelectedLocation,
   type MetaInterest,
 } from "@/lib/meta";
+import { fetchWhatsappNumbersForPage } from "@/server/facebook-directory";
 
 const FB_POSITIONS = [
   { value: "feed", label: "Feed" },
@@ -90,6 +91,52 @@ export const Route = createFileRoute("/campaigns/edit/$id")({
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h3 className="text-sm font-semibold text-foreground">{children}</h3>;
+}
+
+// Números de WhatsApp da Business Manager da Página já vinculada ao conjunto
+// (precisa da permissão whatsapp_business_management — se não tiver, ou se a
+// BM não tiver número cadastrado, ou se a campanha ainda não tiver uma
+// Página vinculada, cai pro campo de texto livre de sempre).
+function WhatsappNumberPicker({
+  pageId,
+  value,
+  onChange,
+}: {
+  pageId: string | undefined;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const { data: numbers = [], isLoading, isFetched } = useQuery({
+    queryKey: ["fb-whatsapp-numbers-page", pageId],
+    queryFn: () => fetchWhatsappNumbersForPage(pageId!),
+    enabled: !!pageId,
+  });
+
+  if (pageId && (isLoading || numbers.length > 0)) {
+    const knownValue = numbers.some((n) => n.number === value) ? value : undefined;
+    return (
+      <Select value={knownValue} onValueChange={onChange} disabled={isLoading}>
+        <SelectTrigger className="font-mono">
+          <SelectValue placeholder={isLoading ? "Carregando números..." : "Selecionar número"} />
+        </SelectTrigger>
+        <SelectContent>
+          {numbers.map((n) => (
+            <SelectItem key={n.id} value={n.number}>{n.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  return (
+    <Input
+      type="tel"
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={pageId && isFetched ? "Nenhum número encontrado — digite manualmente" : "5511999999999"}
+      className="font-mono"
+    />
+  );
 }
 
 function StepIndicator({ step }: { step: 1 | 2 | 3 }) {
@@ -552,12 +599,10 @@ function EditCampaign() {
               <SectionTitle>WhatsApp</SectionTitle>
               <div className="space-y-2">
                 <Label>Número que recebe os cliques</Label>
-                <Input
-                  type="tel"
+                <WhatsappNumberPicker
+                  pageId={pageId}
                   value={whatsappNumber ?? ""}
-                  onChange={(e) => setWhatsappNumber(e.target.value)}
-                  placeholder="5511999999999"
-                  className="font-mono"
+                  onChange={setWhatsappNumber}
                 />
                 <p className="text-xs text-muted-foreground">
                   Com DDI e DDD, só números (ex: 5511999999999). É pra esse número que a Meta manda quem clicar no anúncio.

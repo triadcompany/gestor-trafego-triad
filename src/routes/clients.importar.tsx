@@ -12,14 +12,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ArrowLeft, Download, RefreshCw, CheckCircle2, CheckCheck, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import {
-  fetchImportCandidates,
-  importAccountsAsClients,
-  searchFacebookPages,
-  fetchWhatsappNumbersForAccount,
-  type ImportCandidate,
-  type FacebookPageOption,
-} from "@/server/import-accounts";
+import { fetchImportCandidates, importAccountsAsClients, type ImportCandidate } from "@/server/import-accounts";
+import { searchFacebookPages, fetchWhatsappNumbersForAccount, type FacebookPageOption } from "@/server/facebook-directory";
 
 export const Route = createFileRoute("/clients/importar")({
   head: () => ({ meta: [{ title: "Importar contas do Facebook — Clientes" }] }),
