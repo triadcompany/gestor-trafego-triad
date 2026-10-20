@@ -59,7 +59,7 @@ import {
   type SelectedLocation,
   type MetaInterest,
 } from "@/lib/meta";
-import { fetchWhatsappNumbersForPage } from "@/server/facebook-directory";
+import { fetchWhatsappNumbersForPage, resolveCampaignAccountId } from "@/server/facebook-directory";
 
 const FB_POSITIONS = [
   { value: "feed", label: "Feed" },
@@ -98,18 +98,20 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
 // BM não tiver número cadastrado, ou se a campanha ainda não tiver uma
 // Página vinculada, cai pro campo de texto livre de sempre).
 function WhatsappNumberPicker({
+  accountId,
   pageId,
   value,
   onChange,
 }: {
+  accountId: string | undefined;
   pageId: string | undefined;
   value: string;
   onChange: (v: string) => void;
 }) {
   const { data: numbers = [], isLoading, isFetched } = useQuery({
-    queryKey: ["fb-whatsapp-numbers-page", pageId],
-    queryFn: () => fetchWhatsappNumbersForPage(pageId!),
-    enabled: !!pageId,
+    queryKey: ["fb-whatsapp-numbers-page", accountId, pageId],
+    queryFn: () => fetchWhatsappNumbersForPage(accountId!, pageId!),
+    enabled: !!pageId && !!accountId,
   });
 
   if (pageId && (isLoading || numbers.length > 0)) {
@@ -175,6 +177,11 @@ function EditCampaign() {
   const queryClient = useQueryClient();
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
+
+  const { data: campaignAccountId } = useQuery({
+    queryKey: ["campaign-account-id", campaignId],
+    queryFn: () => resolveCampaignAccountId(campaignId),
+  });
 
   // Step 1
   const [campaignName, setCampaignName] = useState("");
@@ -600,6 +607,7 @@ function EditCampaign() {
               <div className="space-y-2">
                 <Label>Número que recebe os cliques</Label>
                 <WhatsappNumberPicker
+                  accountId={campaignAccountId ?? undefined}
                   pageId={pageId}
                   value={whatsappNumber ?? ""}
                   onChange={setWhatsappNumber}

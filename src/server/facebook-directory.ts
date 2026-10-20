@@ -57,55 +57,99 @@ export interface WhatsappNumberOption {
   label: string; // "Nome verificado · +55 ..." pra mostrar no seletor
 }
 
-async function fetchWhatsappNumbersForBusiness(businessId: string, token: string): Promise<WhatsappNumberOption[]> {
-  const [owned, client] = (await Promise.all([
-    fetch(`${BASE_URL}/${businessId}/owned_whatsapp_business_accounts?fields=id,name&access_token=${encodeURIComponent(token)}`).then((r) => r.json()),
-    fetch(`${BASE_URL}/${businessId}/client_whatsapp_business_accounts?fields=id,name&access_token=${encodeURIComponent(token)}`).then((r) => r.json()),
-  ])) as [{ data?: Array<{ id: string }> }, { data?: Array<{ id: string }> }];
+// A Business Manager (WABA) só lista números formalmente cadastrados ali, e
+// precisa da permissão whatsapp_business_management — mas na prática a
+// maioria dos números "vinculados à página" nem passa por isso: são números
+// de vendedores já usados direto nos conjuntos de anúncio dessa página
+// (promoted_object.whatsapp_phone_number), sem permissão nenhuma extra. Por
+// isso junta as duas fontes + o telefone de contato da própria Página.
+async function fetchWhatsappNumbers(accountId: string, pageId: string, token: string): Promise<WhatsappNumberOption[]> {
+  const seen = new Set<string>();
+  const numbers: WhatsappNumberOption[] = [];
+  const add = (raw: string | undefined, label: string) => {
+    const digits = (raw ?? "").replace(/[^\d]/g, "");
+    if (!digits || seen.has(digits)) return;
+    seen.add(digits);
+    numbers.push({ id: digits, number: digits, label });
+  };
 
-  const wabas = dedupeById([...(owned.data ?? []), ...(client.data ?? [])]);
-  const numbersPerWaba = await Promise.all(
-    wabas.map((w) =>
-      fetch(`${BASE_URL}/${w.id}/phone_numbers?fields=id,display_phone_number,verified_name&access_token=${encodeURIComponent(token)}`)
-        .then((r) => r.json())
-        .then((j: { data?: Array<{ id: string; display_phone_number?: string; verified_name?: string }> }) => j.data ?? [])
-        .catch(() => [])
-    )
-  );
+  try {
+    const businessId = await resolveBusinessId(accountId, token);
+    if (businessId) {
+      const [owned, client] = (await Promise.all([
+        fetch(`${BASE_URL}/${businessId}/owned_whatsapp_business_accounts?fields=id,name&access_token=${encodeURIComponent(token)}`).then((r) => r.json()),
+        fetch(`${BASE_URL}/${businessId}/client_whatsapp_business_accounts?fields=id,name&access_token=${encodeURIComponent(token)}`).then((r) => r.json()),
+      ])) as [{ data?: Array<{ id: string }> }, { data?: Array<{ id: string }> }];
+      const wabas = dedupeById([...(owned.data ?? []), ...(client.data ?? [])]);
+      const numbersPerWaba = await Promise.all(
+        wabas.map((w) =>
+          fetch(`${BASE_URL}/${w.id}/phone_numbers?fields=id,display_phone_number,verified_name&access_token=${encodeURIComponent(token)}`)
+            .then((r) => r.json())
+            .then((j: { data?: Array<{ display_phone_number?: string; verified_name?: string }> }) => j.data ?? [])
+            .catch(() => [])
+        )
+      );
+      for (const n of numbersPerWaba.flat()) {
+        add(n.display_phone_number, `${n.verified_name || "WhatsApp"} · ${n.display_phone_number ?? ""}`);
+      }
+    }
+  } catch {
+    // sem whatsapp_business_management ou sem BM — segue só com as outras fontes
+  }
 
-  return numbersPerWaba.flat().map((n) => ({
-    id: n.id,
-    number: (n.display_phone_number ?? "").replace(/[^\d]/g, ""),
-    label: `${n.verified_name || "WhatsApp"} · ${n.display_phone_number ?? ""}`,
-  }));
-}
+  try {
+    let url: string | null = `${BASE_URL}/${accountId}/adsets?fields=promoted_object&limit=200&access_token=${encodeURIComponent(token)}`;
+    while (url) {
+      const json: {
+        data?: Array<{ promoted_object?: { page_id?: string; whatsapp_phone_number?: string } }>;
+        paging?: { next?: string };
+      } = await fetch(url).then((r) => r.json());
+      for (const a of json.data ?? []) {
+        if (a.promoted_object?.page_id === pageId && a.promoted_object.whatsapp_phone_number) {
+          add(a.promoted_object.whatsapp_phone_number, `Usado em anúncios · +${a.promoted_object.whatsapp_phone_number}`);
+        }
+      }
+      url = json.paging?.next ?? null;
+    }
+  } catch {
+    // segue sem isso
+  }
 
-const _fetchWhatsappNumbersForAccount = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ accountId: z.string() }))
-  .handler(async ({ data }): Promise<WhatsappNumberOption[]> => {
-    await requireOrgContext();
-    const token = await getMetaToken();
-    if (!token) throw new Error("Token Meta não configurado.");
-    const businessId = await resolveBusinessId(data.accountId, token);
-    if (!businessId) return [];
-    return fetchWhatsappNumbersForBusiness(businessId, token);
-  });
+  try {
+    const res = await fetch(`${BASE_URL}/${pageId}?fields=phone&access_token=${encodeURIComponent(token)}`);
+    const json = (await res.json()) as { phone?: string };
+    if (json.phone) add(json.phone, `Telefone da Página · ${json.phone}`);
+  } catch {
+    // segue sem isso
+  }
 
-export async function fetchWhatsappNumbersForAccount(accountId: string): Promise<WhatsappNumberOption[]> {
-  return _fetchWhatsappNumbersForAccount({ data: { accountId } });
+  return numbers;
 }
 
 const _fetchWhatsappNumbersForPage = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ pageId: z.string() }))
+  .inputValidator(z.object({ accountId: z.string(), pageId: z.string() }))
   .handler(async ({ data }): Promise<WhatsappNumberOption[]> => {
     await requireOrgContext();
     const token = await getMetaToken();
     if (!token) throw new Error("Token Meta não configurado.");
-    const businessId = await resolveBusinessId(data.pageId, token);
-    if (!businessId) return [];
-    return fetchWhatsappNumbersForBusiness(businessId, token);
+    return fetchWhatsappNumbers(data.accountId, data.pageId, token);
   });
 
-export async function fetchWhatsappNumbersForPage(pageId: string): Promise<WhatsappNumberOption[]> {
-  return _fetchWhatsappNumbersForPage({ data: { pageId } });
+export async function fetchWhatsappNumbersForPage(accountId: string, pageId: string): Promise<WhatsappNumberOption[]> {
+  return _fetchWhatsappNumbersForPage({ data: { accountId, pageId } });
+}
+
+const _resolveCampaignAccountId = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ campaignId: z.string() }))
+  .handler(async ({ data }): Promise<string | null> => {
+    await requireOrgContext();
+    const token = await getMetaToken();
+    if (!token) throw new Error("Token Meta não configurado.");
+    const res = await fetch(`${BASE_URL}/${data.campaignId}?fields=account_id&access_token=${encodeURIComponent(token)}`);
+    const json = (await res.json()) as { account_id?: string };
+    return json.account_id ? `act_${json.account_id}` : null;
+  });
+
+export async function resolveCampaignAccountId(campaignId: string): Promise<string | null> {
+  return _resolveCampaignAccountId({ data: { campaignId } });
 }

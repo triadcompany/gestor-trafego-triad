@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { ArrowLeft, Download, RefreshCw, CheckCircle2, CheckCheck, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchImportCandidates, importAccountsAsClients, type ImportCandidate } from "@/server/import-accounts";
-import { searchFacebookPages, fetchWhatsappNumbersForAccount, type FacebookPageOption } from "@/server/facebook-directory";
+import { searchFacebookPages, fetchWhatsappNumbersForPage, type FacebookPageOption } from "@/server/facebook-directory";
 
 export const Route = createFileRoute("/clients/importar")({
   head: () => ({ meta: [{ title: "Importar contas do Facebook — Clientes" }] }),
@@ -325,9 +325,10 @@ function PagePicker({
   );
 }
 
-// Lista os números de WhatsApp da Business Manager dessa conta (precisa da
-// permissão whatsapp_business_management no token — se não tiver, ou se a
-// BM não tiver nenhum número cadastrado, cai pro campo de texto livre.
+// Junta números da Business Manager (precisa whatsapp_business_management)
+// com números já usados em anúncios dessa página específica (não precisa de
+// permissão nenhuma extra) e o telefone de contato da própria Página — se
+// nada disso achar nada, cai pro campo de texto livre.
 function WhatsappNumberField({
   accountId,
   pageId,
@@ -340,8 +341,8 @@ function WhatsappNumberField({
   onChange: (v: string) => void;
 }) {
   const { data: numbers = [], isLoading, isFetched } = useQuery({
-    queryKey: ["fb-whatsapp-numbers", accountId],
-    queryFn: () => fetchWhatsappNumbersForAccount(accountId),
+    queryKey: ["fb-whatsapp-numbers", accountId, pageId],
+    queryFn: () => fetchWhatsappNumbersForPage(accountId, pageId!),
     enabled: !!pageId,
   });
 
