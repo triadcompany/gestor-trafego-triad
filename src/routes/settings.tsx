@@ -26,7 +26,6 @@ import {
   RefreshCw,
   Stethoscope,
   Bot,
-  Webhook,
   Send,
   Plus,
   Trash2,
@@ -71,7 +70,6 @@ import {
 } from "@/lib/whatsapp-messages";
 import { fetchAllClients } from "@/lib/queries";
 import { WhatsappGroupPicker } from "@/components/ClientFormDialog";
-import { getN8nWebhookUrl, saveN8nWebhookUrl } from "@/lib/n8n";
 import {
   agentListConversations,
   agentSetConversationPinned,
@@ -110,7 +108,6 @@ function SettingsPage() {
             <TabsTrigger value="whatsapp" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Conectar WhatsApp</TabsTrigger>
             {isAdmin && <TabsTrigger value="users" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Usuários</TabsTrigger>}
             <TabsTrigger value="agent" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Agente de IA</TabsTrigger>
-            <TabsTrigger value="webhook" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Webhook</TabsTrigger>
             <TabsTrigger value="diagnostico" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Diagnóstico</TabsTrigger>
             <TabsTrigger value="sistema" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Sistema</TabsTrigger>
           </TabsList>
@@ -134,10 +131,6 @@ function SettingsPage() {
           <TabsContent value="agent" className="mt-0">
             <OpenAISection />
             <AgentPinnedSection />
-          </TabsContent>
-
-          <TabsContent value="webhook" className="mt-0">
-            <N8nSection />
           </TabsContent>
 
           <TabsContent value="diagnostico" className="mt-0">
@@ -1332,87 +1325,6 @@ function AgentPinnedSection() {
               );
             })
           )}
-        </div>
-      </Card>
-    </section>
-  );
-}
-
-function N8nSection() {
-  const queryClient = useQueryClient();
-  const [newWebhookUrl, setNewWebhookUrl] = useState("");
-
-  const { data: n8nWebhookUrl, isLoading: isLoadingN8n } = useQuery({
-    queryKey: ["n8n-webhook-url"],
-    queryFn: getN8nWebhookUrl,
-    staleTime: 1000 * 60 * 5,
-  });
-
-  const saveN8nMutation = useMutation({
-    mutationFn: saveN8nWebhookUrl,
-    onSuccess: () => {
-      toast.success("URL do webhook n8n salva!");
-      setNewWebhookUrl("");
-      queryClient.invalidateQueries({ queryKey: ["n8n-webhook-url"] });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar URL"),
-  });
-
-  return (
-    <section className="mb-6">
-      <div className="flex items-center gap-2 mb-3">
-        <Webhook className="h-4 w-4 text-muted-foreground" />
-        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Webhook n8n</h2>
-      </div>
-
-      <Card className="overflow-hidden">
-        <div className="px-5 py-4 flex items-center gap-4 border-b border-border bg-muted/10">
-          <Webhook className="h-5 w-5 text-muted-foreground shrink-0" />
-          <div className="flex-1 min-w-0">
-            {isLoadingN8n ? (
-              <p className="text-sm text-muted-foreground">Verificando...</p>
-            ) : n8nWebhookUrl ? (
-              <>
-                <p className="text-sm font-medium text-status-on-target">Webhook configurado</p>
-                <p className="text-xs text-muted-foreground mt-0.5 font-mono truncate">{n8nWebhookUrl}</p>
-              </>
-            ) : (
-              <>
-                <p className="text-sm font-medium text-destructive">Webhook não configurado</p>
-                <p className="text-xs text-muted-foreground mt-0.5">Sem URL configurada — criação de anúncios usará chamada direta ao Meta.</p>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div className="p-5 space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="n8n-webhook-input">{!n8nWebhookUrl ? "Cole a URL do webhook" : "Atualizar URL"}</Label>
-            <Input
-              id="n8n-webhook-input"
-              value={newWebhookUrl}
-              onChange={(e) => setNewWebhookUrl(e.target.value)}
-              placeholder="https://seu-n8n.host/webhook/criar-anuncio"
-              className="font-mono text-xs"
-              spellCheck={false}
-            />
-            <p className="text-[11px] text-muted-foreground">URL de produção gerada pelo n8n no nó "Webhook — Receber Payload".</p>
-          </div>
-
-          <Button
-            onClick={() => saveN8nMutation.mutate(newWebhookUrl.trim())}
-            disabled={!newWebhookUrl.trim() || saveN8nMutation.isPending}
-            className="w-full sm:w-auto"
-          >
-            {saveN8nMutation.isPending ? (
-              <>
-                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
-                Salvando...
-              </>
-            ) : (
-              "Salvar URL"
-            )}
-          </Button>
         </div>
       </Card>
     </section>

@@ -1,8 +1,8 @@
 import { createServerFn } from "@tanstack/react-start";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db/client";
-import { appConfig, n8nJobs } from "@/db/schema";
+import { n8nJobs } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 import type { AdCreativeOptions, CreateFromScratchOptions } from "./meta";
 
@@ -24,32 +24,13 @@ export interface N8nJobStatus {
   updatedAt: string;
 }
 
-const _getN8nWebhookUrl = createServerFn({ method: "GET" }).handler(async () => {
-  const { organizationId } = await requireOrgContext();
-  const rows = await db
-    .select({ value: appConfig.value })
-    .from(appConfig)
-    .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, "n8n_campaign_webhook_url")))
-    .limit(1);
-  return rows[0]?.value ?? null;
+// Só o booleano, nunca a URL em si — ela não deve chegar no navegador.
+const _isN8nConfigured = createServerFn({ method: "GET" }).handler(async (): Promise<boolean> => {
+  return !!process.env.N8N_CAMPAIGN_WEBHOOK_URL;
 });
 
-export async function getN8nWebhookUrl(): Promise<string | null> {
-  return _getN8nWebhookUrl();
-}
-
-const _saveN8nWebhookUrl = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ url: z.string() }))
-  .handler(async ({ data }) => {
-    const { organizationId } = await requireOrgContext("admin");
-    await db
-      .insert(appConfig)
-      .values({ organizationId, key: "n8n_campaign_webhook_url", value: data.url })
-      .onConflictDoUpdate({ target: [appConfig.organizationId, appConfig.key], set: { value: data.url } });
-  });
-
-export async function saveN8nWebhookUrl(url: string): Promise<void> {
-  await _saveN8nWebhookUrl({ data: { url } });
+export async function isN8nConfigured(): Promise<boolean> {
+  return _isN8nConfigured();
 }
 
 const _triggerN8nCampaign = createServerFn({ method: "POST" })
@@ -65,8 +46,11 @@ const _triggerN8nCampaign = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<{ jobId: string }> => {
     const { organizationId } = await requireOrgContext();
     const payload = data as N8nCampaignPayload;
-    const webhookUrl = await _getN8nWebhookUrl();
-    if (!webhookUrl) throw new Error("URL do webhook n8n não configurada. Acesse Configurações.");
+    // Fluxo único, compartilhado por todas as organizações (não configurável
+    // por organização — ver settings.tsx, seção removida). O n8n identifica
+    // de quem é cada job pelo organizationId que vai junto no payload.
+    const webhookUrl = process.env.N8N_CAMPAIGN_WEBHOOK_URL;
+    if (!webhookUrl) throw new Error("N8N_CAMPAIGN_WEBHOOK_URL não configurado no servidor.");
 
     // Fire-and-forget — tabela pode não existir ainda; o que importa é a chamada do webhook
     db.insert(n8nJobs)
@@ -83,7 +67,7 @@ const _triggerN8nCampaign = createServerFn({ method: "POST" })
     const res = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      body: JSON.stringify({ ...payload, organizationId }),
     });
 
     if (!res.ok) {

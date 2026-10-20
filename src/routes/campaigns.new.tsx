@@ -68,7 +68,7 @@ import {
   type SelectedLocation,
   type MetaInterest,
 } from "@/lib/meta";
-import { getN8nWebhookUrl, triggerN8nCampaign, pollN8nJob } from "@/lib/n8n";
+import { isN8nConfigured, triggerN8nCampaign, pollN8nJob } from "@/lib/n8n";
 
 // Sem "Reels" — não é suportado pelo posicionamento manual em campanhas de
 // WhatsApp (destination_type CONVERSATIONS), que é o único tipo criado aqui.
@@ -221,8 +221,7 @@ async function createOneBulkCampaign(
     thumbnailUrl: finalThumbnailUrl,
   };
 
-  const n8nUrl = await getN8nWebhookUrl();
-  if (n8nUrl) {
+  if (await isN8nConfigured()) {
     onProgress?.("Enviando para o n8n...");
     const callbackId = crypto.randomUUID();
     await triggerN8nCampaign({ callbackId, token, campaignOptions, creativeOptions, adName });
@@ -749,8 +748,7 @@ function NewCampaign() {
           thumbnailUrl: finalThumbnailUrl,
         };
 
-        const n8nUrl = await getN8nWebhookUrl();
-        if (n8nUrl) {
+        if (await isN8nConfigured()) {
           progress("Enviando para o n8n...");
           const callbackId = crypto.randomUUID();
           await triggerN8nCampaign({ callbackId, token, campaignOptions, creativeOptions, adName: adName || campaignName });
