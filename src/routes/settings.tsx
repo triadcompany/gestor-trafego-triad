@@ -829,8 +829,8 @@ function WhatsappInstanceGroup({
           instances.map((i) => {
             const assigned = members.find((m) => m.id === i.assignedUserId);
             return (
-              <div key={i.id} className="px-5 py-3 flex items-center gap-3">
-                <div className="flex-1 min-w-0">
+              <div key={i.id} className="px-5 py-3 flex flex-wrap items-center gap-x-3 gap-y-2">
+                <div className="flex-1 min-w-[200px]">
                   <p className="text-sm font-medium truncate flex items-center gap-1.5">
                     {i.label}
                     {i.isDefaultGestor && (
@@ -842,30 +842,34 @@ function WhatsappInstanceGroup({
                   <p className="text-xs text-muted-foreground font-mono truncate">
                     {i.instanceName}{assigned ? ` · ${assigned.fullName}` : ""}
                   </p>
-                  <p className="text-xs mt-0.5">
-                    {i.clientName ? (
-                      <span className="text-primary">Cliente: {i.clientName}</span>
-                    ) : (
-                      <span className="text-muted-foreground">Sem cliente vinculado</span>
-                    )}
-                  </p>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-xs">
+                      {i.clientName ? (
+                        <span className="text-primary">Cliente: {i.clientName}</span>
+                      ) : (
+                        <span className="text-muted-foreground">Sem cliente vinculado</span>
+                      )}
+                    </p>
+                    <WaStateDot id={i.id} />
+                  </div>
                 </div>
-                <WaStateDot id={i.id} />
-                {onSetDefault && !i.isDefaultGestor && (
-                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onSetDefault(i.id)} title="Usar essa como padrão nas automações">
-                    <Star className="h-3.5 w-3.5" /> Marcar como padrão
+                <div className="flex items-center gap-2 flex-wrap shrink-0">
+                  {onSetDefault && !i.isDefaultGestor && (
+                    <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onSetDefault(i.id)} title="Usar essa como padrão nas automações">
+                      <Star className="h-3.5 w-3.5" /> Marcar como padrão
+                    </Button>
+                  )}
+                  <Button size="sm" variant="outline" onClick={() => onConnect(i.id)}>Conectar</Button>
+                  <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onCopyLink(i.id)}>
+                    <Copy className="h-3.5 w-3.5" /> Copiar link
                   </Button>
-                )}
-                <Button size="sm" variant="outline" onClick={() => onConnect(i.id)}>Conectar</Button>
-                <Button size="sm" variant="outline" className="gap-1.5" onClick={() => onCopyLink(i.id)}>
-                  <Copy className="h-3.5 w-3.5" /> Copiar link
-                </Button>
-                <Button size="icon" variant="ghost" onClick={() => onEdit(i)} title="Editar">
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button size="icon" variant="ghost" onClick={() => onDelete(i)} className="text-destructive hover:text-destructive">
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                  <Button size="icon" variant="ghost" onClick={() => onEdit(i)} title="Editar">
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  <Button size="icon" variant="ghost" onClick={() => onDelete(i)} className="text-destructive hover:text-destructive">
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
               </div>
             );
           })
