@@ -62,7 +62,11 @@ export interface WhatsappNumberOption {
 // maioria dos números "vinculados à página" nem passa por isso: são números
 // de vendedores já usados direto nos conjuntos de anúncio dessa página
 // (promoted_object.whatsapp_phone_number), sem permissão nenhuma extra. Por
-// isso junta as duas fontes + o telefone de contato da própria Página.
+// isso junta as duas fontes. NÃO inclui o telefone de contato da Página
+// (fields=phone) — confirmado ao vivo que é um número genérico de contato,
+// diferente de qualquer WhatsApp real cadastrado, então só confundia. A tela
+// "Seu número do WhatsApp" do Facebook (Centro de Contas pessoal) não tem
+// nenhuma API pública — números que só aparecem lá têm que ser colados à mão.
 async function fetchWhatsappNumbers(accountId: string, pageId: string, token: string): Promise<WhatsappNumberOption[]> {
   const seen = new Set<string>();
   const numbers: WhatsappNumberOption[] = [];
@@ -111,14 +115,6 @@ async function fetchWhatsappNumbers(accountId: string, pageId: string, token: st
       }
       url = json.paging?.next ?? null;
     }
-  } catch {
-    // segue sem isso
-  }
-
-  try {
-    const res = await fetch(`${BASE_URL}/${pageId}?fields=phone&access_token=${encodeURIComponent(token)}`);
-    const json = (await res.json()) as { phone?: string };
-    if (json.phone) add(json.phone, `Telefone da Página · ${json.phone}`);
   } catch {
     // segue sem isso
   }
