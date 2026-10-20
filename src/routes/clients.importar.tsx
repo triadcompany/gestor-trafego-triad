@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -9,9 +9,17 @@ import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, Download, RefreshCw, CheckCircle2, CheckCheck } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ArrowLeft, Download, RefreshCw, CheckCircle2, CheckCheck, X, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { fetchImportCandidates, importAccountsAsClients, type ImportCandidate } from "@/server/import-accounts";
+import {
+  fetchImportCandidates,
+  importAccountsAsClients,
+  searchFacebookPages,
+  fetchWhatsappNumbersForAccount,
+  type ImportCandidate,
+  type FacebookPageOption,
+} from "@/server/import-accounts";
 
 export const Route = createFileRoute("/clients/importar")({
   head: () => ({ meta: [{ title: "Importar contas do Facebook — Clientes" }] }),
@@ -211,11 +219,15 @@ function ImportRow({ row, onChange }: { row: Row; onChange: (patch: Partial<Row>
               <Label className="text-[10.5px] uppercase tracking-wide text-muted-foreground">Página do Facebook</Label>
               <StatusBadge status={row.pageStatus} />
             </div>
-            <Input
-              value={row.page}
-              onChange={(e) => onChange({ page: e.target.value, pageStatus: "manual" })}
-              placeholder="Nome da página"
-              className="h-8 text-sm"
+            <PagePicker
+              accountId={row.accountId}
+              pageId={row.pageId}
+              pageName={row.page}
+              onSelect={(page) =>
+                page
+                  ? onChange({ page: page.name, pageId: page.id, pageStatus: "manual" })
+                  : onChange({ page: "", pageId: null, pageStatus: "missing" })
+              }
             />
           </div>
 
@@ -224,16 +236,144 @@ function ImportRow({ row, onChange }: { row: Row; onChange: (patch: Partial<Row>
               <Label className="text-[10.5px] uppercase tracking-wide text-muted-foreground">WhatsApp</Label>
               <StatusBadge status={row.whatsappStatus} />
             </div>
-            <Input
+            <WhatsappNumberField
+              accountId={row.accountId}
+              pageId={row.pageId}
               value={row.whatsapp}
-              onChange={(e) => onChange({ whatsapp: e.target.value, whatsappStatus: "manual" })}
-              placeholder="Nenhuma campanha ativa encontrada"
-              className="h-8 text-sm"
+              onChange={(v) => onChange({ whatsapp: v, whatsappStatus: "manual" })}
             />
           </div>
         </div>
       </div>
     </Card>
+  );
+}
+
+// Busca-enquanto-digita nas Páginas da Business Manager dessa conta
+// específica — abre a lista já no foco (mesmo sem digitar nada), porque a
+// maioria dos clientes só tem 1-2 páginas mesmo.
+function PagePicker({
+  accountId,
+  pageId,
+  pageName,
+  onSelect,
+}: {
+  accountId: string;
+  pageId: string | null;
+  pageName: string;
+  onSelect: (page: { id: string; name: string } | null) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<FacebookPageOption[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [open, setOpen] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const runSearch = (q: string) => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = setTimeout(async () => {
+      setSearching(true);
+      try {
+        setResults(await searchFacebookPages(accountId, q));
+      } catch {
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+  };
+
+  if (pageId) {
+    return (
+      <div className="h-8 flex items-center gap-1.5 bg-muted/60 rounded-md px-2.5 text-sm">
+        <span className="flex-1 truncate">{pageName}</span>
+        <button type="button" onClick={() => onSelect(null)}>
+          <X className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="relative">
+      <Input
+        value={query}
+        onChange={(e) => { setQuery(e.target.value); runSearch(e.target.value); }}
+        onFocus={() => { setOpen(true); if (results.length === 0) runSearch(query); }}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+        placeholder="Buscar página..."
+        className="h-8 text-sm"
+      />
+      {open && (
+        <div className="absolute z-20 mt-1 w-full border border-border rounded-md bg-popover shadow-md max-h-48 overflow-y-auto">
+          {searching ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground flex items-center gap-1.5">
+              <Loader2 className="h-3 w-3 animate-spin" /> Buscando...
+            </div>
+          ) : results.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-muted-foreground">Nenhuma página encontrada</div>
+          ) : (
+            results.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className="w-full text-left px-3 py-1.5 text-sm hover:bg-muted truncate"
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => { onSelect(p); setOpen(false); }}
+              >
+                {p.name}
+              </button>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Lista os números de WhatsApp da Business Manager dessa conta (precisa da
+// permissão whatsapp_business_management no token — se não tiver, ou se a
+// BM não tiver nenhum número cadastrado, cai pro campo de texto livre.
+function WhatsappNumberField({
+  accountId,
+  pageId,
+  value,
+  onChange,
+}: {
+  accountId: string;
+  pageId: string | null;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const { data: numbers = [], isLoading, isFetched } = useQuery({
+    queryKey: ["fb-whatsapp-numbers", accountId],
+    queryFn: () => fetchWhatsappNumbersForAccount(accountId),
+    enabled: !!pageId,
+  });
+
+  if (pageId && (isLoading || numbers.length > 0)) {
+    const knownValue = numbers.some((n) => n.number === value) ? value : undefined;
+    return (
+      <Select value={knownValue} onValueChange={onChange} disabled={isLoading}>
+        <SelectTrigger className="h-8 text-sm">
+          <SelectValue placeholder={isLoading ? "Carregando números..." : "Selecionar número"} />
+        </SelectTrigger>
+        <SelectContent>
+          {numbers.map((n) => (
+            <SelectItem key={n.id} value={n.number}>{n.label}</SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    );
+  }
+
+  return (
+    <Input
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={pageId && isFetched ? "Nenhum número encontrado — digite manualmente" : "Nenhuma campanha ativa encontrada"}
+      className="h-8 text-sm"
+    />
   );
 }
 

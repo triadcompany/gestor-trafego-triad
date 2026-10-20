@@ -20,7 +20,10 @@ const STATE_COOKIE = "meta_oauth_state";
 // Só o que o sistema realmente usa — pedir permissão sem caso de uso real
 // (ex: pages_show_list/pages_read_engagement, que nenhuma tela chama) é motivo
 // certo de reprovação na revisão da Meta, que testa exatamente o que foi descrito.
-const SCOPES = ["ads_management", "ads_read", "business_management"];
+// whatsapp_business_management: lista os números de WhatsApp da Business
+// Manager de cada cliente, usado no seletor de número em "Importar do
+// Facebook" (src/server/import-accounts.ts).
+const SCOPES = ["ads_management", "ads_read", "business_management", "whatsapp_business_management"];
 
 const STATE_COOKIE_OPTIONS = {
   httpOnly: true,

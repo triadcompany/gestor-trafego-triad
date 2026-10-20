@@ -370,7 +370,7 @@ function MetaTokensSection({ isAdmin }: { isAdmin: boolean }) {
                 </a>{" "}
                 e selecione o app da Business Manager no seletor de cima.
               </li>
-              <li>Em <strong className="text-foreground">Permissions</strong>, adicione <code className="bg-muted px-1 rounded text-[11px]">ads_read</code>, <code className="bg-muted px-1 rounded text-[11px]">ads_management</code> e <code className="bg-muted px-1 rounded text-[11px]">business_management</code>.</li>
+              <li>Em <strong className="text-foreground">Permissions</strong>, adicione <code className="bg-muted px-1 rounded text-[11px]">ads_read</code>, <code className="bg-muted px-1 rounded text-[11px]">ads_management</code>, <code className="bg-muted px-1 rounded text-[11px]">business_management</code> e <code className="bg-muted px-1 rounded text-[11px]">whatsapp_business_management</code>.</li>
               <li>Clique em <strong className="text-foreground">Generate Access Token</strong> e autorize.</li>
               <li>Copie o token e cole aqui em <strong className="text-foreground">Novo token</strong> — o sistema valida e guarda com validade de 60 dias.</li>
             </ol>
@@ -386,14 +386,15 @@ function MetaTokensSection({ isAdmin }: { isAdmin: boolean }) {
                 → <strong className="text-foreground">Adicionar</strong>, função <strong className="text-foreground">Admin</strong>.
               </li>
               <li>No usuário criado: <strong className="text-foreground">Atribuir ativos</strong> → contas de anúncio dos clientes → acesso total.</li>
-              <li><strong className="text-foreground">Gerar novo token</strong> → escolha o app da BM → marque <code className="bg-muted px-1 rounded text-[11px]">ads_read</code>, <code className="bg-muted px-1 rounded text-[11px]">ads_management</code> e <code className="bg-muted px-1 rounded text-[11px]">business_management</code> → gerar.</li>
+              <li><strong className="text-foreground">Gerar novo token</strong> → escolha o app da BM → marque <code className="bg-muted px-1 rounded text-[11px]">ads_read</code>, <code className="bg-muted px-1 rounded text-[11px]">ads_management</code>, <code className="bg-muted px-1 rounded text-[11px]">business_management</code> e <code className="bg-muted px-1 rounded text-[11px]">whatsapp_business_management</code> → gerar.</li>
               <li>Copie o token e cole aqui em <strong className="text-foreground">Novo token</strong>.</li>
             </ol>
           </div>
           <p className="text-[11px]">
-            As 3 permissões são obrigatórias pra tudo funcionar: <code className="bg-muted px-1 rounded">ads_read</code> lê campanhas/métricas,{" "}
-            <code className="bg-muted px-1 rounded">ads_management</code> cria/edita/pausa campanhas e conjuntos, e{" "}
-            <code className="bg-muted px-1 rounded">business_management</code> lista as contas de anúncio e Páginas da Business Manager. Faltando uma delas, alguma parte do sistema para de funcionar silenciosamente.
+            As 4 permissões são obrigatórias pra tudo funcionar: <code className="bg-muted px-1 rounded">ads_read</code> lê campanhas/métricas,{" "}
+            <code className="bg-muted px-1 rounded">ads_management</code> cria/edita/pausa campanhas e conjuntos,{" "}
+            <code className="bg-muted px-1 rounded">business_management</code> lista as contas de anúncio e Páginas da Business Manager, e{" "}
+            <code className="bg-muted px-1 rounded">whatsapp_business_management</code> lista os números de WhatsApp da Business Manager (usado em "Importar do Facebook"). Faltando uma delas, alguma parte do sistema para de funcionar silenciosamente.
           </p>
           <p className="text-[11px]">
             Dica: crie um token por gestor (campo "Atribuir a um gestor") e, no cadastro de cada cliente, escolha qual token aquele cliente usa.
