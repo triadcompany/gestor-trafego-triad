@@ -127,7 +127,10 @@ export const clients = pgTable("clients", {
     .notNull()
     .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
-  metaAdAccountId: text("meta_ad_account_id").notNull().unique(),
+  // Único POR ORGANIZAÇÃO, não global — a mesma conta de anúncio pode ser
+  // cliente de mais de uma organização parceira ao mesmo tempo (cada uma com
+  // suas próprias automações/vendas/configs, totalmente independentes).
+  metaAdAccountId: text("meta_ad_account_id").notNull(),
   metaPageId: text("meta_page_id"),
   metaTokenId: uuid("meta_token_id").references(() => metaTokens.id, { onDelete: "set null" }),
   segment: text("segment").notNull().default("popular"),
@@ -164,7 +167,7 @@ export const clients = pgTable("clients", {
   // (dono do negócio, não o gestor) usa pra ver os leads e marcar
   // qualificado/venda sem precisar de login. Nulo = link nunca gerado.
   publicTrackingToken: text("public_tracking_token").unique(),
-});
+}, (t) => [unique("clients_org_meta_ad_account_id_key").on(t.organizationId, t.metaAdAccountId)]);
 
 export const metricsDaily = pgTable(
   "metrics_daily",

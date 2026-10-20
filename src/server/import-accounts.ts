@@ -4,6 +4,7 @@
 // src/routes/clients.importar.tsx.
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { clients } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
@@ -95,18 +96,16 @@ export interface ImportCandidatesResult {
 }
 
 const _fetchImportCandidates = createServerFn({ method: "GET" }).handler(async (): Promise<ImportCandidatesResult> => {
-  await requireOrgContext();
+  const { organizationId } = await requireOrgContext();
   const token = await getMetaToken();
   if (!token) throw new Error("Token Meta não configurado. Conecte sua conta em Configurações.");
 
-  // `clients.meta_ad_account_id` é único pro banco inteiro, não só por
-  // organização (uma conta de anúncio não pode virar cliente de duas
-  // organizações ao mesmo tempo) — então o "já cadastrada" tem que checar
-  // TODAS as organizações, senão a mesma conta aparece como "nova" pra outra
-  // organização e o insert quebra na constraint.
+  // `clients.meta_ad_account_id` é único só DENTRO da organização (ver
+  // schema.ts) — a mesma conta pode virar cliente independente de outra
+  // organização parceira, então "já cadastrada" só olha a organização atual.
   const [accounts, existing] = await Promise.all([
     fetchManagedAdAccounts(token),
-    db.select({ metaAdAccountId: clients.metaAdAccountId }).from(clients),
+    db.select({ metaAdAccountId: clients.metaAdAccountId }).from(clients).where(eq(clients.organizationId, organizationId)),
   ]);
   const existingIds = new Set(existing.map((c) => c.metaAdAccountId));
   const newAccounts = accounts.filter((a) => !existingIds.has(a.id));
@@ -164,16 +163,16 @@ const _importAccountsAsClients = createServerFn({ method: "POST" })
         });
         results.push({ accountId: item.accountId, ok: true });
       } catch (e) {
-        // unique(meta_ad_account_id) pode disparar numa corrida (duas abas
-        // importando a mesma conta ao mesmo tempo, ou outra organização já
-        // cadastrou essa conta entre a busca e a confirmação) — segue com os
-        // outros itens em vez de derrubar a importação inteira. Mensagem
-        // amigável em vez do erro bruto do driver (que inclui o SQL inteiro).
+        // unique(organization_id, meta_ad_account_id) pode disparar numa
+        // corrida (duas abas importando a mesma conta pra essa organização
+        // ao mesmo tempo) — segue com os outros itens em vez de derrubar a
+        // importação inteira. Mensagem amigável em vez do erro bruto do
+        // driver (que inclui o SQL inteiro).
         const isDuplicate = e instanceof Error && /duplicate key|unique constraint/i.test(e.message);
         results.push({
           accountId: item.accountId,
           ok: false,
-          error: isDuplicate ? "Essa conta já está cadastrada como cliente (em alguma organização)." : "Erro ao criar cliente.",
+          error: isDuplicate ? "Essa conta já está cadastrada como cliente dessa organização." : "Erro ao criar cliente.",
         });
       }
     }

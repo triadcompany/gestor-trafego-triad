@@ -246,6 +246,13 @@
       "when": 1792434423390,
       "tag": "0034_organizations_monthly_value",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1792457980124,
+      "tag": "0035_clients_unique_per_organization",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,2 @@
+ALTER TABLE "clients" DROP CONSTRAINT "clients_meta_ad_account_id_unique";--> statement-breakpoint
+ALTER TABLE "clients" ADD CONSTRAINT "clients_org_meta_ad_account_id_key" UNIQUE("organization_id","meta_ad_account_id");
