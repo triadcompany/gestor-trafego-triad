@@ -237,7 +237,6 @@ async function buildGroupSummaryText(
   const semGrupo = selected.filter((c) => !c.groupId).map((c) => c.name);
 
   const blocks: string[] = [];
-  const semNovidade: string[] = [];
 
   for (const c of comGrupo) {
     let records: Array<{ key?: { fromMe?: boolean }; messageTimestamp?: number; message?: Record<string, unknown> }> = [];
@@ -279,12 +278,8 @@ async function buildGroupSummaryText(
     if (categorias.size > 0) {
       const linhas = Array.from(categorias.values()).map((cat) => `${cat.emoji} ${cat.label}: ${cat.resumo}`).join("\n");
       blocks.push(`*${c.name}*\n${linhas}`);
-    } else {
-      semNovidade.push(c.name);
     }
   }
-
-  for (const nome of semNovidade) blocks.push(`*${nome}*\n_Sem mensagens relevantes_`);
 
   const sp = nowInSaoPaulo();
   const dataStr = `${String(sp.day).padStart(2, "0")}/${String(sp.month).padStart(2, "0")}`;
