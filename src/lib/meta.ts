@@ -664,13 +664,14 @@ const _sendWeeklyMetricsReport = createServerFn({ method: "POST" })
     const configRows = await getConfigValues(["weekly_report_destination"]);
     const destination = (configRows["weekly_report_destination"] as SendDestination) || "operacional";
 
-    // Grupo "operacional" é interno da equipe — sai pela instância do gestor,
-    // nunca pela instância de rastreamento do cliente (que normalmente nem é
-    // membro desse grupo). Só o grupo do PRÓPRIO cliente usa a instância dele.
-    const { resolveGestorWhatsappInstance, resolveClientWhatsappInstance, resolveOperationalGroupId } = await import("./whatsapp-messages");
-    const resolved = destination === "client_group"
-      ? await resolveClientWhatsappInstance(data.clientId)
-      : await resolveGestorWhatsappInstance();
+    // Sempre sai pela instância do GESTOR, nunca pela instância própria do
+    // cliente — mesmo quando o destino é o grupo do cliente. Mandar uma
+    // automação interna com o número do próprio cliente conectado já causou
+    // mensagem saindo do WhatsApp do cliente pra um contato dele, parecendo
+    // que o cliente mandou pra si mesmo. "destination" só decide PRA ONDE vai
+    // (ver groupId abaixo), nunca de qual número sai.
+    const { resolveGestorWhatsappInstance, resolveOperationalGroupId } = await import("./whatsapp-messages");
+    const resolved = await resolveGestorWhatsappInstance();
     const { url, apiKey, instance } = resolved;
 
     const groupId = destination === "client_group" && client.whatsappGroupId

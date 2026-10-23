@@ -949,14 +949,13 @@ const _sendActiveCampaignsList = createServerFn({ method: "POST" })
       .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, "campaigns_list_destination")));
     const destination = rows[0]?.value || "operacional";
 
-    // O grupo "operacional" é interno da equipe — precisa sair pela instância
-    // do gestor (padrão da organização, ou a atribuída a quem está logado),
-    // nunca pela instância própria do cliente (que normalmente nem é membro
-    // desse grupo). Só quando o destino é o grupo do PRÓPRIO cliente é que
-    // faz sentido usar a instância dele.
-    const resolved = destination === "client_group"
-      ? await resolveClientWhatsappInstance(data.clientId)
-      : await resolveGestorWhatsappInstance();
+    // Sempre sai pela instância do GESTOR, nunca pela instância própria do
+    // cliente — mesmo quando o destino é o grupo do cliente. Mandar uma
+    // automação interna com o número do próprio cliente conectado já causou
+    // mensagem saindo do WhatsApp do cliente pra um contato dele, parecendo
+    // que o cliente mandou pra si mesmo. "destination" só decide PRA ONDE vai
+    // (ver groupId abaixo), nunca de qual número sai.
+    const resolved = await resolveGestorWhatsappInstance();
     const { url, apiKey, instance } = resolved;
 
     const groupId = destination === "client_group" && client.whatsappGroupId

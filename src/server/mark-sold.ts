@@ -11,11 +11,7 @@ import { requireOrgContext } from "@/server/session";
 import { canAccessClient } from "@/lib/client-access";
 import { getMetaToken, fetchCampaignLifetimeStats } from "@/lib/meta";
 import { isoDateInBrasilia } from "@/lib/brasilia-date";
-import {
-  resolveClientWhatsappInstance,
-  resolveGestorWhatsappInstance,
-  resolveOperationalGroupId,
-} from "@/lib/whatsapp-messages";
+import { resolveGestorWhatsappInstance, resolveOperationalGroupId } from "@/lib/whatsapp-messages";
 
 export type CampaignSaleStats = { spend: number; leads: number };
 
@@ -65,11 +61,13 @@ const _markCampaignSold = createServerFn({ method: "POST" })
       .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, "sale_notification_destination")));
     const destination = rows[0]?.value || "operacional";
 
-    // Mesmo padrão de "Operacional é sempre pela instância do gestor" usado
-    // no relatório semanal e na lista de campanhas ativas — o grupo interno
-    // da equipe normalmente não tem a instância do cliente como membro.
-    const resolved =
-      destination === "client_group" ? await resolveClientWhatsappInstance(data.clientId) : await resolveGestorWhatsappInstance();
+    // Sempre sai pela instância do GESTOR, nunca pela instância própria do
+    // cliente — mesmo quando o destino é o grupo do cliente. Mandar uma
+    // automação interna com o número do próprio cliente conectado já causou
+    // mensagem saindo do WhatsApp do cliente pra um contato dele, parecendo
+    // que o cliente mandou pra si mesmo. "destination" só decide PRA ONDE vai
+    // (ver groupId abaixo), nunca de qual número sai.
+    const resolved = await resolveGestorWhatsappInstance();
     const { url, apiKey, instance } = resolved;
 
     const groupId =
