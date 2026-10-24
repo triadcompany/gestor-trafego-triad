@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { fetchCurrentProfile } from "@/lib/queries";
 import { useTheme } from "@/components/ThemeProvider";
 import { AgentChatWidget } from "@/components/AgentChatWidget";
+import { isTriadCompanyOrg } from "@/lib/feature-flags";
 
 const navGroups = [
   {
@@ -103,7 +104,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     queryFn: getCurrentUser,
     staleTime: 1000 * 60,
   });
-  const visibleNavGroups = currentUser?.isPlatformAdmin ? [...navGroups, adminNavGroup] : navGroups;
+  // Conversas é experimental — só aparece pra organização da Triad Company
+  // por enquanto (mesmo gate no beforeLoad da rota e no servidor).
+  const effectiveOrgId = currentUser?.actingOrganizationId ?? currentUser?.organizationId;
+  const showExperimental = isTriadCompanyOrg(effectiveOrgId);
+  const baseNavGroups = navGroups.map((group) => ({
+    ...group,
+    items: group.items.filter((item) => item.to !== "/conversas" || showExperimental),
+  }));
+  const visibleNavGroups = currentUser?.isPlatformAdmin ? [...baseNavGroups, adminNavGroup] : baseNavGroups;
 
   const { theme, toggleTheme } = useTheme();
 

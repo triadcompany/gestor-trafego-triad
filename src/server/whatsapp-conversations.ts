@@ -10,6 +10,7 @@ import { clients } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
 import { canAccessClient } from "@/lib/client-access";
 import { resolveClientWhatsappInstance } from "@/lib/whatsapp-messages";
+import { isTriadCompanyOrg } from "@/lib/feature-flags";
 
 export type ConversationMessageType = "text" | "image" | "video" | "audio" | "document" | "sticker" | "unsupported";
 
@@ -68,6 +69,9 @@ const PAGE_SIZE = 50;
 
 async function assertAccessibleClient(clientId: string) {
   const { organizationId, role, userId } = await requireOrgContext();
+  // Conversas é experimental — liberado só pra organização da Triad Company
+  // antes de abrir pras demais organizações do SaaS.
+  if (!isTriadCompanyOrg(organizationId)) throw new Error("Funcionalidade ainda não disponível pra essa organização.");
   const client = await db.query.clients.findFirst({
     where: eq(clients.id, clientId),
     columns: { organizationId: true, ownerUserId: true },

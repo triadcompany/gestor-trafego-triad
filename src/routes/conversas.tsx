@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
@@ -15,12 +15,22 @@ import {
 import { Input } from "@/components/ui/input";
 import { fetchAllClients } from "@/lib/queries";
 import { fetchLeadAttributions, type LeadAttributionRow } from "@/server/lead-attribution";
+import { getCurrentUser } from "@/server/session";
+import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
 
 export const Route = createFileRoute("/conversas")({
   head: () => ({
     meta: [{ title: "Conversas — Gestor de Tráfego" }],
   }),
+  // Conversas é experimental — liberado só pra organização da Triad Company
+  // antes de abrir pras demais organizações do SaaS (mesmo gate em
+  // whatsapp-conversations.ts, que é a barreira de verdade).
+  beforeLoad: async () => {
+    const user = await getCurrentUser();
+    const orgId = user?.actingOrganizationId ?? user?.organizationId;
+    if (!isTriadCompanyOrg(orgId)) throw redirect({ to: "/dashboard" });
+  },
   component: ConversasPage,
 });
 
