@@ -113,6 +113,13 @@ function ConversasPage() {
           <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-border bg-card">
             <div className="flex w-72 shrink-0 flex-col border-r border-border">
               <div className="border-b border-border p-3">
+                <p className="mb-2 text-xs text-muted-foreground">
+                  {loadingLeads
+                    ? "Carregando leads..."
+                    : search.trim() && filteredLeads.length !== leads.length
+                      ? `${filteredLeads.length} de ${leads.length} lead${leads.length === 1 ? "" : "s"}`
+                      : `${leads.length} lead${leads.length === 1 ? "" : "s"}`}
+                </p>
                 <div className="relative">
                   <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
