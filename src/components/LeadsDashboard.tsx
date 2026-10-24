@@ -80,7 +80,7 @@ const CHART_TOOLTIP_STYLE = { background: "var(--popover)", border: "1px solid v
 // remote_jid vem tipo "5511987650009@s.whatsapp.net" — extrai só os dígitos e
 // formata como número BR (com DDI) quando reconhece o padrão; senão mostra
 // os dígitos crus com "+" na frente.
-function formatPhoneFromJid(remoteJid: string): string {
+export function formatPhoneFromJid(remoteJid: string): string {
   const digits = remoteJid.split("@")[0].replace(/\D/g, "");
   const match = digits.match(/^55(\d{2})(\d{4,5})(\d{4})$/);
   if (match) {
