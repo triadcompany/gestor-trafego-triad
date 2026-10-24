@@ -120,9 +120,14 @@ const _generateSalesAnalysis = createServerFn({ method: "POST" })
       "Conversas (texto; mídia aparece como rótulo entre colchetes):",
       transcriptsBlock,
       "",
-      "Responda em JSON com exatamente este formato, sem markdown ao redor:",
-      `{"summary": "resumo geral em 2-4 frases", "recommendations": ["recomendação acionável 1", "..."], "examples": [{"leadName": "nome do lead", "issue": "o que deu errado nessa conversa", "excerpt": "trecho literal da conversa que ilustra o problema", "suggestion": "o que o vendedor podia ter feito diferente"}]}`,
-      "Escolha de 2 a 5 exemplos, priorizando os casos mais reveladores (leads que esfriaram, demoraram resposta, ou tiveram objeção mal tratada).",
+      "As instruções do prompt do sistema acima mandam no CONTEÚDO: o que avaliar, quão a fundo ir, tom, critérios, " +
+        "quantidade de recomendações e de exemplos. Siga elas à risca — não resuma nem encurte pra caber em poucas " +
+        "frases se o prompt pedir uma análise extensa. O JSON abaixo é só o FORMATO técnico de saída, não um limite " +
+        "de tamanho:",
+      `{"summary": "análise geral — pode ter vários parágrafos se o prompt pedir profundidade", "recommendations": ["recomendação acionável 1", "..."], "examples": [{"leadName": "nome do lead", "issue": "o que deu errado nessa conversa", "excerpt": "trecho literal da conversa que ilustra o problema", "suggestion": "o que o vendedor podia ter feito diferente"}]}`,
+      "Sem instrução específica no prompt do sistema sobre quantidade, use de 3 a 6 exemplos, priorizando os casos " +
+        "mais reveladores (leads que esfriaram, demoraram resposta, ou tiveram objeção mal tratada).",
+      "Responda só com o JSON, sem markdown ao redor.",
     ]
       .filter(Boolean)
       .join("\n");
@@ -130,7 +135,7 @@ const _generateSalesAnalysis = createServerFn({ method: "POST" })
     const response = await openai.chat.completions.create({
       model: "gpt-4o",
       response_format: { type: "json_object" },
-      max_tokens: 3000,
+      max_tokens: 8000,
       messages: [
         { role: "system", content: analysisPrompt },
         { role: "user", content: userMessage },
