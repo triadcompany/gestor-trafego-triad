@@ -80,23 +80,56 @@ const _fetchConversationMessages = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<{ messages: ConversationMessage[]; hasMore: boolean }> => {
     await assertAccessibleClient(data.clientId);
     const { url, apiKey, instance } = await resolveClientWhatsappInstance(data.clientId);
-
-    const res = await fetch(`${url.replace(/\/+$/, "")}/chat/findMessages/${encodeURIComponent(instance)}`, {
-      method: "POST",
-      headers: { apikey: apiKey, "Content-Type": "application/json" },
-      body: JSON.stringify({ where: { key: { remoteJid: data.remoteJid } }, limit: PAGE_SIZE, page: data.page }),
-    });
-    if (!res.ok) throw new Error(`Erro ao buscar mensagens: ${res.status}`);
-    const json = (await res.json()) as { messages?: { records?: RawEvoMessage[] } } | RawEvoMessage[];
-    const records = Array.isArray(json) ? json : (json.messages?.records ?? []);
+    const { records, hasMore } = await findMessagesByJid(url, apiKey, instance, data.remoteJid, data.page);
 
     const messages = records
       .map(normalizeMessage)
       .filter((m): m is ConversationMessage => m !== null)
       .sort((a, b) => a.timestamp - b.timestamp);
 
-    return { messages, hasMore: records.length >= PAGE_SIZE };
+    return { messages, hasMore };
   });
+
+// WhatsApp passou a endereçar muitos contatos por um "LID" opaco
+// (key.remoteJid = "123...@lid") em vez do número de telefone — a Evolution
+// guarda o JID de telefone de volta em key.remoteJidAlt. O remote_jid que a
+// gente salva no rastreamento de leads é sempre o de telefone (o que aparece
+// formatado na tela), então pra achar a conversa primeiro tenta casar por
+// remoteJidAlt (cobre contato em modo LID); se não achar nada, tenta de novo
+// por remoteJid puro (contato antigo, ainda endereçado só por telefone).
+// Descoberto ao vivo: filtrar só por remoteJid devolvia 0 mensagens pra
+// praticamente todo mundo nessa instância.
+async function findMessagesByJid(
+  url: string,
+  apiKey: string,
+  instance: string,
+  remoteJid: string,
+  page: number
+): Promise<{ records: RawEvoMessage[]; hasMore: boolean }> {
+  const run = async (field: "remoteJidAlt" | "remoteJid") => {
+    const res = await fetch(`${url.replace(/\/+$/, "")}/chat/findMessages/${encodeURIComponent(instance)}`, {
+      method: "POST",
+      headers: { apikey: apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({ where: { key: { [field]: remoteJid } }, limit: PAGE_SIZE, page }),
+    });
+    if (!res.ok) throw new Error(`Erro ao buscar mensagens: ${res.status}`);
+    const json = (await res.json()) as
+      | { messages?: { records?: RawEvoMessage[]; total?: number; pages?: number; currentPage?: number } }
+      | RawEvoMessage[];
+    if (Array.isArray(json)) return { records: json, hasMore: json.length >= PAGE_SIZE };
+    const meta = json.messages;
+    const records = meta?.records ?? [];
+    const hasMore =
+      typeof meta?.pages === "number" && typeof meta?.currentPage === "number"
+        ? meta.currentPage < meta.pages
+        : records.length >= PAGE_SIZE;
+    return { records, hasMore };
+  };
+
+  const byAlt = await run("remoteJidAlt");
+  if (byAlt.records.length > 0) return byAlt;
+  return run("remoteJid");
+}
 
 export async function fetchConversationMessages(
   clientId: string,
