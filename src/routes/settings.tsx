@@ -52,8 +52,12 @@ import {
   fetchMetaTokens,
   upsertMetaToken,
   deleteMetaToken,
+  getSalesAnalysisPrompt,
+  saveSalesAnalysisPrompt,
+  DEFAULT_SALES_ANALYSIS_PROMPT,
   type SendDestination,
 } from "@/lib/meta";
+import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import {
   fetchWhatsappInstances,
   createWhatsappInstance,
@@ -91,6 +95,8 @@ export const Route = createFileRoute("/settings")({
 function SettingsPage() {
   const { data: currentUser } = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser, staleTime: 1000 * 60 });
   const isAdmin = currentUser?.role === "admin";
+  // Análise Comercial é experimental — só pra organização Triad Company por enquanto.
+  const showExperimental = isTriadCompanyOrg(currentUser?.actingOrganizationId ?? currentUser?.organizationId);
 
   return (
     <AppShell>
@@ -108,6 +114,7 @@ function SettingsPage() {
             <TabsTrigger value="whatsapp" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Conectar WhatsApp</TabsTrigger>
             {isAdmin && <TabsTrigger value="users" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Usuários</TabsTrigger>}
             <TabsTrigger value="agent" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Agente de IA</TabsTrigger>
+            {showExperimental && <TabsTrigger value="analise-comercial" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Análise Comercial</TabsTrigger>}
             <TabsTrigger value="diagnostico" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Diagnóstico</TabsTrigger>
             <TabsTrigger value="sistema" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Sistema</TabsTrigger>
           </TabsList>
@@ -132,6 +139,12 @@ function SettingsPage() {
             <OpenAISection />
             <AgentPinnedSection />
           </TabsContent>
+
+          {showExperimental && (
+            <TabsContent value="analise-comercial" className="mt-0">
+              <SalesAnalysisPromptSection />
+            </TabsContent>
+          )}
 
           <TabsContent value="diagnostico" className="mt-0">
             <section className="mb-6">
@@ -1147,6 +1160,85 @@ function OpenAISection() {
           <p className="text-[11px]">A chave fica só nesta organização e nunca aparece de volta na tela — só os primeiros e últimos caracteres.</p>
         </div>
       </details>
+    </section>
+  );
+}
+
+function SalesAnalysisPromptSection() {
+  const queryClient = useQueryClient();
+  const [draft, setDraft] = useState("");
+  const [touched, setTouched] = useState(false);
+
+  const { data: prompt, isLoading } = useQuery({
+    queryKey: ["sales-analysis-prompt"],
+    queryFn: getSalesAnalysisPrompt,
+    staleTime: 1000 * 60 * 5,
+  });
+
+  useEffect(() => {
+    if (prompt !== undefined && !touched) setDraft(prompt);
+  }, [prompt, touched]);
+
+  const saveMutation = useMutation({
+    mutationFn: saveSalesAnalysisPrompt,
+    onSuccess: () => {
+      toast.success("Prompt salvo!");
+      setTouched(false);
+      queryClient.invalidateQueries({ queryKey: ["sales-analysis-prompt"] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar prompt"),
+  });
+
+  return (
+    <section className="mb-6">
+      <div className="flex items-center gap-2 mb-3">
+        <Bot className="h-4 w-4 text-muted-foreground" />
+        <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Análise Comercial</h2>
+      </div>
+      <Card className="p-5 space-y-4">
+        <p className="text-sm text-muted-foreground">
+          Esse prompt define o que a IA deve avaliar e como, toda vez que você gerar uma análise comercial na tela de
+          Conversas. Reaproveita a mesma chave OpenAI configurada em "Agente de IA" acima.
+        </p>
+        <div className="space-y-2">
+          <Label htmlFor="sales-analysis-prompt">Prompt da análise</Label>
+          <Textarea
+            id="sales-analysis-prompt"
+            value={isLoading ? "" : draft}
+            onChange={(e) => {
+              setDraft(e.target.value);
+              setTouched(true);
+            }}
+            disabled={isLoading}
+            className="min-h-40 text-sm leading-relaxed"
+          />
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => saveMutation.mutate(draft.trim())}
+            disabled={isLoading || !draft.trim() || saveMutation.isPending}
+          >
+            {saveMutation.isPending ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
+                Salvando...
+              </>
+            ) : (
+              "Salvar prompt"
+            )}
+          </Button>
+          <Button
+            variant="ghost"
+            onClick={() => {
+              setDraft(DEFAULT_SALES_ANALYSIS_PROMPT);
+              setTouched(true);
+            }}
+            disabled={isLoading || draft === DEFAULT_SALES_ANALYSIS_PROMPT}
+          >
+            Carregar padrão
+          </Button>
+        </div>
+      </Card>
     </section>
   );
 }

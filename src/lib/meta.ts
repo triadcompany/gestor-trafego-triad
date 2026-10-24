@@ -272,6 +272,27 @@ export async function saveOpenAIKey(key: string): Promise<void> {
   await _saveOpenAIKey({ data: { key } });
 }
 
+export const DEFAULT_SALES_ANALYSIS_PROMPT =
+  "Você é um analista comercial sênior revisando conversas de WhatsApp entre vendedores e leads vindos de anúncio. " +
+  "Avalie tempo de resposta, qualidade do atendimento, tratamento de objeções, follow-up e clareza da oferta. " +
+  "Seja direto e prático: aponte o que está funcionando, o que está travando a conversão, e recomendações acionáveis " +
+  "pra esse time de vendas específico — não conselhos genéricos.";
+
+export async function getSalesAnalysisPrompt(): Promise<string> {
+  const rows = await _getConfigValues({ data: { keys: ["sales_analysis_prompt"] } });
+  return rows["sales_analysis_prompt"] || DEFAULT_SALES_ANALYSIS_PROMPT;
+}
+
+const _saveSalesAnalysisPrompt = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ prompt: z.string().trim().min(1).max(4000) }))
+  .handler(async ({ data }) => {
+    await setConfigValues([{ key: "sales_analysis_prompt", value: data.prompt }]);
+  });
+
+export async function saveSalesAnalysisPrompt(prompt: string): Promise<void> {
+  await _saveSalesAnalysisPrompt({ data: { prompt } });
+}
+
 export type SendDestination = "operacional" | "client_group";
 
 export async function getSendDestinations(): Promise<{

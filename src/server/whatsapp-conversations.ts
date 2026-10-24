@@ -2,7 +2,7 @@
 // instância Evolution do CLIENTE — tela de só-leitura em /conversas. Mídia
 // não vem junto da listagem (pesado demais pra buscar tudo de uma vez), por
 // isso fetchConversationMedia busca sob demanda, mensagem por mensagem.
-import { createServerFn } from "@tanstack/react-start";
+import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
@@ -171,3 +171,55 @@ export async function fetchConversationMedia(
 ): Promise<{ base64: string; mimetype: string | null }> {
   return _fetchConversationMedia({ data: { clientId, messageId, remoteJid, fromMe } });
 }
+
+const MEDIA_LABEL: Record<ConversationMessageType, string> = {
+  text: "",
+  image: "[imagem enviada]",
+  video: "[vídeo enviado]",
+  audio: "[áudio enviado]",
+  document: "[documento enviado]",
+  sticker: "[figurinha]",
+  unsupported: "[mensagem não suportada]",
+};
+
+// Busca as últimas `maxMessages` de uma conversa e devolve como transcrição em
+// texto plano (pra mandar pra IA analisar) — mídia vira um rótulo, a IA não
+// "vê" o conteúdo de imagem/áudio/vídeo em si. Usada só internamente pela
+// análise comercial (não é uma rota RPC do navegador).
+export const fetchConversationTranscript = createServerOnlyFn(async function fetchConversationTranscript(
+  clientId: string,
+  remoteJid: string,
+  maxMessages: number
+): Promise<{ transcript: string; firstReplySeconds: number | null }> {
+  const { url, apiKey, instance } = await resolveClientWhatsappInstance(clientId);
+
+  const collected: ConversationMessage[] = [];
+  let page = 1;
+  while (collected.length < maxMessages) {
+    const { records, hasMore } = await findMessagesByJid(url, apiKey, instance, remoteJid, page);
+    const normalized = records.map(normalizeMessage).filter((m): m is ConversationMessage => m !== null);
+    collected.push(...normalized);
+    if (!hasMore || records.length === 0) break;
+    page += 1;
+  }
+  collected.sort((a, b) => a.timestamp - b.timestamp);
+  const recent = collected.slice(-maxMessages);
+
+  const lines = recent.map((m) => {
+    const who = m.fromMe ? "Vendedor" : "Lead";
+    const time = new Date(m.timestamp * 1000).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo" });
+    const label = MEDIA_LABEL[m.type];
+    const body = m.type === "text" ? (m.text ?? "") : label + (m.text ? ` — ${m.text}` : "");
+    return `[${time}] ${who}: ${body}`;
+  });
+
+  // Tempo até a primeira resposta do vendedor depois da primeira mensagem do lead.
+  let firstReplySeconds: number | null = null;
+  const firstLeadMsg = recent.find((m) => !m.fromMe);
+  if (firstLeadMsg) {
+    const firstReply = recent.find((m) => m.fromMe && m.timestamp > firstLeadMsg.timestamp);
+    if (firstReply) firstReplySeconds = firstReply.timestamp - firstLeadMsg.timestamp;
+  }
+
+  return { transcript: lines.join("\n"), firstReplySeconds };
+});

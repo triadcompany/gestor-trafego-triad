@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { ConversationThread } from "@/components/ConversationThread";
+import { SalesAnalysisDialog } from "@/components/SalesAnalysisDialog";
 import { formatPhoneFromJid } from "@/components/LeadsDashboard";
 import { MessagesSquare, Search } from "lucide-react";
 import {
@@ -48,6 +49,7 @@ function ConversasPage() {
   const [selectedJid, setSelectedJid] = useState<string | null>(null);
 
   const { data: clients = [], isLoading: loadingClients } = useQuery({ queryKey: ["all-clients"], queryFn: fetchAllClients });
+  const selectedClient = clients.find((c) => c.id === clientId);
 
   useEffect(() => {
     if (!clientId && clients.length > 0) setClientId(clients[0].id);
@@ -88,16 +90,19 @@ function ConversasPage() {
             <MessagesSquare className="h-5 w-5 text-muted-foreground" />
             Conversas
           </h1>
-          <Select value={clientId} onValueChange={setClientId}>
-            <SelectTrigger className="w-64">
-              <SelectValue placeholder="Selecionar cliente" />
-            </SelectTrigger>
-            <SelectContent>
-              {clients.map((c) => (
-                <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-2">
+            {selectedClient && <SalesAnalysisDialog clientId={selectedClient.id} clientName={selectedClient.name} />}
+            <Select value={clientId} onValueChange={setClientId}>
+              <SelectTrigger className="w-64">
+                <SelectValue placeholder="Selecionar cliente" />
+              </SelectTrigger>
+              <SelectContent>
+                {clients.map((c) => (
+                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {loadingClients ? (
