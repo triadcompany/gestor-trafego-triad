@@ -290,19 +290,31 @@ function VideoBubble({ clientId, msg }: { clientId: string; msg: ConversationMes
   );
 }
 
+// Áudio carrega sozinho (igual imagem) pra já aparecer como o player de
+// verdade — tocar continua exigindo um clique do gestor no próprio player,
+// só a busca do conteúdo que não espera clique nenhum.
 function AudioBubble({ clientId, msg }: { clientId: string; msg: ConversationMessage }) {
-  const { data, loading, error, load } = useLazyMedia(clientId, msg, false);
+  const { data, loading, error, load } = useLazyMedia(clientId, msg, true);
 
-  if (data) {
-    const src = `data:${data.mimetype || "audio/ogg"};base64,${data.base64}`;
-    return <audio src={src} controls autoPlay className="h-10 max-w-full" />;
+  if (loading) {
+    return (
+      <div className="flex h-10 w-56 items-center justify-center rounded-lg bg-muted">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    );
   }
-  return (
-    <button onClick={load} disabled={loading} className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-xs">
-      {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mic className="h-4 w-4" />}
-      {loading ? "Carregando áudio..." : error ? "Erro — tentar de novo" : msg.isPtt ? "Ouvir áudio" : "Carregar áudio"}
-    </button>
-  );
+  if (error) {
+    return (
+      <button onClick={load} className="flex items-center gap-1.5 text-xs underline">
+        <Mic className="h-3.5 w-3.5" />
+        Não foi possível carregar — tentar de novo
+      </button>
+    );
+  }
+  if (!data) return null;
+
+  const src = `data:${data.mimetype || "audio/ogg"};base64,${data.base64}`;
+  return <audio src={src} controls className="h-10 max-w-full" />;
 }
 
 function DocumentBubble({ clientId, msg }: { clientId: string; msg: ConversationMessage }) {
