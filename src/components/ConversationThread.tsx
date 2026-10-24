@@ -3,6 +3,7 @@ import { Loader2, FileText, Download, Image as ImageIcon, Video as VideoIcon, Mi
 import { cn } from "@/lib/utils";
 import { fetchConversationMessages, fetchConversationMedia, type ConversationMessage } from "@/server/whatsapp-conversations";
 import { formatPhoneFromJid } from "@/components/LeadsDashboard";
+import { isoDateInBrasilia } from "@/lib/brasilia-date";
 
 const POLL_MS = 18_000;
 const NEAR_BOTTOM_PX = 120;
@@ -158,11 +159,42 @@ export function ConversationThread({ clientId, remoteJid, contactName }: Convers
         {messages.length === 0 && (
           <p className="py-10 text-center text-sm text-muted-foreground">Nenhuma mensagem encontrada nesta conversa.</p>
         )}
-        {messages.map((msg) => (
-          <MessageBubble key={msg.id} clientId={clientId} msg={msg} />
-        ))}
+        {messages.map((msg, i) => {
+          const prevDay = i > 0 ? isoDateInBrasilia(new Date(messages[i - 1].timestamp * 1000)) : null;
+          const day = isoDateInBrasilia(new Date(msg.timestamp * 1000));
+          return (
+            <div key={msg.id}>
+              {day !== prevDay && <DayDivider timestamp={msg.timestamp} />}
+              <MessageBubble clientId={clientId} msg={msg} />
+            </div>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
+    </div>
+  );
+}
+
+function formatDayDivider(timestamp: number): string {
+  const date = new Date(timestamp * 1000);
+  const day = isoDateInBrasilia(date);
+  const today = isoDateInBrasilia();
+  const yesterday = isoDateInBrasilia(new Date(Date.now() - 86_400_000));
+  if (day === today) return "Hoje";
+  if (day === yesterday) return "Ontem";
+  const sameYear = day.slice(0, 4) === today.slice(0, 4);
+  return date.toLocaleDateString("pt-BR", {
+    timeZone: "America/Sao_Paulo",
+    day: "2-digit",
+    month: "long",
+    year: sameYear ? undefined : "numeric",
+  });
+}
+
+function DayDivider({ timestamp }: { timestamp: number }) {
+  return (
+    <div className="my-3 flex items-center justify-center">
+      <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">{formatDayDivider(timestamp)}</span>
     </div>
   );
 }
