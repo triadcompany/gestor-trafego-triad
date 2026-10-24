@@ -35,6 +35,7 @@ export interface SalesAnalysisResult {
   stats: {
     totalLeads: number;
     qualifiedLeads: number;
+    qualificationRate: number; // 0-1
     convertedLeads: number;
     conversionRate: number; // 0-1
     avgFirstReplyMinutes: number | null;
@@ -92,6 +93,7 @@ const _generateSalesAnalysis = createServerFn({ method: "POST" })
     const stats = {
       totalLeads: leads.length,
       qualifiedLeads,
+      qualificationRate: leads.length > 0 ? qualifiedLeads / leads.length : 0,
       convertedLeads,
       conversionRate: leads.length > 0 ? convertedLeads / leads.length : 0,
       avgFirstReplyMinutes,
@@ -112,7 +114,7 @@ const _generateSalesAnalysis = createServerFn({ method: "POST" })
     const userMessage = [
       `Cliente: ${client.name}`,
       `Período analisado: ${data.period}`,
-      `Total de leads no período: ${stats.totalLeads} | Qualificados: ${stats.qualifiedLeads} | Converteram (venda registrada): ${stats.convertedLeads} | Taxa de conversão: ${(stats.conversionRate * 100).toFixed(1)}%`,
+      `Total de leads no período: ${stats.totalLeads} | Qualificados: ${stats.qualifiedLeads} (taxa de qualificação ${(stats.qualificationRate * 100).toFixed(1)}%) | Converteram (venda registrada): ${stats.convertedLeads} | Taxa de conversão: ${(stats.conversionRate * 100).toFixed(1)}%`,
       stats.avgFirstReplyMinutes !== null ? `Tempo médio até a primeira resposta do vendedor: ${stats.avgFirstReplyMinutes.toFixed(1)} minutos` : "",
       "",
       "Conversas (texto; mídia aparece como rótulo entre colchetes):",

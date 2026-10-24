@@ -162,6 +162,7 @@ function buildPdf(result: SalesAnalysisResult, periodLabel: string) {
   const statRows: [string, string][] = [
     ["Leads no período", String(result.stats.totalLeads)],
     ["Qualificados", String(result.stats.qualifiedLeads)],
+    ["Taxa de qualificação", `${(result.stats.qualificationRate * 100).toFixed(1)}%`],
     ["Converteram (venda)", String(result.stats.convertedLeads)],
     ["Taxa de conversão", `${(result.stats.conversionRate * 100).toFixed(1)}%`],
     ["Tempo médio até 1ª resposta", result.stats.avgFirstReplyMinutes !== null ? `${result.stats.avgFirstReplyMinutes.toFixed(1)} min` : "—"],
