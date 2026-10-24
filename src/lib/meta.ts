@@ -284,7 +284,7 @@ export async function getSalesAnalysisPrompt(): Promise<string> {
 }
 
 const _saveSalesAnalysisPrompt = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ prompt: z.string().trim().min(1).max(4000) }))
+  .inputValidator(z.object({ prompt: z.string().trim().min(1).max(20000) }))
   .handler(async ({ data }) => {
     await setConfigValues([{ key: "sales_analysis_prompt", value: data.prompt }]);
   });
