@@ -2070,7 +2070,7 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
         // novo. Pra todo o resto (erro interno/transitório), backoff exponencial
         // normal é o bastante.
         const delayMs =
-          lastError instanceof MetaApiCallError && lastError.code === 613 ? 31_000 : 1000 * 2 ** attempt;
+          lastError instanceof MetaApiCallError && lastError.code === 613 ? 33_000 : 1000 * 2 ** attempt;
         await new Promise<void>((r) => setTimeout(r, delayMs));
       }
     }
@@ -2081,24 +2081,27 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
 // Limite da Meta é "1 chamada de ESCRITA a cada 30s" por conta de anúncio
 // (code 613) — não é algo que dá pra aumentar via código (depende do access
 // tier do app na Meta). O jeito de não estourar é nunca disparar duas
-// chamadas de escrita pra mesma conta mais rápido que isso: toda duplicação/
-// criação de campanha faz campanha→conjunto→anúncio em sequência, e sem essa
-// espera a 2ª chamada já vinha com 613 na cara. Keyed pelo primeiro segmento
-// do endpoint ("act_123.../campaigns" → "act_123...") pra não atrasar contas
-// diferentes rodando em paralelo.
-const WRITE_SPACING_MS = 31_000;
-const lastWriteAt = new Map<string, number>();
+// chamadas de escrita mais rápido que isso: toda duplicação/criação de
+// campanha faz campanha→conjunto→anúncio em sequência, e sem essa espera a 2ª
+// chamada já vinha com 613 na cara.
+//
+// Trava GLOBAL (não por conta): `updateMetaObject` (pausar/ativar campanha,
+// editar orçamento, etc.) chama postMeta(id, ...) com o id do objeto cru
+// (ex. "120251708182110738"), não "act_123.../campaigns" — então uma chave
+// baseada só no primeiro segmento do endpoint não enxergava que essas
+// chamadas e as de criação de campanha batem no MESMO limite da Meta quando
+// são na mesma conta, e deixava passar 613 mesmo já esperando. Serializar
+// tudo globalmente é mais lento quando duas contas diferentes escrevem ao
+// mesmo tempo, mas garante que nunca estoura — prioridade clara aqui.
+const WRITE_SPACING_MS = 33_000;
+let lastWriteAt = 0;
 
-async function waitForWriteSlot(endpoint: string): Promise<void> {
-  const key = endpoint.split("/")[0];
-  const last = lastWriteAt.get(key);
-  if (last !== undefined) {
-    const elapsed = Date.now() - last;
-    if (elapsed < WRITE_SPACING_MS) {
-      await new Promise<void>((r) => setTimeout(r, WRITE_SPACING_MS - elapsed));
-    }
+async function waitForWriteSlot(): Promise<void> {
+  const elapsed = Date.now() - lastWriteAt;
+  if (lastWriteAt > 0 && elapsed < WRITE_SPACING_MS) {
+    await new Promise<void>((r) => setTimeout(r, WRITE_SPACING_MS - elapsed));
   }
-  lastWriteAt.set(key, Date.now());
+  lastWriteAt = Date.now();
 }
 
 // GET com retry/backoff — usado nas leituras mais frequentes (sync automático,
@@ -2140,7 +2143,7 @@ export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (i
 }
 
 export async function postMetaJson(endpoint: string, params: Record<string, unknown>): Promise<unknown> {
-  await waitForWriteSlot(endpoint);
+  await waitForWriteSlot();
   return withRetry(async () => {
     const res = await fetch(`${BASE_URL}/${endpoint}`, {
       method: "POST",
@@ -2163,7 +2166,7 @@ export async function postMetaJson(endpoint: string, params: Record<string, unkn
  * whatsapp_business_management + whatsapp_business_manage_events.
  */
 async function postMeta(endpoint: string, params: Record<string, string>): Promise<unknown> {
-  await waitForWriteSlot(endpoint);
+  await waitForWriteSlot();
   return withRetry(async () => {
     const body = new URLSearchParams(params);
     const res = await fetch(`${BASE_URL}/${endpoint}`, {
