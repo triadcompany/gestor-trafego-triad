@@ -25,7 +25,7 @@ export interface MessageAutomationRow {
   id: string;
   name: string;
   active: boolean;
-  content_type: "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo";
+  content_type: "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo" | "whatsapp_disconnected";
   balance_threshold: number | null;
   body: string | null;
   client_id: string | null;
@@ -75,7 +75,7 @@ const _fetchMessageAutomations = createServerFn({ method: "GET" }).handler(async
     id: r.id,
     name: r.name,
     active: r.active,
-    content_type: r.contentType as "text" | "report" | "report_pdf" | "group_summary",
+    content_type: r.contentType as "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo" | "whatsapp_disconnected",
     body: r.body,
     client_id: r.clientId,
     client_name: r.client?.name ?? null,
@@ -134,7 +134,7 @@ const mediaItemSchema = z.object({ base64: z.string(), mimetype: z.string(), fil
 const upsertSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  contentType: z.enum(["text", "report", "report_pdf", "group_summary", "saldo_baixo"]),
+  contentType: z.enum(["text", "report", "report_pdf", "group_summary", "saldo_baixo", "whatsapp_disconnected"]),
   balanceThreshold: z.number().int().positive().nullable().optional(),
   body: z.string().nullable().optional(),
   clientId: z.string().nullable().optional(),
@@ -186,6 +186,10 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
         .where(and(eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })));
       const okIds = new Set(acessiveis.map((c) => c.id));
       if (data.summaryClientIds.some((id) => !okIds.has(id))) throw new Error("Cliente do resumo não encontrado ou sem acesso.");
+    } else if (data.contentType === "whatsapp_disconnected") {
+      // Automática — verifica todas as instâncias ativas da organização, sem
+      // precisar escolher cliente/texto. Só exige destino (já checado via zod
+      // destinations.min(1)) e recorrência (checado abaixo).
     } else if (!data.body?.trim() && data.media.length === 0) {
       throw new Error("Mensagem de texto precisa de um texto ou pelo menos uma mídia.");
     }

@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil, Repeat, Play, Trash2, MessageSquare, BarChart3, FileText, MessagesSquare, Wallet } from "lucide-react";
+import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil, Repeat, Play, Trash2, MessageSquare, BarChart3, FileText, MessagesSquare, Wallet, WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DEFAULT_REPORT_TEMPLATE, REPORT_TEMPLATE_PLACEHOLDERS } from "@/lib/meta";
 import { fetchReportTemplates, upsertReportTemplate, deleteReportTemplate, type ReportTemplateRow } from "@/server/report-templates";
@@ -630,6 +630,9 @@ function recipientsSummary(r: MessageAutomationRow): string {
     const n = r.summary_client_ids.length;
     return `Resume ${plural(n, "grupo", "grupos")}${customLabel ? ` → ${customLabel}` : ""}`;
   }
+  if (r.content_type === "whatsapp_disconnected") {
+    return `Verifica todas as instâncias${customLabel ? ` → ${customLabel}` : ""}`;
+  }
   if (r.content_type === "text") {
     const n = r.report_client_names.length || (r.client_name ? 1 : 0);
     const groups = n > 0 ? `Manda no grupo de ${plural(n, "cliente", "clientes")}` : "";
@@ -643,6 +646,7 @@ function recipientsSummary(r: MessageAutomationRow): string {
 
 function contentLabel(r: MessageAutomationRow): string {
   if (r.content_type === "saldo_baixo") return "Saldo baixo";
+  if (r.content_type === "whatsapp_disconnected") return "Instância desconectada";
   if (r.content_type === "report") {
     const who = reportClientsLabel(r);
     return `Relatório ${r.report_period_days} dias${who ? ` · ${who}` : ""}`;
@@ -782,6 +786,7 @@ function AutomacoesTab() {
               <SelectItem value="report_pdf">Relatório PDF</SelectItem>
               <SelectItem value="text">Mensagem</SelectItem>
               <SelectItem value="group_summary">Resumo de grupo</SelectItem>
+              <SelectItem value="whatsapp_disconnected">Instância desconectada</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -878,7 +883,7 @@ function AutomacoesTab() {
 }
 
 const CONTENT_TYPE_OPTIONS: Array<{
-  value: "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo";
+  value: "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo" | "whatsapp_disconnected";
   label: string;
   hint: string;
   icon: typeof MessageSquare;
@@ -888,6 +893,7 @@ const CONTENT_TYPE_OPTIONS: Array<{
   { value: "report_pdf", label: "Relatório PDF", hint: "O relatório completo em arquivo, anexado", icon: FileText },
   { value: "group_summary", label: "Resumo de grupo", hint: "Resumo das conversas do grupo por turno", icon: MessagesSquare },
   { value: "saldo_baixo", label: "Saldo baixo", hint: "Avisa o cliente quando o saldo da conta de anúncio está abaixo do limite", icon: Wallet },
+  { value: "whatsapp_disconnected", label: "Instância desconectada", hint: "Avisa quando alguma instância de WhatsApp cair", icon: WifiOff },
 ];
 
 const DEFAULT_SALDO_TEMPLATE = "⚠️ Olá! O saldo da conta de anúncio de {{cliente}} está em {{saldo}}. Recarregue pra não pausar as campanhas.";
@@ -988,7 +994,7 @@ function AutomationComposerDialog({
   const qc = useQueryClient();
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [contentType, setContentType] = useState<"text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo">("text");
+  const [contentType, setContentType] = useState<"text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo" | "whatsapp_disconnected">("text");
   const [body, setBody] = useState("");
   const [reportClientIds, setReportClientIds] = useState<string[]>([]);
   const [reportPeriodDays, setReportPeriodDays] = useState<number>(7);
@@ -1196,7 +1202,9 @@ function AutomationComposerDialog({
           ? reportClientIds.length > 0
           : contentType === "saldo_baixo"
             ? body.trim().length > 0 && reportClientIds.length > 0
-            : summaryClientIds.length > 0;
+            : contentType === "whatsapp_disconnected"
+              ? true
+              : summaryClientIds.length > 0;
   const hasValidRecurrence =
     recurrenceType === "daily" ||
     (recurrenceType === "weekly" && weekdays.length > 0) ||
@@ -1422,6 +1430,14 @@ function AutomationComposerDialog({
                 onChange={setReportClientIds}
                 hint="só os que estiverem abaixo do limite entram na mensagem. Ela vai pros destinos escolhidos abaixo."
               />
+            </div>
+          ) : contentType === "whatsapp_disconnected" ? (
+            <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+              <p className="text-sm text-muted-foreground">
+                Automática — verifica sozinha todas as instâncias de WhatsApp ativas da organização (gestor e
+                clientes). Só avisa quando encontra alguma desconectada; se estiver tudo certo, não manda nada.
+                Configure só o horário e o destino abaixo.
+              </p>
             </div>
           ) : (
             <div className="space-y-3">

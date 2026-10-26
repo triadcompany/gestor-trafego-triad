@@ -410,6 +410,39 @@ export async function fetchWhatsappInstanceState(id: string): Promise<{ state: "
   return _fetchWhatsappInstanceState({ data: { id } });
 }
 
+// Pra alerta global na UI (WhatsappDisconnectedBanner) — checa TODAS as
+// instâncias ativas da organização de uma vez (gestor + clientes), igual a
+// automação "Instância desconectada" em automations-core.ts (mas essa aqui é
+// sob demanda, direto da sessão do navegador, não pelo tick agendado).
+const _fetchDisconnectedInstances = createServerFn({ method: "GET" }).handler(async (): Promise<string[]> => {
+  const { organizationId } = await requireOrgContext();
+  const instances = await db
+    .select({ label: whatsappInstances.label, evolutionKey: whatsappInstances.evolutionKey, instanceName: whatsappInstances.instanceName })
+    .from(whatsappInstances)
+    .where(and(eq(whatsappInstances.organizationId, organizationId), eq(whatsappInstances.active, true)));
+
+  const disconnected: string[] = [];
+  await Promise.all(
+    instances.map(async (inst) => {
+      try {
+        const r = (await evoFetch(`/instance/connectionState/${encodeURIComponent(inst.instanceName)}`, {
+          method: "GET",
+          apikey: inst.evolutionKey,
+        })) as { instance?: { state?: string } };
+        if (r.instance?.state !== "open") disconnected.push(inst.label);
+      } catch {
+        // instância sem resposta também conta como "não confirmadamente conectada"
+        disconnected.push(inst.label);
+      }
+    })
+  );
+  return disconnected;
+});
+
+export async function fetchDisconnectedInstances(): Promise<string[]> {
+  return _fetchDisconnectedInstances();
+}
+
 // Edita só o rótulo e o gestor atribuído (o nome técnico e a chave não mudam).
 const _renameWhatsappInstance = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string(), label: z.string().min(1), assignedUserId: z.string().nullable().optional() }))

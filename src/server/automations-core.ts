@@ -349,6 +349,56 @@ async function materializeSaldoBaixo(
   return { created: true, warnings, evaluated: true };
 }
 
+// Instância desconectada: verifica o estado de conexão de TODAS as
+// instâncias ativas da organização (gestor + clientes, sem seleção — é
+// automático). Se estiver tudo conectado, não manda nada (evita alerta
+// diário sem motivo); só avisa quando tem pelo menos uma caída.
+async function materializeWhatsappDisconnected(
+  rule: typeof messageAutomations.$inferSelect & { destinations: Array<{ kind: string; remoteJid: string | null; name: string }> }
+): Promise<MaterializeResult> {
+  const destinos = rule.destinations.filter((d) => d.kind === "custom" && d.remoteJid);
+  if (destinos.length === 0) return { created: false, warnings: [`Regra "${rule.name}": escolha pelo menos um destino (grupo ou contato) pra receber o aviso.`] };
+
+  const instance = await pickGestorWhatsappInstance({ organizationId: rule.organizationId, explicitInstanceId: rule.whatsappInstanceId });
+  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp do gestor ativa.`] };
+
+  const allInstances = await db
+    .select({ label: whatsappInstances.label, evolutionUrl: whatsappInstances.evolutionUrl, evolutionKey: whatsappInstances.evolutionKey, instanceName: whatsappInstances.instanceName })
+    .from(whatsappInstances)
+    .where(and(eq(whatsappInstances.organizationId, rule.organizationId), eq(whatsappInstances.active, true)));
+
+  const warnings: string[] = [];
+  const disconnected: string[] = [];
+  for (const inst of allInstances) {
+    try {
+      const res = await fetch(`${inst.evolutionUrl.replace(/\/+$/, "")}/instance/connectionState/${encodeURIComponent(inst.instanceName)}`, {
+        headers: { apikey: inst.evolutionKey },
+      });
+      const json = (await res.json()) as { instance?: { state?: string } };
+      if (json.instance?.state !== "open") disconnected.push(inst.label);
+    } catch {
+      warnings.push(`Regra "${rule.name}": falha ao checar estado de "${inst.label}".`);
+    }
+  }
+
+  if (disconnected.length === 0) {
+    return { created: false, warnings: [...warnings, `Regra "${rule.name}": todas as instâncias conectadas — nada enviado.`], evaluated: true };
+  }
+
+  const text = `⚠️ *Instância(s) de WhatsApp desconectada(s)*\n\n${disconnected.map((l) => `• ${l}`).join("\n")}\n\nReconecte em Configurações → Instâncias WhatsApp.`;
+
+  await db.transaction(async (tx) => {
+    const [msg] = await tx
+      .insert(scheduledMessages)
+      .values({ organizationId: rule.organizationId, whatsappInstanceId: instance.instanceId, body: text, scheduledAt: new Date().toISOString(), status: "pending" })
+      .returning();
+    await tx.insert(scheduledMessageRecipients).values(
+      destinos.map((d) => ({ messageId: msg.id, remoteJid: d.remoteJid!, name: d.name, status: "pending" as const }))
+    );
+  });
+  return { created: true, warnings, evaluated: true };
+}
+
 export async function materializeAutomation(ruleId: string, slot: "primary" | "secondary" = "primary"): Promise<MaterializeResult> {
   const rule = await db.query.messageAutomations.findFirst({
     where: eq(messageAutomations.id, ruleId),
@@ -361,6 +411,7 @@ export async function materializeAutomation(ruleId: string, slot: "primary" | "s
   // cliente (destinos avulsos configurados na regra valem pra todos).
   const fanOutIds = rule.reportClientIds.length > 0 ? rule.reportClientIds : rule.clientId ? [rule.clientId] : [];
   if (rule.contentType === "saldo_baixo") return materializeSaldoBaixo(rule, fanOutIds);
+  if (rule.contentType === "whatsapp_disconnected") return materializeWhatsappDisconnected(rule);
   const isFanOut = rule.contentType === "report" || rule.contentType === "report_pdf" || (rule.contentType === "text" && fanOutIds.length > 0);
   if (isFanOut) {
     const targetIds = fanOutIds;

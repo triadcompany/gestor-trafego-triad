@@ -7,6 +7,7 @@ import { useState, useEffect } from "react";
 import { fetchCurrentProfile } from "@/lib/queries";
 import { useTheme } from "@/components/ThemeProvider";
 import { AgentChatWidget } from "@/components/AgentChatWidget";
+import { WhatsappDisconnectedBanner } from "@/components/WhatsappDisconnectedBanner";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 
 const navGroups = [
@@ -324,7 +325,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </>
       )}
 
-      <main className={cn("pt-14 md:pt-0 transition-[padding] duration-200 motion-reduce:transition-none", effectiveCollapsed ? "md:pl-[68px]" : "md:pl-60")}>{children}</main>
+      <main className={cn("pt-14 md:pt-0 transition-[padding] duration-200 motion-reduce:transition-none", effectiveCollapsed ? "md:pl-[68px]" : "md:pl-60")}>
+        <WhatsappDisconnectedBanner />
+        {children}
+      </main>
 
       {/* Botão flutuante do agente */}
       {!isActive("/agente", false) && (
