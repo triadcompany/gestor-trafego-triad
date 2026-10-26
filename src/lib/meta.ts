@@ -2065,11 +2065,40 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
         }
       }
       if (attempt < maxAttempts - 1) {
-        await new Promise<void>((r) => setTimeout(r, 1000 * 2 ** attempt));
+        // Code 613 (limite de 1 chamada de escrita a cada 30s por conta) nunca
+        // resolve com um backoff curto — só espera o suficiente que acerta de
+        // novo. Pra todo o resto (erro interno/transitório), backoff exponencial
+        // normal é o bastante.
+        const delayMs =
+          lastError instanceof MetaApiCallError && lastError.code === 613 ? 31_000 : 1000 * 2 ** attempt;
+        await new Promise<void>((r) => setTimeout(r, delayMs));
       }
     }
   }
   throw lastError;
+}
+
+// Limite da Meta é "1 chamada de ESCRITA a cada 30s" por conta de anúncio
+// (code 613) — não é algo que dá pra aumentar via código (depende do access
+// tier do app na Meta). O jeito de não estourar é nunca disparar duas
+// chamadas de escrita pra mesma conta mais rápido que isso: toda duplicação/
+// criação de campanha faz campanha→conjunto→anúncio em sequência, e sem essa
+// espera a 2ª chamada já vinha com 613 na cara. Keyed pelo primeiro segmento
+// do endpoint ("act_123.../campaigns" → "act_123...") pra não atrasar contas
+// diferentes rodando em paralelo.
+const WRITE_SPACING_MS = 31_000;
+const lastWriteAt = new Map<string, number>();
+
+async function waitForWriteSlot(endpoint: string): Promise<void> {
+  const key = endpoint.split("/")[0];
+  const last = lastWriteAt.get(key);
+  if (last !== undefined) {
+    const elapsed = Date.now() - last;
+    if (elapsed < WRITE_SPACING_MS) {
+      await new Promise<void>((r) => setTimeout(r, WRITE_SPACING_MS - elapsed));
+    }
+  }
+  lastWriteAt.set(key, Date.now());
 }
 
 // GET com retry/backoff — usado nas leituras mais frequentes (sync automático,
@@ -2111,6 +2140,7 @@ export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (i
 }
 
 export async function postMetaJson(endpoint: string, params: Record<string, unknown>): Promise<unknown> {
+  await waitForWriteSlot(endpoint);
   return withRetry(async () => {
     const res = await fetch(`${BASE_URL}/${endpoint}`, {
       method: "POST",
@@ -2133,6 +2163,7 @@ export async function postMetaJson(endpoint: string, params: Record<string, unkn
  * whatsapp_business_management + whatsapp_business_manage_events.
  */
 async function postMeta(endpoint: string, params: Record<string, string>): Promise<unknown> {
+  await waitForWriteSlot(endpoint);
   return withRetry(async () => {
     const body = new URLSearchParams(params);
     const res = await fetch(`${BASE_URL}/${endpoint}`, {
