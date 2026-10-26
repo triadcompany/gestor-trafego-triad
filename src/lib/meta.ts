@@ -1955,7 +1955,7 @@ export async function updateMetaObject(
 // Esse número é o mesmo que aparece nos anúncios ativos — fonte mais confiável.
 async function fetchWhatsappNumberFromAdSet(adSetId: string, token: string): Promise<string | null> {
   try {
-    const res = await fetch(
+    const res = await spacedFetch(
       `${BASE_URL}/${adSetId}/ads?fields=creative{object_story_spec}&limit=1&access_token=${encodeURIComponent(token)}`
     );
     const json = (await res.json()) as {
@@ -2105,6 +2105,18 @@ async function waitForWriteSlot(): Promise<void> {
     await new Promise<void>((r) => setTimeout(r, WRITE_SPACING_MS - elapsed));
   }
   lastWriteAt = Date.now();
+}
+
+// Mesmo espaçamento, mas pra leituras cruas (`fetch` direto, sem passar por
+// fetchMetaJson) feitas DENTRO de um fluxo de criação/duplicação de campanha
+// — mesmo esperando entre as escritas, continuava dando 613/"code 1" porque
+// essas leituras (buscar estrutura da campanha original, ads de cada
+// conjunto, criativo de cada anúncio) disparavam soltas, sem respeitar o
+// espaçamento, entre uma escrita e outra. O limite da Meta aparenta contar
+// qualquer chamada nessa família de endpoints, não só POST/PUT/DELETE.
+async function spacedFetch(url: string): Promise<Response> {
+  await waitForWriteSlot();
+  return fetch(url);
 }
 
 // GET com retry/backoff — usado nas leituras mais frequentes (sync automático,
@@ -2423,7 +2435,7 @@ export async function duplicateCampaign(
   onProgress?.("Buscando estrutura da campanha...");
 
   // 1. Busca campos da campanha original incluindo orçamento (para detectar CBO)
-  const srcRes = await fetch(
+  const srcRes = await spacedFetch(
     `${BASE_URL}/${campaignId}?fields=objective,special_ad_categories,daily_budget&access_token=${encodeURIComponent(token)}`
   );
   const srcJson = (await srcRes.json()) as {
@@ -2435,7 +2447,7 @@ export async function duplicateCampaign(
   if (srcJson.error) throw new Error(srcJson.error.message);
 
   // 2. Busca conjuntos com seus orçamentos (para calcular budget total se não for CBO)
-  const adSetsRes = await fetch(
+  const adSetsRes = await spacedFetch(
     `${BASE_URL}/${campaignId}/adsets?fields=id,name,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,targeting,destination_type,promoted_object,instagram_actor_id&limit=50&access_token=${encodeURIComponent(token)}`
   );
   const adSetsJson = (await adSetsRes.json()) as {
@@ -2591,7 +2603,7 @@ export async function duplicateCampaign(
     const newAdSetId = newAdSetRes.id;
 
     // Busca anúncios do conjunto original
-    const adsRes = await fetch(
+    const adsRes = await spacedFetch(
       `${BASE_URL}/${adSet.id}/ads?fields=id,name&limit=50&access_token=${encodeURIComponent(token)}`
     );
     const adsJson = (await adsRes.json()) as {
@@ -2606,7 +2618,7 @@ export async function duplicateCampaign(
       onProgress?.(`Copiando anúncio ${j + 1}/${ads.length} (conjunto ${i + 1})...`);
 
       // Busca o creative_id do anúncio original (evita /copies que exige permissão extra)
-      const adDetailRes = await fetch(
+      const adDetailRes = await spacedFetch(
         `${BASE_URL}/${ad.id}?fields=creative&access_token=${encodeURIComponent(token)}`
       );
       const adDetailJson = (await adDetailRes.json()) as {
@@ -2644,7 +2656,7 @@ export async function duplicateAdSet(
   token: string,
   whatsappNumber?: string
 ): Promise<string> {
-  const srcRes = await fetch(
+  const srcRes = await spacedFetch(
     `${BASE_URL}/${adSetId}?fields=name,daily_budget,billing_event,optimization_goal,bid_strategy,bid_amount,bid_constraints,targeting,destination_type,promoted_object,instagram_actor_id&access_token=${encodeURIComponent(token)}`
   );
   const adSet = (await srcRes.json()) as {
@@ -2733,7 +2745,7 @@ export async function duplicateAdSet(
  * Retorna o id do novo anúncio.
  */
 export async function duplicateAd(adId: string, adSetId: string, adAccountId: string, token: string): Promise<string> {
-  const adDetailRes = await fetch(
+  const adDetailRes = await spacedFetch(
     `${BASE_URL}/${adId}?fields=name,creative&access_token=${encodeURIComponent(token)}`
   );
   const adDetail = (await adDetailRes.json()) as {
