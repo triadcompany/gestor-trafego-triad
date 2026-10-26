@@ -148,6 +148,14 @@ export const clients = pgTable("clients", {
   whatsappGroupId: text("whatsapp_group_id"),
   whatsappGroupName: text("whatsapp_group_name"),
   whatsappInstanceId: uuid("whatsapp_instance_id").references(() => whatsappInstances.id, { onDelete: "set null" }),
+  // WhatsApp Business Platform oficial da Meta (Cloud API) — caminho alternativo
+  // à instância Evolution acima, pra clientes que já usam a API oficial
+  // conectada a um CRM próprio (a gente só recebe uma cópia dos eventos via
+  // webhook, nunca envia nada por aqui). Preenchido = cliente usa API oficial;
+  // nulo (a imensa maioria) = cliente usa Evolution normalmente, sem mudança
+  // nenhuma de comportamento.
+  metaWabaId: text("meta_waba_id"),
+  metaPhoneNumberId: text("meta_phone_number_id"),
   // Gestor responsável — membro (role 'member') só vê clientes de que é dono;
   // admin da organização vê todos. Nulo = "sem responsável" (só admin vê).
   ownerUserId: uuid("owner_user_id").references(() => profiles.id, { onDelete: "set null" }),

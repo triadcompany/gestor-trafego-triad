@@ -24,6 +24,13 @@ import { fetchOrgMembers } from "@/server/team";
 import { TagBadge, TAG_COLORS } from "@/components/TagBadge";
 import { searchEvolutionRecipients, fetchWhatsappInstances, fetchClientWhatsappLabels, type EvolutionRecipient } from "@/lib/whatsapp-messages";
 import { fetchMetaTokens } from "@/lib/meta";
+import {
+  fetchClientMetaWhatsappOfficial,
+  saveClientMetaWhatsappOfficial,
+  disconnectClientMetaWhatsappOfficial,
+} from "@/server/meta-whatsapp-official";
+import { toast } from "sonner";
+import { CheckCircle2 } from "lucide-react";
 
 const segmentDefaults = {
   popular: { cpl_min: 6, cpl_max: 12 },
@@ -435,6 +442,16 @@ export function ClientFormDialog({
                 Criado no Events Manager da Meta, em "Business Messaging". Sem isso, a qualificação fica registrada mas o evento não é enviado pra Meta.
               </p>
             </div>
+            {client?.id ? (
+              <MetaWhatsappOfficialConnector clientId={client.id} />
+            ) : (
+              <div className="space-y-1">
+                <Label>WhatsApp API oficial (cliente com CRM próprio)</Label>
+                <p className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                  Salve o cliente primeiro pra poder conectar.
+                </p>
+              </div>
+            )}
           </FormSection>
         </div>
 
@@ -445,6 +462,103 @@ export function ClientFormDialog({
         </DialogFooter>
       </form>
     </DialogContent>
+  );
+}
+
+// Conecta o WABA oficial da Meta pra esse cliente — caminho alternativo à
+// instância Evolution (campo acima, inalterado). Lead do cliente que usa
+// isso aparece normal na tela de Rastreamento, com qualificar/converter já
+// funcionando — só a origem da mensagem muda.
+function MetaWhatsappOfficialConnector({ clientId }: { clientId: string }) {
+  const queryClient = useQueryClient();
+  const [wabaId, setWabaId] = useState("");
+  const [phoneNumberId, setPhoneNumberId] = useState("");
+
+  const { data, isLoading } = useQuery({
+    queryKey: ["client-meta-whatsapp-official", clientId],
+    queryFn: () => fetchClientMetaWhatsappOfficial(clientId),
+    staleTime: 1000 * 30,
+  });
+
+  useEffect(() => {
+    if (data) {
+      setWabaId(data.wabaId ?? "");
+      setPhoneNumberId(data.phoneNumberId ?? "");
+    }
+  }, [data]);
+
+  const connectMutation = useMutation({
+    mutationFn: () => saveClientMetaWhatsappOfficial(clientId, wabaId.trim(), phoneNumberId.trim()),
+    onSuccess: () => {
+      toast.success("WhatsApp oficial conectado!");
+      queryClient.invalidateQueries({ queryKey: ["client-meta-whatsapp-official", clientId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao conectar"),
+  });
+
+  const disconnectMutation = useMutation({
+    mutationFn: () => disconnectClientMetaWhatsappOfficial(clientId),
+    onSuccess: () => {
+      toast.success("Desconectado.");
+      setWabaId("");
+      setPhoneNumberId("");
+      queryClient.invalidateQueries({ queryKey: ["client-meta-whatsapp-official", clientId] });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao desconectar"),
+  });
+
+  const connected = !!data?.wabaId && !!data?.phoneNumberId;
+
+  return (
+    <div className="space-y-1.5">
+      <Label>WhatsApp API oficial (cliente com CRM próprio)</Label>
+      {connected && (
+        <div className="flex items-center gap-1.5 text-xs text-status-on-target">
+          <CheckCircle2 className="h-3.5 w-3.5" />
+          Conectado
+        </div>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <Input
+          value={wabaId}
+          onChange={(e) => setWabaId(e.target.value)}
+          placeholder="WABA ID"
+          disabled={isLoading}
+        />
+        <Input
+          value={phoneNumberId}
+          onChange={(e) => setPhoneNumberId(e.target.value)}
+          placeholder="Phone Number ID"
+          disabled={isLoading}
+        />
+      </div>
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={() => connectMutation.mutate()}
+          disabled={isLoading || !wabaId.trim() || !phoneNumberId.trim() || connectMutation.isPending}
+        >
+          {connectMutation.isPending ? "Conectando..." : connected ? "Atualizar" : "Conectar"}
+        </Button>
+        {connected && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={() => disconnectMutation.mutate()}
+            disabled={disconnectMutation.isPending}
+          >
+            Desconectar
+          </Button>
+        )}
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        IDs do WhatsApp Business Platform no Business Manager da Meta (não é a instância Evolution). O Business Manager
+        que gerencia a conta de anúncio desse cliente já precisa ter compartilhado o WABA com a organização.
+      </p>
+    </div>
   );
 }
 

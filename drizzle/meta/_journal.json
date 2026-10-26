@@ -253,6 +253,13 @@
       "when": 1792457980124,
       "tag": "0035_clients_unique_per_organization",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1793048512746,
+      "tag": "0036_clients_meta_whatsapp_official",
+      "breakpoints": true
     }
   ]
 }

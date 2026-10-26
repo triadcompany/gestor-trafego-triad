@@ -48,6 +48,16 @@ export default defineConfig(({ mode }) => {
             method: "POST",
             handler: "./src/server/evolution-webhook.route.ts",
           },
+          {
+            route: "/api/webhooks/meta-whatsapp",
+            method: "GET",
+            handler: "./src/server/meta-whatsapp-webhook.route.ts",
+          },
+          {
+            route: "/api/webhooks/meta-whatsapp",
+            method: "POST",
+            handler: "./src/server/meta-whatsapp-webhook.route.ts",
+          },
         ],
       }),
       viteReact(),
