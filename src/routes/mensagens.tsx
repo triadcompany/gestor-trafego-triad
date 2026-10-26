@@ -526,6 +526,13 @@ function RecipientSearch({
   const [searching, setSearching] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Mesmo motivo do WhatsappGroupPicker: esquenta o cache de grupos/contatos
+  // assim que esse campo aparece, pra busca de verdade já vir rápida.
+  useEffect(() => {
+    searchEvolutionRecipients("").catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleSearch = (q: string) => {
     setQuery(q);
     if (timer.current) clearTimeout(timer.current);

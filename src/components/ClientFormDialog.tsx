@@ -580,6 +580,15 @@ export function WhatsappGroupPicker({
   const [searching, setSearching] = useState(false);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Esquenta o cache de grupos assim que o campo aparece na tela, antes do
+  // gestor digitar qualquer coisa — a primeira busca de uma sessão é a mais
+  // lenta (baixa a lista inteira de grupos da Evolution), então adiantar essa
+  // chamada aqui faz a busca de verdade (ao digitar) já vir rápida.
+  useEffect(() => {
+    if (!value) searchEvolutionRecipients("", true, instanceId).catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleSearch = (q: string) => {
     setQuery(q);
     if (timer.current) clearTimeout(timer.current);

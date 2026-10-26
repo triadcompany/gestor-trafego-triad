@@ -891,12 +891,15 @@ export interface EvolutionRecipient {
   isGroup: boolean;
 }
 
-// Cache curto da lista de grupos por instância — fetchAllGroups na Evolution
-// devolve TODOS os grupos (pode passar de 150) e não tem busca por texto no
-// servidor dela, então sem isso cada letra digitada refazia o download inteiro
-// de novo. 45s é o bastante pra uma busca inteira (várias teclas) reaproveitar
-// o mesmo fetch, sem deixar o resultado velho por muito tempo.
+// Cache da lista de grupos por instância — fetchAllGroups na Evolution devolve
+// TODOS os grupos (pode passar de 150) e não tem busca por texto no servidor
+// dela, então sem isso cada busca nova refazia esse download inteiro (é a
+// chamada mais lenta de toda a busca). 5 minutos é o bastante pra cobrir uma
+// sessão inteira de uso (abrir vários clientes/automações seguidos) sem
+// deixar o resultado velho por muito tempo — grupo novo criado na Evolution
+// pode demorar até 5min pra aparecer na busca.
 const groupsCache = new Map<string, { data: Array<{ id?: string; subject?: string }>; expiresAt: number }>();
+const CACHE_TTL_MS = 5 * 60_000;
 
 async function fetchAllGroupsCached(url: string, apiKey: string, instance: string): Promise<Array<{ id?: string; subject?: string }>> {
   const cacheKey = `${url}::${instance}`;
@@ -909,7 +912,27 @@ async function fetchAllGroupsCached(url: string, apiKey: string, instance: strin
   });
   const groups = (await res.json()) as Array<{ id?: string; subject?: string }>;
   const data = Array.isArray(groups) ? groups : [];
-  groupsCache.set(cacheKey, { data, expiresAt: Date.now() + 45_000 });
+  groupsCache.set(cacheKey, { data, expiresAt: Date.now() + CACHE_TTL_MS });
+  return data;
+}
+
+// Mesmo problema dos grupos, mesma solução — findContacts também devolve a
+// lista inteira de contatos sem busca por texto no servidor.
+const contactsCache = new Map<string, { data: Array<{ remoteJid?: string; pushName?: string | null; isGroup?: boolean }>; expiresAt: number }>();
+
+async function fetchAllContactsCached(url: string, apiKey: string, instance: string): Promise<Array<{ remoteJid?: string; pushName?: string | null; isGroup?: boolean }>> {
+  const cacheKey = `${url}::${instance}`;
+  const cached = contactsCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.data;
+
+  const res = await fetch(`${url}/chat/findContacts/${instance}`, {
+    method: "POST",
+    headers: { apikey: apiKey, "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+  const contacts = (await res.json()) as Array<{ remoteJid?: string; pushName?: string | null; isGroup?: boolean }>;
+  const data = Array.isArray(contacts) ? contacts : [];
+  contactsCache.set(cacheKey, { data, expiresAt: Date.now() + CACHE_TTL_MS });
   return data;
 }
 
@@ -923,43 +946,43 @@ const _searchEvolutionRecipients = createServerFn({ method: "GET" })
     const { url, apiKey, instance } = data.instanceId
       ? await resolveWhatsappInstanceById(data.instanceId)
       : await resolveGestorWhatsappInstance();
-    const headers = { apikey: apiKey, "Content-Type": "application/json" };
     const q = data.query.trim().toLowerCase();
 
-    const results: EvolutionRecipient[] = [];
-
+    // Grupos e contatos são fatiados SEPARADAMENTE antes de juntar — senão,
+    // numa busca ampla (ou instância com muitos contatos), os 30 primeiros
+    // contatos já preenchiam o limite e nenhum grupo aparecia, mesmo com
+    // grupos batendo com a busca (bug real: parecia "não acha o grupo").
+    const contactResults: EvolutionRecipient[] = [];
     if (!data.groupsOnly) {
       try {
-        const res = await fetch(`${url}/chat/findContacts/${instance}`, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({}),
-        });
-        const contacts = (await res.json()) as Array<{ remoteJid?: string; pushName?: string | null; isGroup?: boolean }>;
-        for (const c of contacts ?? []) {
+        const contacts = await fetchAllContactsCached(url, apiKey, instance);
+        for (const c of contacts) {
           if (!c.remoteJid || c.isGroup) continue;
           const name = c.pushName || c.remoteJid.split("@")[0];
           if (q && !name.toLowerCase().includes(q) && !c.remoteJid.includes(q)) continue;
-          results.push({ remoteJid: c.remoteJid, name, isGroup: false });
+          contactResults.push({ remoteJid: c.remoteJid, name, isGroup: false });
+          if (contactResults.length >= 15) break;
         }
       } catch {
         // segue só com o que conseguir (grupos), não derruba a busca inteira
       }
     }
 
+    const groupResults: EvolutionRecipient[] = [];
     try {
       const groups = await fetchAllGroupsCached(url, apiKey, instance);
       for (const g of groups) {
         if (!g.id) continue;
         const name = g.subject || g.id;
         if (q && !name.toLowerCase().includes(q)) continue;
-        results.push({ remoteJid: g.id, name, isGroup: true });
+        groupResults.push({ remoteJid: g.id, name, isGroup: true });
+        if (groupResults.length >= 15) break;
       }
     } catch {
       // instância pode estar desconectada — segue só com contatos
     }
 
-    return results.slice(0, 30);
+    return [...groupResults, ...contactResults];
   });
 
 export async function searchEvolutionRecipients(query: string, groupsOnly?: boolean, instanceId?: string): Promise<EvolutionRecipient[]> {
