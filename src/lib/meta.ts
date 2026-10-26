@@ -2052,9 +2052,17 @@ class MetaApiCallError extends Error {
   }
 }
 
-async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
+// isWrite=true: cada tentativa (inclusive a 1ª) espera waitForWriteSlot()
+// antes de disparar, então uma 2ª/3ª tentativa automaticamente já respeita o
+// espaçamento de ~33s — não dá só um backoff curto que nunca resolve o 613.
+// Code 1 ("unknown error") também aparece disfarçando rate limit nas chamadas
+// de escrita dessa conta (visto ao vivo seguido de um 613 na mesma rajada),
+// por isso toda tentativa de escrita usa o mesmo espaçamento, não só o 613.
+async function withRetry<T>(fn: () => Promise<T>, opts: { maxAttempts?: number; isWrite?: boolean } = {}): Promise<T> {
+  const { maxAttempts = 3, isWrite = false } = opts;
   let lastError: Error = new Error("Unknown error");
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (isWrite) await waitForWriteSlot();
     try {
       return await fn();
     } catch (err) {
@@ -2064,15 +2072,10 @@ async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 3): Promise<T> {
           throw lastError;
         }
       }
-      if (attempt < maxAttempts - 1) {
-        // Code 613 (limite de 1 chamada de escrita a cada 30s por conta) nunca
-        // resolve com um backoff curto — só espera o suficiente que acerta de
-        // novo. Pra todo o resto (erro interno/transitório), backoff exponencial
-        // normal é o bastante.
-        const delayMs =
-          lastError instanceof MetaApiCallError && lastError.code === 613 ? 33_000 : 1000 * 2 ** attempt;
-        await new Promise<void>((r) => setTimeout(r, delayMs));
+      if (attempt < maxAttempts - 1 && !isWrite) {
+        await new Promise<void>((r) => setTimeout(r, 1000 * 2 ** attempt));
       }
+      // isWrite: a espera já acontece no topo do próximo loop, via waitForWriteSlot().
     }
   }
   throw lastError;
@@ -2143,20 +2146,22 @@ export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (i
 }
 
 export async function postMetaJson(endpoint: string, params: Record<string, unknown>): Promise<unknown> {
-  await waitForWriteSlot();
-  return withRetry(async () => {
-    const res = await fetch(`${BASE_URL}/${endpoint}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(params),
-    });
-    const json = (await res.json()) as { error?: MetaApiError };
-    if (json.error) {
-      await recordMetaApiError(endpoint, res.status, json.error);
-      throw new MetaApiCallError(formatMetaError(json.error), json.error.code);
-    }
-    return json;
-  });
+  return withRetry(
+    async () => {
+      const res = await fetch(`${BASE_URL}/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+      const json = (await res.json()) as { error?: MetaApiError };
+      if (json.error) {
+        await recordMetaApiError(endpoint, res.status, json.error);
+        throw new MetaApiCallError(formatMetaError(json.error), json.error.code);
+      }
+      return json;
+    },
+    { isWrite: true }
+  );
 }
 
 /**
@@ -2166,21 +2171,23 @@ export async function postMetaJson(endpoint: string, params: Record<string, unkn
  * whatsapp_business_management + whatsapp_business_manage_events.
  */
 async function postMeta(endpoint: string, params: Record<string, string>): Promise<unknown> {
-  await waitForWriteSlot();
-  return withRetry(async () => {
-    const body = new URLSearchParams(params);
-    const res = await fetch(`${BASE_URL}/${endpoint}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body,
-    });
-    const json = (await res.json()) as { error?: MetaApiError };
-    if (json.error) {
-      await recordMetaApiError(endpoint, res.status, json.error);
-      throw new MetaApiCallError(formatMetaError(json.error), json.error.code);
-    }
-    return json;
-  });
+  return withRetry(
+    async () => {
+      const body = new URLSearchParams(params);
+      const res = await fetch(`${BASE_URL}/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+      });
+      const json = (await res.json()) as { error?: MetaApiError };
+      if (json.error) {
+        await recordMetaApiError(endpoint, res.status, json.error);
+        throw new MetaApiCallError(formatMetaError(json.error), json.error.code);
+      }
+      return json;
+    },
+    { isWrite: true }
+  );
 }
 
 // ── Diagnostics ───────────────────────────────────────────────
