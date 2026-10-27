@@ -2096,15 +2096,41 @@ async function withRetry<T>(fn: () => Promise<T>, opts: { maxAttempts?: number; 
 // são na mesma conta, e deixava passar 613 mesmo já esperando. Serializar
 // tudo globalmente é mais lento quando duas contas diferentes escrevem ao
 // mesmo tempo, mas garante que nunca estoura — prioridade clara aqui.
+//
+// PERSISTIDA NO BANCO, não em memória: essas chamadas de escrita pra Meta
+// (postMeta/postMetaJson/spacedFetch) rodam no NAVEGADOR, não no servidor
+// (é assim que o upload de vídeo vai direto pro Meta sem passar pelo nosso
+// servidor). Uma trava em variável de módulo só valia enquanto a mesma aba
+// ficasse aberta sem recarregar — passos de um wizard (duplicar → editar a
+// campanha duplicada) podiam cair em cargas de página diferentes e perder
+// o controle de quando foi a última escrita, deixando passar 613/"code 1"
+// mesmo com a trava "funcionando". Guardando em app_config (por
+// organização, com lock de linha na transação pra não racear entre abas/
+// chamadas concorrentes), a trava sobrevive a navegação e F5.
 const WRITE_SPACING_MS = 33_000;
-let lastWriteAt = 0;
+
+const _acquireMetaWriteSlot = createServerFn({ method: "POST" }).handler(async (): Promise<{ waitMs: number }> => {
+  const { organizationId } = await requireOrgContext();
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select({ value: appConfig.value })
+      .from(appConfig)
+      .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, "last_meta_write_at")))
+      .for("update");
+    const last = rows[0]?.value ? Number(rows[0].value) : 0;
+    const now = Date.now();
+    const nextSlot = Math.max(now, (Number.isFinite(last) ? last : 0) + WRITE_SPACING_MS);
+    await tx
+      .insert(appConfig)
+      .values({ organizationId, key: "last_meta_write_at", value: String(nextSlot) })
+      .onConflictDoUpdate({ target: [appConfig.organizationId, appConfig.key], set: { value: String(nextSlot) } });
+    return { waitMs: Math.max(0, nextSlot - now) };
+  });
+});
 
 async function waitForWriteSlot(): Promise<void> {
-  const elapsed = Date.now() - lastWriteAt;
-  if (lastWriteAt > 0 && elapsed < WRITE_SPACING_MS) {
-    await new Promise<void>((r) => setTimeout(r, WRITE_SPACING_MS - elapsed));
-  }
-  lastWriteAt = Date.now();
+  const { waitMs } = await _acquireMetaWriteSlot();
+  if (waitMs > 0) await new Promise<void>((r) => setTimeout(r, waitMs));
 }
 
 // Mesmo espaçamento, mas pra leituras cruas (`fetch` direto, sem passar por
