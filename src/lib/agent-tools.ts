@@ -367,7 +367,7 @@ export async function executeConfirmedAction(
         const token = await getMetaToken(client.id);
         if (!token) return { type: "error", message: "Token Meta não configurado." };
         const budgetCents = Math.round((args.daily_budget_brl as number) * 100);
-        await updateMetaObject(args.ad_set_id as string, { daily_budget: String(budgetCents) }, token);
+        await updateMetaObject(args.ad_set_id as string, { daily_budget: String(budgetCents) }, token, client.meta_ad_account_id);
         return { type: "result", data: { success: true } };
       }
 
@@ -377,7 +377,7 @@ export async function executeConfirmedAction(
         const token = await getMetaToken(client.id);
         if (!token) return { type: "error", message: "Token Meta não configurado." };
         const budgetCents = Math.round((args.daily_budget_brl as number) * 100);
-        await updateMetaObject(args.campaign_id as string, { daily_budget: String(budgetCents) }, token);
+        await updateMetaObject(args.campaign_id as string, { daily_budget: String(budgetCents) }, token, client.meta_ad_account_id);
         return { type: "result", data: { success: true } };
       }
 
@@ -386,7 +386,7 @@ export async function executeConfirmedAction(
         if (!client) return { type: "error", message: "Cliente não encontrado ou sem acesso." };
         const token = await getMetaToken(client.id);
         if (!token) return { type: "error", message: "Token Meta não configurado." };
-        await updateMetaObject(args.campaign_id as string, { status: "PAUSED" }, token);
+        await updateMetaObject(args.campaign_id as string, { status: "PAUSED" }, token, client.meta_ad_account_id);
         return { type: "result", data: { success: true } };
       }
 
@@ -395,7 +395,7 @@ export async function executeConfirmedAction(
         if (!client) return { type: "error", message: "Cliente não encontrado ou sem acesso." };
         const token = await getMetaToken(client.id);
         if (!token) return { type: "error", message: "Token Meta não configurado." };
-        await updateMetaObject(args.campaign_id as string, { status: "ACTIVE" }, token);
+        await updateMetaObject(args.campaign_id as string, { status: "ACTIVE" }, token, client.meta_ad_account_id);
         return { type: "result", data: { success: true } };
       }
 

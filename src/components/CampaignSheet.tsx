@@ -89,7 +89,7 @@ export function CampaignSheet({
         <SheetHeader className="px-5 pt-5 pb-4 border-b border-border shrink-0">
           <div className="flex items-start justify-between gap-3 pr-6">
             <div className="min-w-0 flex-1">
-              <SheetTitleEditor campaign={campaign} clientId={clientId} onNameChange={invalidateCampaigns} />
+              <SheetTitleEditor campaign={campaign} clientId={clientId} adAccountId={adAccountId} onNameChange={invalidateCampaigns} />
               <p className="text-xs text-muted-foreground mt-0.5">{campaign.id}</p>
             </div>
             <a href={metaUrl} target="_blank" rel="noopener noreferrer" className="shrink-0 mt-0.5">
@@ -105,6 +105,7 @@ export function CampaignSheet({
           <CampaignSection
             campaign={campaign}
             clientId={clientId}
+            adAccountId={adAccountId}
             cplMax={cplMax}
             onStatusChange={invalidateCampaigns}
             onNameChange={invalidateCampaigns}
@@ -113,6 +114,7 @@ export function CampaignSheet({
           <AdSetsSection
             campaignId={campaign.id}
             clientId={clientId}
+            adAccountId={adAccountId}
             isActive={isActive}
             whatsappNumber={whatsappNumber}
             onStatusChange={invalidateCampaigns}
@@ -130,10 +132,12 @@ export function CampaignSheet({
 function SheetTitleEditor({
   campaign,
   clientId,
+  adAccountId,
   onNameChange,
 }: {
   campaign: MetaCampaign;
   clientId: string;
+  adAccountId: string;
   onNameChange: () => void;
 }) {
   const [editingName, setEditingName] = useState(false);
@@ -143,7 +147,7 @@ function SheetTitleEditor({
     mutationFn: async () => {
       const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token não encontrado");
-      await updateMetaObject(campaign.id, { name: nameInput.trim() }, token);
+      await updateMetaObject(campaign.id, { name: nameInput.trim() }, token, adAccountId);
     },
     onSuccess: () => { toast.success("Nome atualizado."); setEditingName(false); onNameChange(); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
@@ -194,12 +198,14 @@ function SheetTitleEditor({
 function CampaignSection({
   campaign,
   clientId,
+  adAccountId,
   cplMax,
   onStatusChange,
   onNameChange,
 }: {
   campaign: MetaCampaign;
   clientId: string;
+  adAccountId: string;
   cplMax: number;
   onStatusChange: () => void;
   onNameChange: () => void;
@@ -224,7 +230,7 @@ function CampaignSection({
     mutationFn: async () => {
       const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token não encontrado");
-      await updateMetaObject(campaign.id, { status: isActive ? "PAUSED" : "ACTIVE" }, token);
+      await updateMetaObject(campaign.id, { status: isActive ? "PAUSED" : "ACTIVE" }, token, adAccountId);
     },
     onSuccess: () => { toast.success(isActive ? "Campanha pausada." : "Campanha ativada."); onStatusChange(); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar"),
@@ -234,7 +240,7 @@ function CampaignSection({
     mutationFn: async () => {
       const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token não encontrado");
-      await updateMetaObject(campaign.id, { name: nameInput.trim() }, token);
+      await updateMetaObject(campaign.id, { name: nameInput.trim() }, token, adAccountId);
     },
     onSuccess: () => { toast.success("Nome atualizado."); setEditingName(false); onNameChange(); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
@@ -357,6 +363,7 @@ function CampaignSection({
 function AdSetsSection({
   campaignId,
   clientId,
+  adAccountId,
   isActive,
   whatsappNumber,
   onStatusChange,
@@ -365,6 +372,7 @@ function AdSetsSection({
 }: {
   campaignId: string;
   clientId: string;
+  adAccountId: string;
   isActive: boolean;
   whatsappNumber?: string;
   onStatusChange: () => void;
@@ -404,6 +412,7 @@ function AdSetsSection({
               key={adSet.id}
               adSet={adSet}
               clientId={clientId}
+              adAccountId={adAccountId}
               whatsappNumber={whatsappNumber}
               onStatusChange={onStatusChange}
               startExpanded={adSet.id === initialAdSetId}
@@ -419,6 +428,7 @@ function AdSetsSection({
 function AdSetRow({
   adSet,
   clientId,
+  adAccountId,
   whatsappNumber,
   onStatusChange,
   startExpanded,
@@ -426,6 +436,7 @@ function AdSetRow({
 }: {
   adSet: MetaAdSet;
   clientId: string;
+  adAccountId: string;
   whatsappNumber?: string;
   onStatusChange: () => void;
   startExpanded?: boolean;
@@ -474,7 +485,7 @@ function AdSetRow({
     mutationFn: async () => {
       const t = await getMetaToken(clientId);
       if (!t) throw new Error("Token não encontrado");
-      await updateMetaObject(adSet.id, { status: isActive ? "PAUSED" : "ACTIVE" }, t);
+      await updateMetaObject(adSet.id, { status: isActive ? "PAUSED" : "ACTIVE" }, t, adAccountId);
     },
     onSuccess: () => { toast.success(isActive ? "Conjunto pausado." : "Conjunto ativado."); queryClient.invalidateQueries({ queryKey: ["adsets"] }); onStatusChange(); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar"),
@@ -484,7 +495,7 @@ function AdSetRow({
     mutationFn: async () => {
       const t = await getMetaToken(clientId);
       if (!t) throw new Error("Token não encontrado");
-      await updateMetaObject(adSet.id, { name: nameInput.trim() }, t);
+      await updateMetaObject(adSet.id, { name: nameInput.trim() }, t, adAccountId);
     },
     onSuccess: () => { toast.success("Nome atualizado."); setEditingName(false); queryClient.invalidateQueries({ queryKey: ["adsets"] }); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
@@ -494,7 +505,7 @@ function AdSetRow({
     mutationFn: async () => {
       const t = await getMetaToken(clientId);
       if (!t) throw new Error("Token não encontrado");
-      await updateMetaObject(adSet.id, { daily_budget: String(Math.round(budgetInput * 100)) }, t);
+      await updateMetaObject(adSet.id, { daily_budget: String(Math.round(budgetInput * 100)) }, t, adAccountId);
     },
     onSuccess: () => { toast.success("Orçamento atualizado."); setEditingBudget(false); queryClient.invalidateQueries({ queryKey: ["adsets"] }); onStatusChange(); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
@@ -595,6 +606,7 @@ function AdSetRow({
                     ad={ad}
                     adSetId={adSet.id}
                     clientId={clientId}
+                    adAccountId={adAccountId}
                     token={token ?? ""}
                     whatsappNumber={whatsappNumber}
                     startExpanded={ad.id === initialAdId}
@@ -623,6 +635,7 @@ function AdRow({
   ad,
   adSetId,
   clientId,
+  adAccountId,
   token,
   whatsappNumber,
   startExpanded,
@@ -630,6 +643,7 @@ function AdRow({
   ad: MetaAd;
   adSetId: string;
   clientId: string;
+  adAccountId: string;
   token: string;
   whatsappNumber?: string;
   startExpanded?: boolean;
@@ -648,7 +662,7 @@ function AdRow({
     mutationFn: async () => {
       const t = await getMetaToken(clientId);
       if (!t) throw new Error("Token não encontrado");
-      await updateMetaObject(ad.id, { status: isActive ? "PAUSED" : "ACTIVE" }, t);
+      await updateMetaObject(ad.id, { status: isActive ? "PAUSED" : "ACTIVE" }, t, adAccountId);
     },
     onSuccess: () => { toast.success(isActive ? "Anúncio pausado." : "Anúncio ativado."); queryClient.invalidateQueries({ queryKey: ["ads", adSetId] }); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar"),

@@ -1944,19 +1944,21 @@ export async function fetchAllAds(
 export async function updateMetaObject(
   id: string,
   fields: Record<string, string>,
-  token: string
+  token: string,
+  adAccountId?: string
 ): Promise<void> {
-  await postMeta(id, { ...fields, access_token: token });
+  await postMeta(id, { ...fields, access_token: token }, adAccountId);
 }
 
 // ── Campaign creation ──────────────────────────────────────────
 
 // Extrai o número WhatsApp do criativo do primeiro anúncio de um conjunto.
 // Esse número é o mesmo que aparece nos anúncios ativos — fonte mais confiável.
-async function fetchWhatsappNumberFromAdSet(adSetId: string, token: string): Promise<string | null> {
+async function fetchWhatsappNumberFromAdSet(adSetId: string, token: string, adAccountId?: string): Promise<string | null> {
   try {
     const res = await spacedFetch(
-      `${BASE_URL}/${adSetId}/ads?fields=creative{object_story_spec}&limit=1&access_token=${encodeURIComponent(token)}`
+      `${BASE_URL}/${adSetId}/ads?fields=creative{object_story_spec}&limit=1&access_token=${encodeURIComponent(token)}`,
+      adAccountId
     );
     const json = (await res.json()) as {
       data?: Array<{ creative?: { object_story_spec?: { link_data?: { link?: string; call_to_action?: { value?: { whatsapp_number?: string } } } } } }>;
@@ -2058,11 +2060,14 @@ class MetaApiCallError extends Error {
 // Code 1 ("unknown error") também aparece disfarçando rate limit nas chamadas
 // de escrita dessa conta (visto ao vivo seguido de um 613 na mesma rajada),
 // por isso toda tentativa de escrita usa o mesmo espaçamento, não só o 613.
-async function withRetry<T>(fn: () => Promise<T>, opts: { maxAttempts?: number; isWrite?: boolean } = {}): Promise<T> {
-  const { maxAttempts = 3, isWrite = false } = opts;
+async function withRetry<T>(
+  fn: () => Promise<T>,
+  opts: { maxAttempts?: number; isWrite?: boolean; writeScope?: string } = {}
+): Promise<T> {
+  const { maxAttempts = 3, isWrite = false, writeScope } = opts;
   let lastError: Error = new Error("Unknown error");
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (isWrite) await waitForWriteSlot();
+    if (isWrite) await waitForWriteSlot(writeScope);
     try {
       return await fn();
     } catch (err) {
@@ -2088,14 +2093,16 @@ async function withRetry<T>(fn: () => Promise<T>, opts: { maxAttempts?: number; 
 // campanha faz campanha→conjunto→anúncio em sequência, e sem essa espera a 2ª
 // chamada já vinha com 613 na cara.
 //
-// Trava GLOBAL (não por conta): `updateMetaObject` (pausar/ativar campanha,
-// editar orçamento, etc.) chama postMeta(id, ...) com o id do objeto cru
-// (ex. "120251708182110738"), não "act_123.../campaigns" — então uma chave
-// baseada só no primeiro segmento do endpoint não enxergava que essas
-// chamadas e as de criação de campanha batem no MESMO limite da Meta quando
-// são na mesma conta, e deixava passar 613 mesmo já esperando. Serializar
-// tudo globalmente é mais lento quando duas contas diferentes escrevem ao
-// mesmo tempo, mas garante que nunca estoura — prioridade clara aqui.
+// Trava POR CONTA DE ANÚNCIO (escopo = adAccountId), com fallback pra uma
+// trava global por organização quando o chamador não sabe a conta ainda
+// (ex. ferramentas do Agente IA que só recebem o id do objeto). O limite real
+// da Meta (613) é por conta de anúncio — travar tudo globalmente na
+// organização inteira fazia uma ação simples (pausar/ativar campanha) esperar
+// até 33s só porque OUTRO cliente tinha feito uma escrita na conta dele
+// segundos antes. `updateMetaObject` (pausar/ativar campanha, editar
+// orçamento, etc.) só recebe o id do objeto cru (ex. "120251708182110738"),
+// não "act_123.../campaigns" — por isso passamos adAccountId explicitamente
+// como escopo em vez de tentar derivar da URL.
 //
 // PERSISTIDA NO BANCO, não em memória: essas chamadas de escrita pra Meta
 // (postMeta/postMetaJson/spacedFetch) rodam no NAVEGADOR, não no servidor
@@ -2104,32 +2111,35 @@ async function withRetry<T>(fn: () => Promise<T>, opts: { maxAttempts?: number; 
 // ficasse aberta sem recarregar — passos de um wizard (duplicar → editar a
 // campanha duplicada) podiam cair em cargas de página diferentes e perder
 // o controle de quando foi a última escrita, deixando passar 613/"code 1"
-// mesmo com a trava "funcionando". Guardando em app_config (por
-// organização, com lock de linha na transação pra não racear entre abas/
-// chamadas concorrentes), a trava sobrevive a navegação e F5.
+// mesmo com a trava "funcionando". Guardando em app_config (por organização +
+// escopo, com lock de linha na transação pra não racear entre abas/chamadas
+// concorrentes), a trava sobrevive a navegação e F5.
 const WRITE_SPACING_MS = 33_000;
 
-const _acquireMetaWriteSlot = createServerFn({ method: "POST" }).handler(async (): Promise<{ waitMs: number }> => {
-  const { organizationId } = await requireOrgContext();
-  return db.transaction(async (tx) => {
-    const rows = await tx
-      .select({ value: appConfig.value })
-      .from(appConfig)
-      .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, "last_meta_write_at")))
-      .for("update");
-    const last = rows[0]?.value ? Number(rows[0].value) : 0;
-    const now = Date.now();
-    const nextSlot = Math.max(now, (Number.isFinite(last) ? last : 0) + WRITE_SPACING_MS);
-    await tx
-      .insert(appConfig)
-      .values({ organizationId, key: "last_meta_write_at", value: String(nextSlot) })
-      .onConflictDoUpdate({ target: [appConfig.organizationId, appConfig.key], set: { value: String(nextSlot) } });
-    return { waitMs: Math.max(0, nextSlot - now) };
+const _acquireMetaWriteSlot = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ scope: z.string().optional() }).optional())
+  .handler(async ({ data }): Promise<{ waitMs: number }> => {
+    const { organizationId } = await requireOrgContext();
+    const key = data?.scope ? `last_meta_write_at:${data.scope}` : "last_meta_write_at";
+    return db.transaction(async (tx) => {
+      const rows = await tx
+        .select({ value: appConfig.value })
+        .from(appConfig)
+        .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, key)))
+        .for("update");
+      const last = rows[0]?.value ? Number(rows[0].value) : 0;
+      const now = Date.now();
+      const nextSlot = Math.max(now, (Number.isFinite(last) ? last : 0) + WRITE_SPACING_MS);
+      await tx
+        .insert(appConfig)
+        .values({ organizationId, key, value: String(nextSlot) })
+        .onConflictDoUpdate({ target: [appConfig.organizationId, appConfig.key], set: { value: String(nextSlot) } });
+      return { waitMs: Math.max(0, nextSlot - now) };
+    });
   });
-});
 
-async function waitForWriteSlot(): Promise<void> {
-  const { waitMs } = await _acquireMetaWriteSlot();
+async function waitForWriteSlot(scope?: string): Promise<void> {
+  const { waitMs } = await _acquireMetaWriteSlot({ data: { scope } });
   if (waitMs > 0) await new Promise<void>((r) => setTimeout(r, waitMs));
 }
 
@@ -2140,8 +2150,8 @@ async function waitForWriteSlot(): Promise<void> {
 // conjunto, criativo de cada anúncio) disparavam soltas, sem respeitar o
 // espaçamento, entre uma escrita e outra. O limite da Meta aparenta contar
 // qualquer chamada nessa família de endpoints, não só POST/PUT/DELETE.
-async function spacedFetch(url: string): Promise<Response> {
-  await waitForWriteSlot();
+async function spacedFetch(url: string, scope?: string): Promise<Response> {
+  await waitForWriteSlot(scope);
   return fetch(url);
 }
 
@@ -2183,7 +2193,7 @@ export async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (i
   return results;
 }
 
-export async function postMetaJson(endpoint: string, params: Record<string, unknown>): Promise<unknown> {
+export async function postMetaJson(endpoint: string, params: Record<string, unknown>, writeScope?: string): Promise<unknown> {
   return withRetry(
     async () => {
       const res = await fetch(`${BASE_URL}/${endpoint}`, {
@@ -2198,7 +2208,7 @@ export async function postMetaJson(endpoint: string, params: Record<string, unkn
       }
       return json;
     },
-    { isWrite: true }
+    { isWrite: true, writeScope }
   );
 }
 
@@ -2208,7 +2218,7 @@ export async function postMetaJson(endpoint: string, params: Record<string, unkn
  * anúncio via ctwa_clid. Exige um token com as permissões
  * whatsapp_business_management + whatsapp_business_manage_events.
  */
-async function postMeta(endpoint: string, params: Record<string, string>): Promise<unknown> {
+async function postMeta(endpoint: string, params: Record<string, string>, writeScope?: string): Promise<unknown> {
   return withRetry(
     async () => {
       const body = new URLSearchParams(params);
@@ -2224,7 +2234,7 @@ async function postMeta(endpoint: string, params: Record<string, string>): Promi
       }
       return json;
     },
-    { isWrite: true }
+    { isWrite: true, writeScope }
   );
 }
 
@@ -2462,7 +2472,8 @@ export async function duplicateCampaign(
 
   // 1. Busca campos da campanha original incluindo orçamento (para detectar CBO)
   const srcRes = await spacedFetch(
-    `${BASE_URL}/${campaignId}?fields=objective,special_ad_categories,daily_budget&access_token=${encodeURIComponent(token)}`
+    `${BASE_URL}/${campaignId}?fields=objective,special_ad_categories,daily_budget&access_token=${encodeURIComponent(token)}`,
+    adAccountId
   );
   const srcJson = (await srcRes.json()) as {
     objective?: string;
@@ -2474,7 +2485,8 @@ export async function duplicateCampaign(
 
   // 2. Busca conjuntos com seus orçamentos (para calcular budget total se não for CBO)
   const adSetsRes = await spacedFetch(
-    `${BASE_URL}/${campaignId}/adsets?fields=id,name,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,targeting,destination_type,promoted_object,instagram_actor_id&limit=50&access_token=${encodeURIComponent(token)}`
+    `${BASE_URL}/${campaignId}/adsets?fields=id,name,daily_budget,lifetime_budget,billing_event,optimization_goal,bid_strategy,bid_amount,targeting,destination_type,promoted_object,instagram_actor_id&limit=50&access_token=${encodeURIComponent(token)}`,
+    adAccountId
   );
   const adSetsJson = (await adSetsRes.json()) as {
     data?: Array<{
@@ -2526,15 +2538,19 @@ export async function duplicateCampaign(
 
   // 4. Cria a nova campanha com daily_budget (CBO) — conjuntos não precisam de orçamento próprio
   // Campanha CBO sem bid_strategy explícita — ad sets herdam budget sem exigir is_adset_budget_sharing_enabled
-  const newCampaign = (await postMeta(`${adAccountId}/campaigns`, {
-    name: newName,
-    objective,
-    status: "PAUSED",
-    special_ad_categories: "[]",
-    daily_budget: String(campaignDailyBudget),
-    bid_strategy: "LOWEST_COST_WITHOUT_CAP",
-    access_token: token,
-  })) as { id: string };
+  const newCampaign = (await postMeta(
+    `${adAccountId}/campaigns`,
+    {
+      name: newName,
+      objective,
+      status: "PAUSED",
+      special_ad_categories: "[]",
+      daily_budget: String(campaignDailyBudget),
+      bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+      access_token: token,
+    },
+    adAccountId
+  )) as { id: string };
 
   const newCampaignId = newCampaign.id;
 
@@ -2602,7 +2618,7 @@ export async function duplicateCampaign(
 
       if (effectiveDestinationType === "WHATSAPP" && !po.whatsapp_phone_number) {
         // Tenta extrair do criativo do primeiro anúncio do conjunto original
-        const waFromCreative = await fetchWhatsappNumberFromAdSet(adSet.id, token);
+        const waFromCreative = await fetchWhatsappNumberFromAdSet(adSet.id, token, adAccountId);
         const resolved = whatsappNumber ?? waFromCreative;
         if (resolved) po.whatsapp_phone_number = resolved;
       }
@@ -2619,7 +2635,7 @@ export async function duplicateCampaign(
 
     let newAdSetRes: { id: string };
     try {
-      newAdSetRes = (await postMeta(`${adAccountId}/adsets`, adSetParams)) as { id: string };
+      newAdSetRes = (await postMeta(`${adAccountId}/adsets`, adSetParams, adAccountId)) as { id: string };
     } catch (err) {
       const baseMsg = err instanceof Error ? err.message : String(err);
       throw new Error(
@@ -2630,7 +2646,8 @@ export async function duplicateCampaign(
 
     // Busca anúncios do conjunto original
     const adsRes = await spacedFetch(
-      `${BASE_URL}/${adSet.id}/ads?fields=id,name&limit=50&access_token=${encodeURIComponent(token)}`
+      `${BASE_URL}/${adSet.id}/ads?fields=id,name&limit=50&access_token=${encodeURIComponent(token)}`,
+      adAccountId
     );
     const adsJson = (await adsRes.json()) as {
       data?: Array<{ id: string; name: string }>;
@@ -2645,7 +2662,8 @@ export async function duplicateCampaign(
 
       // Busca o creative_id do anúncio original (evita /copies que exige permissão extra)
       const adDetailRes = await spacedFetch(
-        `${BASE_URL}/${ad.id}?fields=creative&access_token=${encodeURIComponent(token)}`
+        `${BASE_URL}/${ad.id}?fields=creative&access_token=${encodeURIComponent(token)}`,
+        adAccountId
       );
       const adDetailJson = (await adDetailRes.json()) as {
         creative?: { id: string };
@@ -2657,13 +2675,17 @@ export async function duplicateCampaign(
 
       const effectiveAdName = applyCustomNames && ads.length === 1 && adName ? adName : ad.name;
 
-      await postMeta(`${adAccountId}/ads`, {
-        name: effectiveAdName,
-        adset_id: newAdSetId,
-        creative: JSON.stringify({ creative_id: creativeId }),
-        status: "ACTIVE",
-        access_token: token,
-      });
+      await postMeta(
+        `${adAccountId}/ads`,
+        {
+          name: effectiveAdName,
+          adset_id: newAdSetId,
+          creative: JSON.stringify({ creative_id: creativeId }),
+          status: "ACTIVE",
+          access_token: token,
+        },
+        adAccountId
+      );
     }
   }
 
@@ -2683,7 +2705,8 @@ export async function duplicateAdSet(
   whatsappNumber?: string
 ): Promise<string> {
   const srcRes = await spacedFetch(
-    `${BASE_URL}/${adSetId}?fields=name,daily_budget,billing_event,optimization_goal,bid_strategy,bid_amount,bid_constraints,targeting,destination_type,promoted_object,instagram_actor_id&access_token=${encodeURIComponent(token)}`
+    `${BASE_URL}/${adSetId}?fields=name,daily_budget,billing_event,optimization_goal,bid_strategy,bid_amount,bid_constraints,targeting,destination_type,promoted_object,instagram_actor_id&access_token=${encodeURIComponent(token)}`,
+    adAccountId
   );
   const adSet = (await srcRes.json()) as {
     name: string;
@@ -2747,7 +2770,7 @@ export async function duplicateAdSet(
     if (adSet.promoted_object?.whatsapp_phone_number) po.whatsapp_phone_number = adSet.promoted_object.whatsapp_phone_number;
 
     if (effectiveDestinationType === "WHATSAPP" && !po.whatsapp_phone_number) {
-      const waFromCreative = await fetchWhatsappNumberFromAdSet(adSetId, token);
+      const waFromCreative = await fetchWhatsappNumberFromAdSet(adSetId, token, adAccountId);
       const resolved = whatsappNumber ?? waFromCreative;
       if (resolved) po.whatsapp_phone_number = resolved;
     }
@@ -2756,7 +2779,7 @@ export async function duplicateAdSet(
 
   let newAdSetRes: { id: string };
   try {
-    newAdSetRes = (await postMeta(`${adAccountId}/adsets`, adSetParams)) as { id: string };
+    newAdSetRes = (await postMeta(`${adAccountId}/adsets`, adSetParams, adAccountId)) as { id: string };
   } catch (err) {
     const baseMsg = err instanceof Error ? err.message : String(err);
     throw new Error(`Falha ao duplicar o conjunto "${adSet.name}": ${baseMsg}`);
@@ -2772,7 +2795,8 @@ export async function duplicateAdSet(
  */
 export async function duplicateAd(adId: string, adSetId: string, adAccountId: string, token: string): Promise<string> {
   const adDetailRes = await spacedFetch(
-    `${BASE_URL}/${adId}?fields=name,creative&access_token=${encodeURIComponent(token)}`
+    `${BASE_URL}/${adId}?fields=name,creative&access_token=${encodeURIComponent(token)}`,
+    adAccountId
   );
   const adDetail = (await adDetailRes.json()) as {
     name: string;
@@ -2784,13 +2808,17 @@ export async function duplicateAd(adId: string, adSetId: string, adAccountId: st
   const creativeId = adDetail.creative?.id;
   if (!creativeId) throw new Error(`Criativo não encontrado para o anúncio "${adDetail.name}"`);
 
-  const newAdRes = (await postMeta(`${adAccountId}/ads`, {
-    name: `${adDetail.name} - Cópia`,
-    adset_id: adSetId,
-    creative: JSON.stringify({ creative_id: creativeId }),
-    status: "PAUSED",
-    access_token: token,
-  })) as { id: string };
+  const newAdRes = (await postMeta(
+    `${adAccountId}/ads`,
+    {
+      name: `${adDetail.name} - Cópia`,
+      adset_id: adSetId,
+      creative: JSON.stringify({ creative_id: creativeId }),
+      status: "PAUSED",
+      access_token: token,
+    },
+    adAccountId
+  )) as { id: string };
 
   return newAdRes.id;
 }
@@ -2986,16 +3014,20 @@ export async function createCampaignFromScratch(
 
   const useManualBid = opts.placementMode === "manual" && !!opts.bidAmount;
 
-  const campaign = await postMeta(`${opts.adAccountId}/campaigns`, {
-    name: opts.name,
-    objective,
-    status: "PAUSED",
-    special_ad_categories: "[]",
-    daily_budget: String(Math.round(opts.dailyBudget * 100)),
-    bid_strategy: useManualBid ? "LOWEST_COST_WITH_BID_CAP" : "LOWEST_COST_WITHOUT_CAP",
-    ...(useManualBid ? { bid_amount: String(Math.round(opts.bidAmount! * 100)) } : {}),
-    access_token: opts.token,
-  }) as { id: string };
+  const campaign = await postMeta(
+    `${opts.adAccountId}/campaigns`,
+    {
+      name: opts.name,
+      objective,
+      status: "PAUSED",
+      special_ad_categories: "[]",
+      daily_budget: String(Math.round(opts.dailyBudget * 100)),
+      bid_strategy: useManualBid ? "LOWEST_COST_WITH_BID_CAP" : "LOWEST_COST_WITHOUT_CAP",
+      ...(useManualBid ? { bid_amount: String(Math.round(opts.bidAmount! * 100)) } : {}),
+      access_token: opts.token,
+    },
+    opts.adAccountId
+  ) as { id: string };
 
   const campaignId = campaign.id;
 
@@ -3088,7 +3120,7 @@ export async function createCampaignFromScratch(
   };
   if (opts.instagramActorId) adSetPayload.instagram_actor_id = opts.instagramActorId;
 
-  const adSet = await postMeta(`${opts.adAccountId}/adsets`, adSetPayload) as { id: string };
+  const adSet = await postMeta(`${opts.adAccountId}/adsets`, adSetPayload, opts.adAccountId) as { id: string };
 
   return { campaignId, adSetId: adSet.id };
 }
@@ -3300,11 +3332,15 @@ export async function createAdCreative(
           },
         };
 
-  const result = (await postMeta(`${adAccountId}/adcreatives`, {
-    name: opts.name,
-    object_story_spec: JSON.stringify(objectStorySpec),
-    access_token: token,
-  })) as { id: string };
+  const result = (await postMeta(
+    `${adAccountId}/adcreatives`,
+    {
+      name: opts.name,
+      object_story_spec: JSON.stringify(objectStorySpec),
+      access_token: token,
+    },
+    adAccountId
+  )) as { id: string };
 
   return result.id;
 }
@@ -3314,14 +3350,18 @@ export async function createAd(
   opts: { name: string; adSetId: string; creativeId: string },
   token: string
 ): Promise<string> {
-  const result = (await postMeta(`${adAccountId}/ads`, {
-    name: opts.name,
-    adset_id: opts.adSetId,
-    creative: JSON.stringify({ creative_id: opts.creativeId }),
-    // Ativo por padrão — a campanha nova é criada PAUSED (trava de segurança única);
-    // ativando só a campanha, conjunto e anúncio já sobem juntos.
-    status: "ACTIVE",
-    access_token: token,
-  })) as { id: string };
+  const result = (await postMeta(
+    `${adAccountId}/ads`,
+    {
+      name: opts.name,
+      adset_id: opts.adSetId,
+      creative: JSON.stringify({ creative_id: opts.creativeId }),
+      // Ativo por padrão — a campanha nova é criada PAUSED (trava de segurança única);
+      // ativando só a campanha, conjunto e anúncio já sobem juntos.
+      status: "ACTIVE",
+      access_token: token,
+    },
+    adAccountId
+  )) as { id: string };
   return result.id;
 }

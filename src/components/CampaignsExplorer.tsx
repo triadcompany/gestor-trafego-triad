@@ -295,7 +295,7 @@ export function CampaignsExplorer({
     mutationFn: async ({ id, status }: { id: string; status: "ACTIVE" | "PAUSED" }) => {
       const token = await getMetaToken();
       if (!token) throw new Error("Token não encontrado");
-      await updateMetaObject(id, { status }, token);
+      await updateMetaObject(id, { status }, token, adAccountId);
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
@@ -309,7 +309,7 @@ export function CampaignsExplorer({
     mutationFn: async ({ id, dailyBudget }: { id: string; dailyBudget: number }) => {
       const token = await getMetaToken();
       if (!token) throw new Error("Token não encontrado");
-      await updateMetaObject(id, { daily_budget: String(Math.round(dailyBudget * 100)) }, token);
+      await updateMetaObject(id, { daily_budget: String(Math.round(dailyBudget * 100)) }, token, adAccountId);
     },
     onSuccess: () => {
       toast.success("Orçamento atualizado.");
@@ -389,7 +389,7 @@ export function CampaignsExplorer({
     mutationFn: async ({ id, name }: { id: string; name: string }) => {
       const token = await getMetaToken();
       if (!token) throw new Error("Token não encontrado");
-      await updateMetaObject(id, { name }, token);
+      await updateMetaObject(id, { name }, token, adAccountId);
     },
     onSuccess: () => {
       toast.success("Nome atualizado.");

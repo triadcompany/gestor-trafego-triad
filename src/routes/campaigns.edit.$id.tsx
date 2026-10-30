@@ -350,7 +350,7 @@ function EditCampaign() {
       await updateMetaObject(campaignId, {
         name: campaignName,
         daily_budget: String(Math.round(budget * 100)),
-      }, token);
+      }, token, campaignAccountId ?? undefined);
     },
     onSuccess: () => {
       toast.success("Campanha atualizada.");
@@ -405,7 +405,7 @@ function EditCampaign() {
       if (whatsappNumber && pageId) {
         fields.promoted_object = JSON.stringify({ page_id: pageId, whatsapp_phone_number: whatsappNumber });
       }
-      await updateMetaObject(adsetId, fields, token);
+      await updateMetaObject(adsetId, fields, token, campaignAccountId ?? undefined);
     },
     onSuccess: () => {
       toast.success("Conjunto atualizado.");
