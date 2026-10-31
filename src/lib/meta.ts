@@ -1947,7 +1947,10 @@ export async function updateMetaObject(
   token: string,
   adAccountId?: string
 ): Promise<void> {
-  await postMeta(id, { ...fields, access_token: token }, adAccountId);
+  // Edição avulsa de um objeto já existente — espaçamento leve (ver
+  // LIGHT_WRITE_SPACING_MS), não os 33s inteiros usados nos fluxos de
+  // duplicar/criar campanha em sequência.
+  await postMeta(id, { ...fields, access_token: token }, adAccountId, LIGHT_WRITE_SPACING_MS);
 }
 
 // ── Campaign creation ──────────────────────────────────────────
@@ -2062,12 +2065,12 @@ class MetaApiCallError extends Error {
 // por isso toda tentativa de escrita usa o mesmo espaçamento, não só o 613.
 async function withRetry<T>(
   fn: () => Promise<T>,
-  opts: { maxAttempts?: number; isWrite?: boolean; writeScope?: string } = {}
+  opts: { maxAttempts?: number; isWrite?: boolean; writeScope?: string; spacingMs?: number } = {}
 ): Promise<T> {
-  const { maxAttempts = 3, isWrite = false, writeScope } = opts;
+  const { maxAttempts = 3, isWrite = false, writeScope, spacingMs } = opts;
   let lastError: Error = new Error("Unknown error");
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (isWrite) await waitForWriteSlot(writeScope);
+    if (isWrite) await waitForWriteSlot(writeScope, spacingMs);
     try {
       return await fn();
     } catch (err) {
@@ -2116,11 +2119,23 @@ async function withRetry<T>(
 // concorrentes), a trava sobrevive a navegação e F5.
 const WRITE_SPACING_MS = 33_000;
 
+// Edições avulsas de UM objeto já existente (pausar/ativar, mudar orçamento,
+// renomear) nunca foram a causa do 613 original — isso veio de SEQUÊNCIAS de
+// várias escritas (duplicar campanha: criar campanha→conjunto→anúncio em
+// cadeia). Uma ação isolada não precisa dos 33s inteiros; 8s já é folga de
+// sobra pra evitar duplo-clique acidental, sem fazer um simples pausar/ativar
+// parecer travado. Continua usando a MESMA trava persistida (mesma chave por
+// conta) — se tiver um fluxo pesado rodando na mesma conta bem na hora, essa
+// edição avulsa ainda respeita a fila dele, só não impõe os 33s inteiros
+// quando a conta está parada.
+const LIGHT_WRITE_SPACING_MS = 8_000;
+
 const _acquireMetaWriteSlot = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ scope: z.string().optional() }).optional())
+  .inputValidator(z.object({ scope: z.string().optional(), spacingMs: z.number().optional() }).optional())
   .handler(async ({ data }): Promise<{ waitMs: number }> => {
     const { organizationId } = await requireOrgContext();
     const key = data?.scope ? `last_meta_write_at:${data.scope}` : "last_meta_write_at";
+    const spacing = data?.spacingMs ?? WRITE_SPACING_MS;
     return db.transaction(async (tx) => {
       const rows = await tx
         .select({ value: appConfig.value })
@@ -2129,7 +2144,7 @@ const _acquireMetaWriteSlot = createServerFn({ method: "POST" })
         .for("update");
       const last = rows[0]?.value ? Number(rows[0].value) : 0;
       const now = Date.now();
-      const nextSlot = Math.max(now, (Number.isFinite(last) ? last : 0) + WRITE_SPACING_MS);
+      const nextSlot = Math.max(now, (Number.isFinite(last) ? last : 0) + spacing);
       await tx
         .insert(appConfig)
         .values({ organizationId, key, value: String(nextSlot) })
@@ -2138,8 +2153,8 @@ const _acquireMetaWriteSlot = createServerFn({ method: "POST" })
     });
   });
 
-async function waitForWriteSlot(scope?: string): Promise<void> {
-  const { waitMs } = await _acquireMetaWriteSlot({ data: { scope } });
+async function waitForWriteSlot(scope?: string, spacingMs?: number): Promise<void> {
+  const { waitMs } = await _acquireMetaWriteSlot({ data: { scope, spacingMs } });
   if (waitMs > 0) await new Promise<void>((r) => setTimeout(r, waitMs));
 }
 
@@ -2218,7 +2233,12 @@ export async function postMetaJson(endpoint: string, params: Record<string, unkn
  * anúncio via ctwa_clid. Exige um token com as permissões
  * whatsapp_business_management + whatsapp_business_manage_events.
  */
-async function postMeta(endpoint: string, params: Record<string, string>, writeScope?: string): Promise<unknown> {
+async function postMeta(
+  endpoint: string,
+  params: Record<string, string>,
+  writeScope?: string,
+  spacingMs?: number
+): Promise<unknown> {
   return withRetry(
     async () => {
       const body = new URLSearchParams(params);
@@ -2234,7 +2254,7 @@ async function postMeta(endpoint: string, params: Record<string, string>, writeS
       }
       return json;
     },
-    { isWrite: true, writeScope }
+    { isWrite: true, writeScope, spacingMs }
   );
 }
 
