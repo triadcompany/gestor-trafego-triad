@@ -330,6 +330,23 @@ function ComposerDialog({
   const [loadedEditingId, setLoadedEditingId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Pra mensagem nova (não edição), já vem com o grupo operacional da
+  // instância padrão do gestor pré-selecionado — a maioria dos envios
+  // avulsos é pra esse grupo, e o gestor só digita no campo de busca quando
+  // quer mandar pra outro lugar. Mesma instância que automação/relatório já
+  // usam (resolveGestorWhatsappInstance), mas resolvida client-side a partir
+  // da lista que a tela já carrega.
+  const { data: instances = [], isLoading: instancesLoading } = useQuery({
+    queryKey: ["whatsapp-instances"],
+    queryFn: fetchWhatsappInstances,
+  });
+  const defaultOperationalRecipient = useMemo<EvolutionRecipient | null>(() => {
+    const gestorInstances = instances.filter((i) => !i.clientName);
+    const chosen = gestorInstances.find((i) => i.isDefaultGestor) ?? gestorInstances[0];
+    if (!chosen?.operationalGroupId || !chosen.operationalGroupName) return null;
+    return { remoteJid: chosen.operationalGroupId, name: chosen.operationalGroupName, isGroup: true };
+  }, [instances]);
+
   if (open && editing && loadedEditingId !== editing.id) {
     setBody(editing.body);
     setScheduledAt(isoToLocalInput(editing.scheduled_at));
@@ -343,10 +360,10 @@ function ComposerDialog({
     setMediaFiles([]);
     setExistingMedia(editing.media);
     setLoadedEditingId(editing.id);
-  } else if (open && !editing && loadedEditingId !== "new") {
+  } else if (open && !editing && loadedEditingId !== "new" && !instancesLoading) {
     setBody("");
     setScheduledAt("");
-    setRecipients([]);
+    setRecipients(defaultOperationalRecipient ? [defaultOperationalRecipient] : []);
     setMediaFiles([]);
     setExistingMedia([]);
     setLoadedEditingId("new");
