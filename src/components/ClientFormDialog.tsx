@@ -61,7 +61,7 @@ function FormSection({
 
 // Grade só com os dias 1-31 (sem mês) — o dia se repete todo mês, não uma
 // data específica. Mais rápido de escolher que um dropdown de 31 itens.
-function DayOfMonthPicker({
+export function DayOfMonthPicker({
   value,
   onChange,
 }: {

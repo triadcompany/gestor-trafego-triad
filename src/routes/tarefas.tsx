@@ -39,11 +39,15 @@ import {
   fetchReports, createReport, markReportSent, markReportPending, updateReport, deleteReport,
   fetchAllClients,
   fetchTasks, createTask, updateTask, deleteTask,
+  upsertClient,
   type TaskRow,
   type NoteWithClient,
   type ClientRow,
 } from "@/lib/queries";
 import { fetchProfilesAdmin } from "@/server/profiles";
+import { getCurrentUser } from "@/server/session";
+import { isTriadCompanyOrg } from "@/lib/feature-flags";
+import { DayOfMonthPicker } from "@/components/ClientFormDialog";
 import type { TaskStatus } from "@/lib/database.types";
 
 export const Route = createFileRoute("/tarefas")({
@@ -389,9 +393,52 @@ function TarefasPage() {
 // ordenado por dia — pra ver de relance quem vence quando no mês.
 
 function ReportDatesSection({ clients }: { clients: ClientRow[] }) {
-  const withDay = clients
-    .filter((c): c is ClientRow & { monthly_report_day: number } => c.monthly_report_day !== null)
-    .sort((a, b) => a.monthly_report_day - b.monthly_report_day);
+  const qc = useQueryClient();
+  const { data: currentUser } = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser, staleTime: 1000 * 60 });
+  // Mostrar TODOS os clientes (não só os já configurados), pra dar pra
+  // adicionar a data direto daqui, é experimental — só pra organização da
+  // Triad Company por enquanto (ver memória "Triad Company é a org do
+  // dono"). Nas demais organizações mantém o comportamento original: só
+  // lista quem já tem dia configurado, sem edição inline.
+  const isTriad = isTriadCompanyOrg(currentUser?.actingOrganizationId ?? currentUser?.organizationId);
+
+  const updateDayMutation = useMutation({
+    mutationFn: ({ client, day }: { client: ClientRow; day: number | null }) =>
+      upsertClient({
+        id: client.id,
+        name: client.name,
+        meta_ad_account_id: client.meta_ad_account_id,
+        meta_page_id: client.meta_page_id ?? undefined,
+        meta_whatsapp_number: client.meta_whatsapp_number ?? undefined,
+        segment: client.segment,
+        cpl_min: client.cpl_min,
+        cpl_max: client.cpl_max,
+        payment_method: client.payment_method,
+        pix_active: client.pix_active,
+        monthly_budget: client.monthly_budget,
+        pix_cycle: client.pix_cycle,
+        pix_reference_day: client.pix_reference_day,
+        whatsapp_group_id: client.whatsapp_group_id,
+        whatsapp_group_name: client.whatsapp_group_name,
+        meta_token_id: client.meta_token_id,
+        whatsapp_instance_id: client.whatsapp_instance_id,
+        owner_user_id: client.owner_user_id,
+        qualified_lead_label: client.qualified_lead_label,
+        meta_capi_dataset_id: client.meta_capi_dataset_id,
+        monthly_report_day: day,
+      }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["all-clients"] });
+      toast.success("Dia do relatório atualizado.");
+    },
+    onError: () => toast.error("Erro ao salvar o dia do relatório."),
+  });
+
+  const rows = isTriad
+    ? [...clients].sort((a, b) => (a.monthly_report_day ?? 99) - (b.monthly_report_day ?? 99) || a.name.localeCompare(b.name))
+    : clients
+        .filter((c): c is ClientRow & { monthly_report_day: number } => c.monthly_report_day !== null)
+        .sort((a, b) => a.monthly_report_day - b.monthly_report_day);
 
   return (
     <div className="rounded-xl border border-border bg-card mt-2">
@@ -399,20 +446,47 @@ function ReportDatesSection({ clients }: { clients: ClientRow[] }) {
         <h3 className="text-sm font-semibold">Datas de relatório</h3>
         <p className="text-xs text-muted-foreground mt-0.5">Dia do mês configurado no cadastro de cada cliente</p>
       </div>
-      {withDay.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="py-8 text-center text-sm text-muted-foreground px-4">
           Nenhum cliente com dia de relatório configurado. Edite um cliente e preencha "Dia do relatório mensal".
         </div>
       ) : (
         <div className="divide-y divide-border">
-          {withDay.map((c) => (
-            <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
-              <span className="shrink-0 w-9 h-9 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">
-                {c.monthly_report_day}
-              </span>
-              <span className="text-sm">{c.name}</span>
-            </div>
-          ))}
+          {rows.map((c) =>
+            isTriad ? (
+              <Popover key={c.id}>
+                <PopoverTrigger asChild>
+                  <button type="button" className="flex items-center gap-3 px-4 py-2.5 w-full text-left hover:bg-muted/40 transition-colors">
+                    {c.monthly_report_day !== null ? (
+                      <span className="shrink-0 w-9 h-9 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">
+                        {c.monthly_report_day}
+                      </span>
+                    ) : (
+                      <span className="shrink-0 w-9 h-9 rounded-full border border-dashed border-border flex items-center justify-center">
+                        <Plus className="h-3.5 w-3.5 text-muted-foreground" />
+                      </span>
+                    )}
+                    <span className="text-sm flex-1">{c.name}</span>
+                    {c.monthly_report_day === null && <span className="text-xs text-muted-foreground">adicionar data</span>}
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72" align="start">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Dia do relatório — {c.name}</p>
+                  <DayOfMonthPicker
+                    value={c.monthly_report_day}
+                    onChange={(day) => updateDayMutation.mutate({ client: c, day })}
+                  />
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
+                <span className="shrink-0 w-9 h-9 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">
+                  {c.monthly_report_day}
+                </span>
+                <span className="text-sm">{c.name}</span>
+              </div>
+            )
+          )}
         </div>
       )}
     </div>
