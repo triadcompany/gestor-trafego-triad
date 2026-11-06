@@ -183,6 +183,37 @@ export const clients = pgTable("clients", {
   publicTrackingToken: text("public_tracking_token").unique(),
 }, (t) => [unique("clients_org_meta_ad_account_id_key").on(t.organizationId, t.metaAdAccountId)]);
 
+// Conteúdo do "relatório visual" (deck de 7 páginas, estilo slide) — 1 registro
+// por cliente, não 1 por mês: o gestor reaproveita e edita o mesmo conteúdo
+// manual (diagnóstico, plano de ação, funil, criativos) todo mês, só os
+// números automáticos da Meta mudam a cada geração. Experimental — gate por
+// organização (isTriadCompanyOrg) fica no código, não aqui.
+export const clientReportDecks = pgTable("client_report_decks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  clientId: uuid("client_id").notNull().unique().references(() => clients.id, { onDelete: "cascade" }),
+  organizationId: uuid("organization_id").notNull().references(() => organizations.id, { onDelete: "cascade" }),
+  coverLogoBase64: text("cover_logo_base64"),
+  coverLogoMimetype: text("cover_logo_mimetype"),
+  // Campos do card "Resultado Meta Ads" que a Meta não sabe informar (dependem
+  // da venda/faturamento real da loja) — texto livre porque às vezes é um
+  // valor, às vezes é "Consultar Loja" ou "-".
+  metaCustoVenda: text("meta_custo_venda"),
+  metaFaturamento: text("meta_faturamento"),
+  metaVendas: text("meta_vendas"),
+  metaRoi: text("meta_roi"),
+  metaSeguidores: text("meta_seguidores"),
+  diagnosticoItems: text("diagnostico_items").array().notNull().default([]),
+  // [{ base64, mimetype, filename, caption }] — 1 ou mais criativos em destaque.
+  creatives: jsonb("creatives").notNull().default([]),
+  // [{ label, value }] — linhas livres do funil (a maioria é manual; só
+  // contatos/leads tem equivalente automático na Meta, mas o gestor pode
+  // querer ajustar mesmo assim).
+  funilItems: jsonb("funil_items").notNull().default([]),
+  planoAcaoItems: text("plano_acao_items").array().notNull().default([]),
+  consideracoesItems: text("consideracoes_items").array().notNull().default([]),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 export const metricsDaily = pgTable(
   "metrics_daily",
   {

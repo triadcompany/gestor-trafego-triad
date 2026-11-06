@@ -20,6 +20,8 @@ import { toast } from "sonner";
 import { sendActiveCampaignsList } from "@/lib/whatsapp-messages";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
 import { ClientReportDialog } from "@/components/ClientReportDialog";
+import { getCurrentUser } from "@/server/session";
+import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import {
   Tooltip as UITooltip,
   TooltipContent,
@@ -243,6 +245,8 @@ function ClientDetail() {
   const { id } = useParams({ from: "/clients/$id" });
   const { openCampaignId } = useSearch({ from: "/clients/$id" });
   const queryClient = useQueryClient();
+  const { data: currentUser } = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser, staleTime: 1000 * 60 });
+  const isTriad = isTriadCompanyOrg(currentUser?.actingOrganizationId ?? currentUser?.organizationId);
   const [editClientOpen, setEditClientOpen] = useState(false);
   const [chartMetric, setChartMetric] = useState<PairMetricKey>("conversas");
 
@@ -992,6 +996,14 @@ function ClientDetail() {
                 cpl_max: client.cpl_max,
               }}
             />
+            {isTriad && (
+              <Button asChild size="sm" variant="outline" className="gap-2">
+                <Link to="/clients/$id/report-deck" params={{ id: client.id }} search={{ openCampaignId: undefined }}>
+                  <ClipboardList className="h-4 w-4" />
+                  Relatório visual
+                </Link>
+              </Button>
+            )}
             <Button asChild size="sm" className="gap-2">
               <Link to="/campaigns/new" search={{ client: client.id }}>
                 <Plus className="h-4 w-4" />

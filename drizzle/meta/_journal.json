@@ -267,6 +267,13 @@
       "when": 1794000942741,
       "tag": "0037_clients_monthly_report_day",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794005141730,
+      "tag": "0038_client_report_decks",
+      "breakpoints": true
     }
   ]
 }
