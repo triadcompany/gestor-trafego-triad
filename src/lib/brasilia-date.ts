@@ -44,6 +44,11 @@ export function weekdayInBrasilia(date: Date = new Date()): number {
   return map[weekdayStr] ?? 0;
 }
 
+/** Dia do mês (1-31) no calendário de Brasília. */
+export function dayOfMonthInBrasilia(date: Date = new Date()): number {
+  return ymdInBrasilia(date).day;
+}
+
 /**
  * Primeiro e último dia de um mês relativo ao mês atual em Brasília.
  * offset: 0 = este mês, -1 = mês passado, -2 = dois meses atrás, etc.

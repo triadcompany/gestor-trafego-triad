@@ -2,7 +2,7 @@
 // handler do tick e via import() dinâmico dentro de handlers). Concentra toda a
 // lógica que toca o banco fora de um createServerFn: escolha de token/instância
 // sem sessão, materialização de regra em mensagem agendada, e o tick.
-import { and, desc, eq, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
   clients,
@@ -18,7 +18,7 @@ import {
   whatsappInstances,
 } from "@/db/schema";
 import { buildMetricsReportText, fetchAdAccountInfo, fetchCampaigns, mapWithConcurrency } from "@/lib/meta";
-import { isoDateInBrasilia, daysAgoInBrasilia } from "@/lib/brasilia-date";
+import { isoDateInBrasilia, daysAgoInBrasilia, dayOfMonthInBrasilia } from "@/lib/brasilia-date";
 import { buildClientReportDoc, slug as slugifyName } from "@/lib/client-report-pdf";
 
 // ── Escolha de token / instância (sem sessão) ────────────────────────────────
@@ -399,6 +399,48 @@ async function materializeWhatsappDisconnected(
   return { created: true, warnings, evaluated: true };
 }
 
+// Lembrete de relatório: roda todo dia (recorrência "daily"), mas só manda
+// mensagem quando algum cliente selecionado tem "Dia do relatório mensal"
+// (clients.monthly_report_day) igual a hoje — não gera relatório nenhum, só
+// avisa. Um texto único listando todos os clientes que vencem hoje, não uma
+// mensagem por cliente.
+async function materializeReportReminder(
+  rule: typeof messageAutomations.$inferSelect & { destinations: Array<{ kind: string; remoteJid: string | null; name: string }> },
+  clientIds: string[]
+): Promise<MaterializeResult> {
+  if (clientIds.length === 0) return { created: false, warnings: [`Regra "${rule.name}": nenhum cliente selecionado pro lembrete de relatório.`] };
+  const destinos = rule.destinations.filter((d) => d.kind === "custom" && d.remoteJid);
+  if (destinos.length === 0) return { created: false, warnings: [`Regra "${rule.name}": escolha pelo menos um destino (grupo ou contato) pra receber o lembrete.`] };
+
+  const instance = await pickGestorWhatsappInstance({ organizationId: rule.organizationId, explicitInstanceId: rule.whatsappInstanceId });
+  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp do gestor ativa.`] };
+
+  const today = dayOfMonthInBrasilia();
+  const rows = await db.query.clients.findMany({
+    where: inArray(clients.id, clientIds),
+    columns: { id: true, name: true, monthlyReportDay: true },
+  });
+  const due = rows.filter((c) => c.monthlyReportDay === today).map((c) => c.name);
+
+  if (due.length === 0) {
+    return { created: false, warnings: [`Regra "${rule.name}": nenhum cliente selecionado vence relatório hoje — nada enviado.`], evaluated: true };
+  }
+
+  const template = (rule.body ?? "").trim() || "📝 Hoje é dia de gerar o relatório de: {{clientes}}";
+  const text = template.replaceAll("{{clientes}}", due.join(", "));
+
+  await db.transaction(async (tx) => {
+    const [msg] = await tx
+      .insert(scheduledMessages)
+      .values({ organizationId: rule.organizationId, whatsappInstanceId: instance.instanceId, body: text, scheduledAt: new Date().toISOString(), status: "pending" })
+      .returning();
+    await tx.insert(scheduledMessageRecipients).values(
+      destinos.map((d) => ({ messageId: msg.id, remoteJid: d.remoteJid!, name: d.name, status: "pending" as const }))
+    );
+  });
+  return { created: true, warnings: [], evaluated: true };
+}
+
 export async function materializeAutomation(ruleId: string, slot: "primary" | "secondary" = "primary"): Promise<MaterializeResult> {
   const rule = await db.query.messageAutomations.findFirst({
     where: eq(messageAutomations.id, ruleId),
@@ -412,6 +454,7 @@ export async function materializeAutomation(ruleId: string, slot: "primary" | "s
   const fanOutIds = rule.reportClientIds.length > 0 ? rule.reportClientIds : rule.clientId ? [rule.clientId] : [];
   if (rule.contentType === "saldo_baixo") return materializeSaldoBaixo(rule, fanOutIds);
   if (rule.contentType === "whatsapp_disconnected") return materializeWhatsappDisconnected(rule);
+  if (rule.contentType === "report_reminder") return materializeReportReminder(rule, fanOutIds);
   const isFanOut = rule.contentType === "report" || rule.contentType === "report_pdf" || (rule.contentType === "text" && fanOutIds.length > 0);
   if (isFanOut) {
     const targetIds = fanOutIds;

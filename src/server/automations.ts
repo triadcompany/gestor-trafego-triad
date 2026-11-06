@@ -25,7 +25,7 @@ export interface MessageAutomationRow {
   id: string;
   name: string;
   active: boolean;
-  content_type: "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo" | "whatsapp_disconnected";
+  content_type: "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo" | "whatsapp_disconnected" | "report_reminder";
   balance_threshold: number | null;
   body: string | null;
   client_id: string | null;
@@ -75,7 +75,7 @@ const _fetchMessageAutomations = createServerFn({ method: "GET" }).handler(async
     id: r.id,
     name: r.name,
     active: r.active,
-    content_type: r.contentType as "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo" | "whatsapp_disconnected",
+    content_type: r.contentType as "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo" | "whatsapp_disconnected" | "report_reminder",
     body: r.body,
     client_id: r.clientId,
     client_name: r.client?.name ?? null,
@@ -134,7 +134,7 @@ const mediaItemSchema = z.object({ base64: z.string(), mimetype: z.string(), fil
 const upsertSchema = z.object({
   id: z.string().optional(),
   name: z.string().min(1),
-  contentType: z.enum(["text", "report", "report_pdf", "group_summary", "saldo_baixo", "whatsapp_disconnected"]),
+  contentType: z.enum(["text", "report", "report_pdf", "group_summary", "saldo_baixo", "whatsapp_disconnected", "report_reminder"]),
   balanceThreshold: z.number().int().positive().nullable().optional(),
   body: z.string().nullable().optional(),
   clientId: z.string().nullable().optional(),
@@ -190,6 +190,14 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
       // Automática — verifica todas as instâncias ativas da organização, sem
       // precisar escolher cliente/texto. Só exige destino (já checado via zod
       // destinations.min(1)) e recorrência (checado abaixo).
+    } else if (data.contentType === "report_reminder") {
+      if (data.reportClientIds.length === 0) throw new Error("Selecione ao menos um cliente pro lembrete de relatório.");
+      const acessiveis = await db
+        .select({ id: clients.id })
+        .from(clients)
+        .where(and(eq(clients.organizationId, organizationId), clientAccessCondition({ role, userId })));
+      const okIds = new Set(acessiveis.map((c) => c.id));
+      if (data.reportClientIds.some((id) => !okIds.has(id))) throw new Error("Cliente do lembrete não encontrado ou sem acesso.");
     } else if (!data.body?.trim() && data.media.length === 0) {
       throw new Error("Mensagem de texto precisa de um texto ou pelo menos uma mídia.");
     }
@@ -240,16 +248,19 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
       organizationId,
       name: data.name,
       contentType: data.contentType,
-      body: data.contentType === "text" || data.contentType === "saldo_baixo" || data.contentType === "report" || data.contentType === "report_pdf" ? (data.body?.trim() || null) : null,
+      body: data.contentType === "text" || data.contentType === "saldo_baixo" || data.contentType === "report" || data.contentType === "report_pdf" || data.contentType === "report_reminder" ? (data.body?.trim() || null) : null,
       clientId: data.contentType === "text" ? (data.clientId ?? null) : null,
       reportPeriodDays: data.reportPeriodDays,
       balanceThreshold: data.contentType === "saldo_baixo" ? (data.balanceThreshold ?? 50000) : null,
       reportTemplateId: data.contentType === "report" ? (data.reportTemplateId ?? null) : null,
-      reportClientIds: data.contentType === "report" || data.contentType === "report_pdf" || data.contentType === "text" || data.contentType === "saldo_baixo" ? data.reportClientIds : [],
+      reportClientIds: data.contentType === "report" || data.contentType === "report_pdf" || data.contentType === "text" || data.contentType === "saldo_baixo" || data.contentType === "report_reminder" ? data.reportClientIds : [],
       summaryTurno: data.contentType === "group_summary" ? (data.summaryTurno ?? null) : null,
       summaryClientIds: data.contentType === "group_summary" ? data.summaryClientIds : [],
-      recurrenceType: data.recurrenceType,
-      recurrenceDays: data.recurrenceType === "daily" ? [] : data.recurrenceDays,
+      // Lembrete de relatório sempre roda todo dia (checa internamente se é o
+      // dia de algum cliente selecionado) — não deixa salvar com recorrência
+      // semanal/mensal por engano.
+      recurrenceType: data.contentType === "report_reminder" ? "daily" : data.recurrenceType,
+      recurrenceDays: data.recurrenceType === "daily" || data.contentType === "report_reminder" ? [] : data.recurrenceDays,
       sendHour: groupSummarySchedule ? groupSummarySchedule.sendHour : data.sendHour,
       sendMinute: groupSummarySchedule ? groupSummarySchedule.sendMinute : data.sendMinute,
       sendHour2: groupSummarySchedule ? groupSummarySchedule.sendHour2 : null,

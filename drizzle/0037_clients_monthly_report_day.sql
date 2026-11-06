@@ -1,0 +1,1 @@
+ALTER TABLE "clients" ADD COLUMN "monthly_report_day" integer;

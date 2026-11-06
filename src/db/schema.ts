@@ -156,6 +156,12 @@ export const clients = pgTable("clients", {
   // nenhuma de comportamento.
   metaWabaId: text("meta_waba_id"),
   metaPhoneNumberId: text("meta_phone_number_id"),
+  // Dia do mês (1-31) em que o relatório mensal desse cliente deve ser
+  // gerado/enviado — só o dia, sem mês (o mesmo dia se repete todo mês).
+  // Nulo = cliente não tem relatório mensal configurado. Usado na visão
+  // "Datas de relatório" (Tarefas → Relatórios) e pela automação de
+  // lembrete de relatório.
+  monthlyReportDay: integer("monthly_report_day"),
   // Gestor responsável — membro (role 'member') só vê clientes de que é dono;
   // admin da organização vê todos. Nulo = "sem responsável" (só admin vê).
   ownerUserId: uuid("owner_user_id").references(() => profiles.id, { onDelete: "set null" }),

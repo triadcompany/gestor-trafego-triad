@@ -69,6 +69,7 @@ export interface ClientRow {
   qualified_lead_label: string | null;
   meta_capi_dataset_id: string | null;
   public_tracking_token: string | null;
+  monthly_report_day: number | null;
   tags?: TagRow[];
 }
 
@@ -123,6 +124,7 @@ function toClientRow(c: typeof clients.$inferSelect): ClientRow {
     qualified_lead_label: c.qualifiedLeadLabel,
     meta_capi_dataset_id: c.metaCapiDatasetId,
     public_tracking_token: c.publicTrackingToken,
+    monthly_report_day: c.monthlyReportDay,
   };
 }
 
@@ -343,6 +345,7 @@ const upsertClientSchema = z.object({
   owner_user_id: z.string().nullable().optional(),
   qualified_lead_label: z.string().nullable().optional(),
   meta_capi_dataset_id: z.string().nullable().optional(),
+  monthly_report_day: z.number().nullable().optional(),
 });
 
 const _upsertClient = createServerFn({ method: "POST" })
@@ -393,6 +396,7 @@ const _upsertClient = createServerFn({ method: "POST" })
       ...(data.whatsapp_instance_id !== undefined ? { whatsappInstanceId: data.whatsapp_instance_id } : {}),
       ...(data.qualified_lead_label !== undefined ? { qualifiedLeadLabel: data.qualified_lead_label } : {}),
       ...(data.meta_capi_dataset_id !== undefined ? { metaCapiDatasetId: data.meta_capi_dataset_id } : {}),
+      ...(data.monthly_report_day !== undefined ? { monthlyReportDay: data.monthly_report_day } : {}),
     };
     const [row] = await db
       .insert(clients)
@@ -423,6 +427,7 @@ export async function upsertClient(data: {
   owner_user_id?: string | null;
   qualified_lead_label?: string | null;
   meta_capi_dataset_id?: string | null;
+  monthly_report_day?: number | null;
 }): Promise<{ id: string }> {
   return _upsertClient({ data });
 }

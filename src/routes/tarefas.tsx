@@ -41,6 +41,7 @@ import {
   fetchTasks, createTask, updateTask, deleteTask,
   type TaskRow,
   type NoteWithClient,
+  type ClientRow,
 } from "@/lib/queries";
 import { fetchProfilesAdmin } from "@/server/profiles";
 import type { TaskStatus } from "@/lib/database.types";
@@ -357,6 +358,7 @@ function TarefasPage() {
               onUpdate={(id, fields) => updateReportMutation.mutate({ id, fields })}
               onDelete={(id) => deleteReportMutation.mutate(id)}
             />
+            <ReportDatesSection clients={clients} />
           </div>
         )}
       </div>
@@ -378,6 +380,42 @@ function TarefasPage() {
         saving={createTaskMutation.isPending || updateTaskMutation.isPending}
       />
     </AppShell>
+  );
+}
+
+// ── Datas de relatório ──────────────────────────────────────────────────────
+// Visão à parte (não mexe na tabela de relatórios pendentes/enviados acima):
+// todo cliente com "Dia do relatório mensal" configurado no cadastro,
+// ordenado por dia — pra ver de relance quem vence quando no mês.
+
+function ReportDatesSection({ clients }: { clients: ClientRow[] }) {
+  const withDay = clients
+    .filter((c): c is ClientRow & { monthly_report_day: number } => c.monthly_report_day !== null)
+    .sort((a, b) => a.monthly_report_day - b.monthly_report_day);
+
+  return (
+    <div className="rounded-xl border border-border bg-card mt-2">
+      <div className="px-4 py-3 border-b border-border">
+        <h3 className="text-sm font-semibold">Datas de relatório</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">Dia do mês configurado no cadastro de cada cliente</p>
+      </div>
+      {withDay.length === 0 ? (
+        <div className="py-8 text-center text-sm text-muted-foreground px-4">
+          Nenhum cliente com dia de relatório configurado. Edite um cliente e preencha "Dia do relatório mensal".
+        </div>
+      ) : (
+        <div className="divide-y divide-border">
+          {withDay.map((c) => (
+            <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
+              <span className="shrink-0 w-9 h-9 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">
+                {c.monthly_report_day}
+              </span>
+              <span className="text-sm">{c.name}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   );
 }
 

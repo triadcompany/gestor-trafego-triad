@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, X, Check, Search, Loader2, Users, Building2, Target, UserCog, Wallet, Tag as TagIcon, Tags } from "lucide-react";
+import { Plus, X, Check, Search, Loader2, Users, Building2, Target, UserCog, Wallet, Tag as TagIcon, Tags, CalendarDays } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { fetchTags, createTag, upsertClient, type ClientRow, type TagRow } from "@/lib/queries";
 import { getCurrentUser } from "@/server/session";
@@ -59,6 +59,46 @@ function FormSection({
   );
 }
 
+// Grade só com os dias 1-31 (sem mês) — o dia se repete todo mês, não uma
+// data específica. Mais rápido de escolher que um dropdown de 31 itens.
+function DayOfMonthPicker({
+  value,
+  onChange,
+}: {
+  value: number | null;
+  onChange: (day: number | null) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-7 gap-1.5">
+        {Array.from({ length: 31 }, (_, i) => i + 1).map((day) => (
+          <button
+            key={day}
+            type="button"
+            onClick={() => onChange(value === day ? null : day)}
+            className={`h-8 rounded-md text-xs font-medium transition-colors ${
+              value === day
+                ? "bg-primary text-primary-foreground"
+                : "bg-muted/60 text-muted-foreground hover:bg-muted"
+            }`}
+          >
+            {day}
+          </button>
+        ))}
+      </div>
+      {value !== null && (
+        <button
+          type="button"
+          onClick={() => onChange(null)}
+          className="text-xs text-muted-foreground hover:text-foreground underline"
+        >
+          Remover dia configurado
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function ClientFormDialog({
   client,
   onSave,
@@ -89,6 +129,7 @@ export function ClientFormDialog({
   const [ownerUserId, setOwnerUserId] = useState<string>(client?.owner_user_id ?? "");
   const [qualifiedLeadLabel, setQualifiedLeadLabel] = useState<string>(client?.qualified_lead_label ?? "");
   const [metaCapiDatasetId, setMetaCapiDatasetId] = useState<string>(client?.meta_capi_dataset_id ?? "");
+  const [monthlyReportDay, setMonthlyReportDay] = useState<number | null>(client?.monthly_report_day ?? null);
 
   const queryClient = useQueryClient();
   const { data: metaTokens = [] } = useQuery({ queryKey: ["meta-tokens"], queryFn: fetchMetaTokens });
@@ -155,6 +196,7 @@ export function ClientFormDialog({
         ...(isAdmin && ownerUserId ? { owner_user_id: ownerUserId } : {}),
         qualified_lead_label: qualifiedLeadLabel || null,
         meta_capi_dataset_id: metaCapiDatasetId.trim() || null,
+        monthly_report_day: monthlyReportDay,
       },
       selectedTagIds,
     );
@@ -387,6 +429,19 @@ export function ClientFormDialog({
                   )}
                 </>
               )}
+            </div>
+          </FormSection>
+
+          <FormSection title="Relatório mensal" icon={CalendarDays}>
+            <div className="space-y-1.5">
+              <Label>
+                Dia do relatório mensal
+                <span className="text-muted-foreground font-normal text-xs ml-1.5">opcional — mesmo dia todo mês</span>
+              </Label>
+              <DayOfMonthPicker value={monthlyReportDay} onChange={setMonthlyReportDay} />
+              <p className="text-xs text-muted-foreground">
+                Aparece na visão "Datas de relatório" em Tarefas → Relatórios, e pode ser usado pela automação de lembrete de relatório.
+              </p>
             </div>
           </FormSection>
 

@@ -15,7 +15,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil, Repeat, Play, Trash2, MessageSquare, BarChart3, FileText, MessagesSquare, Wallet, WifiOff } from "lucide-react";
+import { Plus, Search, Loader2, X, Paperclip, ChevronDown, Users, Send, Pencil, Repeat, Play, Trash2, MessageSquare, BarChart3, FileText, MessagesSquare, Wallet, WifiOff, CalendarDays } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { DEFAULT_REPORT_TEMPLATE, REPORT_TEMPLATE_PLACEHOLDERS } from "@/lib/meta";
 import { fetchReportTemplates, upsertReportTemplate, deleteReportTemplate, type ReportTemplateRow } from "@/server/report-templates";
@@ -657,6 +657,10 @@ function recipientsSummary(r: MessageAutomationRow): string {
   if (r.content_type === "whatsapp_disconnected") {
     return `Verifica todas as instâncias${customLabel ? ` → ${customLabel}` : ""}`;
   }
+  if (r.content_type === "report_reminder") {
+    const n = r.report_client_names.length;
+    return `Lembra ${plural(n, "cliente", "clientes")}${customLabel ? ` → ${customLabel}` : ""}`;
+  }
   if (r.content_type === "text") {
     const n = r.report_client_names.length || (r.client_name ? 1 : 0);
     const groups = n > 0 ? `Manda no grupo de ${plural(n, "cliente", "clientes")}` : "";
@@ -671,6 +675,7 @@ function recipientsSummary(r: MessageAutomationRow): string {
 function contentLabel(r: MessageAutomationRow): string {
   if (r.content_type === "saldo_baixo") return "Saldo baixo";
   if (r.content_type === "whatsapp_disconnected") return "Instância desconectada";
+  if (r.content_type === "report_reminder") return "Lembrete de relatório";
   if (r.content_type === "report") {
     const who = reportClientsLabel(r);
     return `Relatório ${r.report_period_days} dias${who ? ` · ${who}` : ""}`;
@@ -811,6 +816,7 @@ function AutomacoesTab() {
               <SelectItem value="text">Mensagem</SelectItem>
               <SelectItem value="group_summary">Resumo de grupo</SelectItem>
               <SelectItem value="whatsapp_disconnected">Instância desconectada</SelectItem>
+              <SelectItem value="report_reminder">Lembrete de relatório</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -907,7 +913,7 @@ function AutomacoesTab() {
 }
 
 const CONTENT_TYPE_OPTIONS: Array<{
-  value: "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo" | "whatsapp_disconnected";
+  value: "text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo" | "whatsapp_disconnected" | "report_reminder";
   label: string;
   hint: string;
   icon: typeof MessageSquare;
@@ -918,9 +924,11 @@ const CONTENT_TYPE_OPTIONS: Array<{
   { value: "group_summary", label: "Resumo de grupo", hint: "Resumo das conversas do grupo por turno", icon: MessagesSquare },
   { value: "saldo_baixo", label: "Saldo baixo", hint: "Avisa o cliente quando o saldo da conta de anúncio está abaixo do limite", icon: Wallet },
   { value: "whatsapp_disconnected", label: "Instância desconectada", hint: "Avisa quando alguma instância de WhatsApp cair", icon: WifiOff },
+  { value: "report_reminder", label: "Lembrete de relatório", hint: "Avisa que é o dia de gerar o relatório dos clientes selecionados (não gera o relatório)", icon: CalendarDays },
 ];
 
 const DEFAULT_SALDO_TEMPLATE = "⚠️ Olá! O saldo da conta de anúncio de {{cliente}} está em {{saldo}}. Recarregue pra não pausar as campanhas.";
+const DEFAULT_REPORT_REMINDER_TEMPLATE = "📝 Hoje é dia de gerar o relatório de: {{clientes}}";
 
 const WEEKDAYS: { value: number; label: string }[] = [
   { value: 1, label: "Seg" }, { value: 2, label: "Ter" }, { value: 3, label: "Qua" },
@@ -1018,7 +1026,7 @@ function AutomationComposerDialog({
   const qc = useQueryClient();
   const [loadedId, setLoadedId] = useState<string | null>(null);
   const [name, setName] = useState("");
-  const [contentType, setContentType] = useState<"text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo" | "whatsapp_disconnected">("text");
+  const [contentType, setContentType] = useState<"text" | "report" | "report_pdf" | "group_summary" | "saldo_baixo" | "whatsapp_disconnected" | "report_reminder">("text");
   const [body, setBody] = useState("");
   const [reportClientIds, setReportClientIds] = useState<string[]>([]);
   const [reportPeriodDays, setReportPeriodDays] = useState<number>(7);
@@ -1106,7 +1114,7 @@ function AutomationComposerDialog({
     setLoadedId(editing.id);
     setName(editing.name);
     setContentType(editing.content_type);
-    setBody(editing.content_type === "text" || editing.content_type === "saldo_baixo" ? (editing.body ?? "") : "");
+    setBody(editing.content_type === "text" || editing.content_type === "saldo_baixo" || editing.content_type === "report_reminder" ? (editing.body ?? "") : "");
     setBalanceThresholdReais(editing.balance_threshold ? String(editing.balance_threshold / 100) : "500");
     setReportClientIds(editing.report_client_ids.length > 0 ? editing.report_client_ids : editing.client_id ? [editing.client_id] : []);
     setReportPeriodDays(editing.report_period_days);
@@ -1191,12 +1199,12 @@ function AutomationComposerDialog({
         id: editing?.id,
         name: name.trim(),
         contentType,
-        body: contentType === "text" || contentType === "saldo_baixo" ? body : contentType === "report" ? (reportTemplateId ? null : reportBody) : contentType === "report_pdf" ? (pdfCaption.trim() || null) : null,
+        body: contentType === "text" || contentType === "saldo_baixo" || contentType === "report_reminder" ? body : contentType === "report" ? (reportTemplateId ? null : reportBody) : contentType === "report_pdf" ? (pdfCaption.trim() || null) : null,
         reportTemplateId: contentType === "report" ? reportTemplateId : null,
         summaryTurno: contentType === "group_summary" ? summaryTurno : null,
         summaryClientIds: contentType === "group_summary" ? summaryClientIds : [],
         clientId: null,
-        reportClientIds: contentType === "report" || contentType === "report_pdf" || contentType === "text" || contentType === "saldo_baixo" ? reportClientIds : [],
+        reportClientIds: contentType === "report" || contentType === "report_pdf" || contentType === "text" || contentType === "saldo_baixo" || contentType === "report_reminder" ? reportClientIds : [],
         balanceThreshold: contentType === "saldo_baixo" ? Math.round(Number(balanceThresholdReais.replace(",", ".")) * 100) : null,
         reportPeriodDays,
         recurrenceType,
@@ -1228,13 +1236,16 @@ function AutomationComposerDialog({
             ? body.trim().length > 0 && reportClientIds.length > 0
             : contentType === "whatsapp_disconnected"
               ? true
-              : summaryClientIds.length > 0;
+              : contentType === "report_reminder"
+                ? body.trim().length > 0 && reportClientIds.length > 0
+                : summaryClientIds.length > 0;
   const hasValidRecurrence =
+    contentType === "report_reminder" ||
     recurrenceType === "daily" ||
     (recurrenceType === "weekly" && weekdays.length > 0) ||
     (recurrenceType === "monthly" && monthdays.length > 0);
   const hasValidDestination =
-    (["text", "report", "report_pdf"].includes(contentType) && reportClientIds.length > 0) || customRecipients.length > 0;
+    (["text", "report", "report_pdf", "saldo_baixo", "report_reminder"].includes(contentType) && reportClientIds.length > 0) || customRecipients.length > 0;
   // Bug antigo aqui: "a && b && c || d" — por precedência, o || de fora fazia
   // qualquer regra com destino avulso pular nome/conteúdo/recorrência vazios
   // (o servidor então rejeitava e o zod cru vazava pro toast). Corrigido com
@@ -1463,6 +1474,30 @@ function AutomationComposerDialog({
                 Configure só o horário e o destino abaixo.
               </p>
             </div>
+          ) : contentType === "report_reminder" ? (
+            <div className="space-y-3">
+              <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
+                <p className="text-sm text-muted-foreground">
+                  Roda todo dia e só manda mensagem quando algum cliente selecionado tiver o "Dia do relatório
+                  mensal" (configurado no cadastro do cliente) igual a hoje. Não gera o relatório — só avisa que é
+                  a hora de fazer.
+                </p>
+              </div>
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <Label>Mensagem</Label>
+                  <button type="button" className="text-xs text-primary hover:underline" onClick={() => setBody(DEFAULT_REPORT_REMINDER_TEMPLATE)}>Usar modelo padrão</button>
+                </div>
+                <Textarea value={body} onChange={(e) => setBody(e.target.value)} className="min-h-[90px] resize-none" />
+                <p className="text-[11px] text-muted-foreground">{"Use {{clientes}} — é preenchido na hora do envio com os nomes dos clientes que vencem hoje."}</p>
+              </div>
+              <ReportClientsField
+                clients={clients}
+                selected={reportClientIds}
+                onChange={setReportClientIds}
+                hint="só os que tiverem o dia do relatório igual a hoje entram na mensagem"
+              />
+            </div>
           ) : (
             <div className="space-y-3">
               <div className="space-y-1.5">
@@ -1488,13 +1523,17 @@ function AutomationComposerDialog({
 
           <div className="space-y-2.5 rounded-lg border border-border/60 bg-muted/10 p-3">
             <Label className="flex items-center gap-1.5"><Repeat className="h-3.5 w-3.5 text-muted-foreground" /> Recorrência</Label>
-            <RadioGroup value={recurrenceType} onValueChange={(v) => setRecurrenceType(v as typeof recurrenceType)} className="flex gap-4">
-              <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="weekly" /> Semanal</label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="daily" /> Diária</label>
-              <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="monthly" /> Mensal</label>
-            </RadioGroup>
+            {contentType === "report_reminder" ? (
+              <p className="text-xs text-muted-foreground">Diária — roda todo dia verificando os clientes selecionados, não dá pra escolher outra recorrência.</p>
+            ) : (
+              <RadioGroup value={recurrenceType} onValueChange={(v) => setRecurrenceType(v as typeof recurrenceType)} className="flex gap-4">
+                <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="weekly" /> Semanal</label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="daily" /> Diária</label>
+                <label className="flex items-center gap-2 text-sm cursor-pointer"><RadioGroupItem value="monthly" /> Mensal</label>
+              </RadioGroup>
+            )}
 
-            {recurrenceType === "weekly" && (
+            {contentType !== "report_reminder" && recurrenceType === "weekly" && (
               <div className="flex flex-wrap gap-1.5">
                 {WEEKDAYS.map((d) => (
                   <button
@@ -1508,7 +1547,7 @@ function AutomationComposerDialog({
                 ))}
               </div>
             )}
-            {recurrenceType === "monthly" && (
+            {contentType !== "report_reminder" && recurrenceType === "monthly" && (
               <div className="flex flex-wrap gap-1">
                 {Array.from({ length: 28 }, (_, i) => i + 1).map((d) => (
                   <button
