@@ -221,11 +221,16 @@ interface SummaryInstance {
   instance: string;
 }
 
+// Retorna null quando não há nada pra mandar (nenhum grupo com mensagem
+// relevante no período E nenhum cliente sem grupo vinculado pra avisar) —
+// evita mandar "Resumo da tarde" com o título seguido de nada, que parecia
+// quebrado (só o aviso de "sem grupo vinculado" aparecia, com um buraco em
+// branco antes dele).
 async function buildGroupSummaryText(
   rule: typeof messageAutomations.$inferSelect,
   instance: SummaryInstance,
   turno: "manha" | "tarde"
-): Promise<string> {
+): Promise<string | null> {
   const { since, until, label, emoji } = summaryWindow(turno);
 
   const rows = await db
@@ -281,9 +286,12 @@ async function buildGroupSummaryText(
     }
   }
 
+  if (blocks.length === 0 && semGrupo.length === 0) return null;
+
   const sp = nowInSaoPaulo();
   const dataStr = `${String(sp.day).padStart(2, "0")}/${String(sp.month).padStart(2, "0")}`;
-  let text = `${emoji} *Resumo da ${label} — ${dataStr}*\n\n${blocks.join("\n\n")}`;
+  const corpo = blocks.length > 0 ? blocks.join("\n\n") : "_Nenhuma novidade relevante nos grupos monitorados._";
+  let text = `${emoji} *Resumo da ${label} — ${dataStr}*\n\n${corpo}`;
   if (semGrupo.length > 0) text += `\n\n⚠️ Sem grupo vinculado: ${semGrupo.join(", ")}`;
   return text;
 }
@@ -611,11 +619,16 @@ export async function materializeAutomation(ruleId: string, slot: "primary" | "s
     // dentro do 'ambos') — cada disparo manda só o período daquele horário,
     // nunca os dois juntos numa mensagem só.
     const turno: "manha" | "tarde" = slot === "secondary" ? "tarde" : rule.summaryTurno === "tarde" ? "tarde" : "manha";
+    let built: string | null;
     try {
-      text = await buildGroupSummaryText(rule, instance, turno);
+      built = await buildGroupSummaryText(rule, instance, turno);
     } catch (e) {
       return { created: false, warnings: [`Regra "${rule.name}": falha ao montar resumo — ${e instanceof Error ? e.message : String(e)}`] };
     }
+    if (built === null) {
+      return { created: false, warnings: [`Regra "${rule.name}": nada relevante nos grupos monitorados — nada enviado.`], evaluated: true };
+    }
+    text = built;
   } else {
     text = rule.body ?? "";
     if (!text.trim() && rule.media.length === 0) {
