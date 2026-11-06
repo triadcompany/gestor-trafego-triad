@@ -394,6 +394,7 @@ function TarefasPage() {
 
 function ReportDatesSection({ clients }: { clients: ClientRow[] }) {
   const qc = useQueryClient();
+  const [search, setSearch] = useState("");
   const { data: currentUser } = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser, staleTime: 1000 * 60 });
   // Mostrar TODOS os clientes (não só os já configurados), pra dar pra
   // adicionar a data direto daqui, é experimental — só pra organização da
@@ -434,21 +435,37 @@ function ReportDatesSection({ clients }: { clients: ClientRow[] }) {
     onError: () => toast.error("Erro ao salvar o dia do relatório."),
   });
 
-  const rows = isTriad
+  const rows = (isTriad
     ? [...clients].sort((a, b) => (a.monthly_report_day ?? 99) - (b.monthly_report_day ?? 99) || a.name.localeCompare(b.name))
     : clients
         .filter((c): c is ClientRow & { monthly_report_day: number } => c.monthly_report_day !== null)
-        .sort((a, b) => a.monthly_report_day - b.monthly_report_day);
+        .sort((a, b) => a.monthly_report_day - b.monthly_report_day)
+  ).filter((c) => c.name.toLowerCase().includes(search.trim().toLowerCase()));
 
   return (
     <div className="rounded-xl border border-border bg-card mt-2">
-      <div className="px-4 py-3 border-b border-border">
-        <h3 className="text-sm font-semibold">Datas de relatório</h3>
-        <p className="text-xs text-muted-foreground mt-0.5">Dia do mês configurado no cadastro de cada cliente</p>
+      <div className="px-4 py-3 border-b border-border space-y-2.5">
+        <div>
+          <h3 className="text-sm font-semibold">Datas de relatório</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">Dia do mês configurado no cadastro de cada cliente</p>
+        </div>
+        {isTriad && (
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Buscar cliente..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8 text-sm w-52"
+            />
+          </div>
+        )}
       </div>
       {rows.length === 0 ? (
         <div className="py-8 text-center text-sm text-muted-foreground px-4">
-          Nenhum cliente com dia de relatório configurado. Edite um cliente e preencha "Dia do relatório mensal".
+          {search.trim()
+            ? "Nenhum cliente encontrado."
+            : "Nenhum cliente com dia de relatório configurado. Edite um cliente e preencha \"Dia do relatório mensal\"."}
         </div>
       ) : (
         <div className="divide-y divide-border">
