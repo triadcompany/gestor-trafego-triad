@@ -1051,8 +1051,20 @@ function AutomationComposerDialog({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: clients = [], isLoading: clientsLoading } = useQuery({ queryKey: ["clients-all"], queryFn: fetchAllClients });
-  const { data: instances = [] } = useQuery({ queryKey: ["whatsapp-instances"], queryFn: fetchWhatsappInstances });
+  const { data: instances = [], isLoading: instancesLoading } = useQuery({ queryKey: ["whatsapp-instances"], queryFn: fetchWhatsappInstances });
   const { data: templates = [] } = useQuery({ queryKey: ["report-templates"], queryFn: fetchReportTemplates });
+
+  // Pra automação nova (não edição), já vem com o grupo operacional da
+  // instância padrão do gestor pré-selecionado em Destinos — mesmo motivo e
+  // mesma resolução da mensagem agendada avulsa (ComposerDialog): a maioria
+  // das automações é pra esse grupo, só digita no campo de busca quando quer
+  // outro destino.
+  const defaultOperationalRecipient = useMemo<EvolutionRecipient | null>(() => {
+    const gestorOnes = instances.filter((i) => !i.clientName);
+    const chosen = gestorOnes.find((i) => i.isDefaultGestor) ?? gestorOnes[0];
+    if (!chosen?.operationalGroupId || !chosen.operationalGroupName) return null;
+    return { remoteJid: chosen.operationalGroupId, name: chosen.operationalGroupName, isGroup: true };
+  }, [instances]);
 
   // Mantém o texto do relatório em dia com o modelo vinculado (ex.: depois de
   // editar o modelo compartilhado). Só age enquanto a automação ainda estiver
@@ -1145,8 +1157,9 @@ function AutomationComposerDialog({
     if (editing.media_count > 0) {
       fetchMessageAutomationMedia(editing.id).then(setExistingMedia).catch(() => {});
     }
-  } else if (open && !editing && loadedId !== "new") {
+  } else if (open && !editing && loadedId !== "new" && !instancesLoading) {
     reset();
+    if (defaultOperationalRecipient) setCustomRecipients([defaultOperationalRecipient]);
     setLoadedId("new");
   }
 
