@@ -334,7 +334,7 @@ function ReportDeckPage() {
                     <img
                       src={`data:${deck.cover_logo_mimetype};base64,${deck.cover_logo_base64}`}
                       alt=""
-                      className="h-28 object-contain"
+                      className="h-56 object-contain"
                     />
                   ) : (
                     <span className="flex items-center gap-1.5 text-xs text-white/40 border border-dashed border-white/20 rounded px-2.5 py-1.5">
