@@ -324,13 +324,17 @@ function ReportDeckPage() {
           {/* Página 1 — Capa */}
           <div ref={(el) => { slideRefs.current[0] = el; }}>
             <Slide>
-              <div className="flex-1 flex flex-col justify-end">
-                <label className="self-start mb-6 cursor-pointer">
+              <div className="flex-1 flex items-center justify-between gap-8">
+                <div>
+                  <h1 className="text-[64px] font-extrabold leading-[1.05] mb-3">Relatório<br />Mensal</h1>
+                  <p className="text-base text-white/60">{dataStr}</p>
+                </div>
+                <label className="shrink-0 cursor-pointer">
                   {deck.cover_logo_base64 ? (
                     <img
                       src={`data:${deck.cover_logo_mimetype};base64,${deck.cover_logo_base64}`}
                       alt=""
-                      className="h-14 object-contain"
+                      className="h-28 object-contain"
                     />
                   ) : (
                     <span className="flex items-center gap-1.5 text-xs text-white/40 border border-dashed border-white/20 rounded px-2.5 py-1.5">
@@ -339,8 +343,6 @@ function ReportDeckPage() {
                   )}
                   <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleLogoUpload(e.target.files[0])} />
                 </label>
-                <h1 className="text-[44px] font-extrabold leading-[1.05] mb-2">Relatório<br />Mensal</h1>
-                <p className="text-sm text-white/60">{dataStr}</p>
               </div>
             </Slide>
           </div>
