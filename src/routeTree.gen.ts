@@ -25,6 +25,7 @@ import { Route as ConversasRouteImport } from './routes/conversas'
 import { Route as AgenteRouteImport } from './routes/agente'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ClientsIndexRouteImport } from './routes/clients.index'
+import { Route as ReportDeckIdRouteImport } from './routes/report-deck.$id'
 import { Route as RTokenRouteImport } from './routes/r.$token'
 import { Route as ConnectTokenRouteImport } from './routes/connect.$token'
 import { Route as ClientsImportarRouteImport } from './routes/clients.importar'
@@ -32,7 +33,6 @@ import { Route as ClientsIdRouteImport } from './routes/clients.$id'
 import { Route as CampaignsNewRouteImport } from './routes/campaigns.new'
 import { Route as AuthCallbackRouteImport } from './routes/auth.callback'
 import { Route as AdminOrganizationsRouteImport } from './routes/admin.organizations'
-import { Route as ClientsIdReportDeckRouteImport } from './routes/clients.$id.report-deck'
 import { Route as CampaignsEditIdRouteImport } from './routes/campaigns.edit.$id'
 
 const VendasRoute = VendasRouteImport.update({
@@ -115,6 +115,11 @@ const ClientsIndexRoute = ClientsIndexRouteImport.update({
   path: '/clients/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ReportDeckIdRoute = ReportDeckIdRouteImport.update({
+  id: '/report-deck/$id',
+  path: '/report-deck/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const RTokenRoute = RTokenRouteImport.update({
   id: '/r/$token',
   path: '/r/$token',
@@ -150,11 +155,6 @@ const AdminOrganizationsRoute = AdminOrganizationsRouteImport.update({
   path: '/admin/organizations',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ClientsIdReportDeckRoute = ClientsIdReportDeckRouteImport.update({
-  id: '/report-deck',
-  path: '/report-deck',
-  getParentRoute: () => ClientsIdRoute,
-} as any)
 const CampaignsEditIdRoute = CampaignsEditIdRouteImport.update({
   id: '/campaigns/edit/$id',
   path: '/campaigns/edit/$id',
@@ -180,13 +180,13 @@ export interface FileRoutesByFullPath {
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
-  '/clients/$id': typeof ClientsIdRouteWithChildren
+  '/clients/$id': typeof ClientsIdRoute
   '/clients/importar': typeof ClientsImportarRoute
   '/connect/$token': typeof ConnectTokenRoute
   '/r/$token': typeof RTokenRoute
+  '/report-deck/$id': typeof ReportDeckIdRoute
   '/clients/': typeof ClientsIndexRoute
   '/campaigns/edit/$id': typeof CampaignsEditIdRoute
-  '/clients/$id/report-deck': typeof ClientsIdReportDeckRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -207,13 +207,13 @@ export interface FileRoutesByTo {
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
-  '/clients/$id': typeof ClientsIdRouteWithChildren
+  '/clients/$id': typeof ClientsIdRoute
   '/clients/importar': typeof ClientsImportarRoute
   '/connect/$token': typeof ConnectTokenRoute
   '/r/$token': typeof RTokenRoute
+  '/report-deck/$id': typeof ReportDeckIdRoute
   '/clients': typeof ClientsIndexRoute
   '/campaigns/edit/$id': typeof CampaignsEditIdRoute
-  '/clients/$id/report-deck': typeof ClientsIdReportDeckRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -235,13 +235,13 @@ export interface FileRoutesById {
   '/admin/organizations': typeof AdminOrganizationsRoute
   '/auth/callback': typeof AuthCallbackRoute
   '/campaigns/new': typeof CampaignsNewRoute
-  '/clients/$id': typeof ClientsIdRouteWithChildren
+  '/clients/$id': typeof ClientsIdRoute
   '/clients/importar': typeof ClientsImportarRoute
   '/connect/$token': typeof ConnectTokenRoute
   '/r/$token': typeof RTokenRoute
+  '/report-deck/$id': typeof ReportDeckIdRoute
   '/clients/': typeof ClientsIndexRoute
   '/campaigns/edit/$id': typeof CampaignsEditIdRoute
-  '/clients/$id/report-deck': typeof ClientsIdReportDeckRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -268,9 +268,9 @@ export interface FileRouteTypes {
     | '/clients/importar'
     | '/connect/$token'
     | '/r/$token'
+    | '/report-deck/$id'
     | '/clients/'
     | '/campaigns/edit/$id'
-    | '/clients/$id/report-deck'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -295,9 +295,9 @@ export interface FileRouteTypes {
     | '/clients/importar'
     | '/connect/$token'
     | '/r/$token'
+    | '/report-deck/$id'
     | '/clients'
     | '/campaigns/edit/$id'
-    | '/clients/$id/report-deck'
   id:
     | '__root__'
     | '/'
@@ -322,9 +322,9 @@ export interface FileRouteTypes {
     | '/clients/importar'
     | '/connect/$token'
     | '/r/$token'
+    | '/report-deck/$id'
     | '/clients/'
     | '/campaigns/edit/$id'
-    | '/clients/$id/report-deck'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -346,10 +346,11 @@ export interface RootRouteChildren {
   AdminOrganizationsRoute: typeof AdminOrganizationsRoute
   AuthCallbackRoute: typeof AuthCallbackRoute
   CampaignsNewRoute: typeof CampaignsNewRoute
-  ClientsIdRoute: typeof ClientsIdRouteWithChildren
+  ClientsIdRoute: typeof ClientsIdRoute
   ClientsImportarRoute: typeof ClientsImportarRoute
   ConnectTokenRoute: typeof ConnectTokenRoute
   RTokenRoute: typeof RTokenRoute
+  ReportDeckIdRoute: typeof ReportDeckIdRoute
   ClientsIndexRoute: typeof ClientsIndexRoute
   CampaignsEditIdRoute: typeof CampaignsEditIdRoute
 }
@@ -468,6 +469,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ClientsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/report-deck/$id': {
+      id: '/report-deck/$id'
+      path: '/report-deck/$id'
+      fullPath: '/report-deck/$id'
+      preLoaderRoute: typeof ReportDeckIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/r/$token': {
       id: '/r/$token'
       path: '/r/$token'
@@ -517,13 +525,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminOrganizationsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/clients/$id/report-deck': {
-      id: '/clients/$id/report-deck'
-      path: '/report-deck'
-      fullPath: '/clients/$id/report-deck'
-      preLoaderRoute: typeof ClientsIdReportDeckRouteImport
-      parentRoute: typeof ClientsIdRoute
-    }
     '/campaigns/edit/$id': {
       id: '/campaigns/edit/$id'
       path: '/campaigns/edit/$id'
@@ -533,18 +534,6 @@ declare module '@tanstack/react-router' {
     }
   }
 }
-
-interface ClientsIdRouteChildren {
-  ClientsIdReportDeckRoute: typeof ClientsIdReportDeckRoute
-}
-
-const ClientsIdRouteChildren: ClientsIdRouteChildren = {
-  ClientsIdReportDeckRoute: ClientsIdReportDeckRoute,
-}
-
-const ClientsIdRouteWithChildren = ClientsIdRoute._addFileChildren(
-  ClientsIdRouteChildren,
-)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -565,10 +554,11 @@ const rootRouteChildren: RootRouteChildren = {
   AdminOrganizationsRoute: AdminOrganizationsRoute,
   AuthCallbackRoute: AuthCallbackRoute,
   CampaignsNewRoute: CampaignsNewRoute,
-  ClientsIdRoute: ClientsIdRouteWithChildren,
+  ClientsIdRoute: ClientsIdRoute,
   ClientsImportarRoute: ClientsImportarRoute,
   ConnectTokenRoute: ConnectTokenRoute,
   RTokenRoute: RTokenRoute,
+  ReportDeckIdRoute: ReportDeckIdRoute,
   ClientsIndexRoute: ClientsIndexRoute,
   CampaignsEditIdRoute: CampaignsEditIdRoute,
 }

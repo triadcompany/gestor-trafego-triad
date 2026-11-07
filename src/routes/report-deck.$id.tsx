@@ -19,7 +19,7 @@ import { getMetaToken, fetchCampaigns } from "@/lib/meta";
 import { fetchReportDeck, upsertReportDeck, type ReportDeckRow, type ReportDeckFunilItem, type ReportDeckCreative } from "@/server/report-decks";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
-export const Route = createFileRoute("/clients/$id/report-deck")({
+export const Route = createFileRoute("/report-deck/$id")({
   head: () => ({ meta: [{ title: "Relatório visual — Gestor de Tráfego" }] }),
   ssr: false,
   // Experimental — só pra organização Triad Company (ver memória "Triad
@@ -156,7 +156,7 @@ function MetricCard({ label, value, color = "border-orange-500/60" }: { label: s
 // ── Página ────────────────────────────────────────────────────────────────
 
 function ReportDeckPage() {
-  const { id } = useParams({ from: "/clients/$id/report-deck" });
+  const { id } = useParams({ from: "/report-deck/$id" });
   const [preset, setPreset] = useState<Preset>("mes");
   const [deck, setDeck] = useState<ReportDeckRow | null>(null);
   const [saving, setSaving] = useState(false);

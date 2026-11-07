@@ -998,7 +998,7 @@ function ClientDetail() {
             />
             {isTriad && (
               <Button asChild size="sm" variant="outline" className="gap-2">
-                <Link to="/clients/$id/report-deck" params={{ id: client.id }} search={{ openCampaignId: undefined }}>
+                <Link to="/report-deck/$id" params={{ id: client.id }}>
                   <ClipboardList className="h-4 w-4" />
                   Relatório visual
                 </Link>
