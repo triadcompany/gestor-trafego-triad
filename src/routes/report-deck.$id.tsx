@@ -49,8 +49,11 @@ const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", curren
 
 // ── Blocos visuais compartilhados ────────────────────────────────────────────
 
-const PAGE_W = 560;
-const PAGE_H = 792;
+// Tela de edição em 960x540 (16:9) — metade do tamanho final. Export usa
+// scale:2 no html2canvas, resultando em exatamente 1920x1080 no PDF.
+const PAGE_W = 960;
+const PAGE_H = 540;
+const EXPORT_SCALE = 2;
 
 function Slide({ children, className = "" }: { children: React.ReactNode; className?: string }) {
   return (
@@ -66,8 +69,8 @@ function Slide({ children, className = "" }: { children: React.ReactNode; classN
         className="absolute -left-28 bottom-10 h-72 w-72 rounded-full opacity-30 blur-[70px]"
         style={{ background: "radial-gradient(circle, #7a3bff 0%, transparent 70%)" }}
       />
-      <div className="relative h-full w-full flex flex-col px-10 py-9">{children}</div>
-      <div className="absolute bottom-6 right-8 text-[11px] font-semibold tracking-wide text-white/70">imperial <span className="font-normal opacity-70">marketing</span></div>
+      <div className="relative h-full w-full flex flex-col px-16 py-10">{children}</div>
+      <div className="absolute bottom-7 right-10 text-[11px] font-semibold tracking-wide text-white/70">imperial <span className="font-normal opacity-70">marketing</span></div>
     </div>
   );
 }
@@ -77,7 +80,7 @@ function SlideEyebrow({ children }: { children: React.ReactNode }) {
 }
 
 function SlideTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-[26px] font-bold leading-snug mb-6">{children}</h2>;
+  return <h2 className="text-[30px] font-bold leading-snug mb-6 max-w-[620px]">{children}</h2>;
 }
 
 // Input "invisível" — sem borda/fundo em repouso, só mostra que é editável no
@@ -123,11 +126,11 @@ function BulletList({ items, onChange }: { items: string[]; onChange: (items: st
   const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i));
   const add = () => onChange([...items, ""]);
   return (
-    <div className="space-y-2.5 flex-1">
+    <div className="space-y-2.5 flex-1 max-w-[680px]">
       {items.map((item, i) => (
         <div key={i} className="flex items-start gap-2 group">
           <span className="text-orange-400 mt-[9px] text-[10px] shrink-0">●</span>
-          <Field as="textarea" value={item} onChange={(v) => set(i, v)} placeholder="Digite aqui..." className="text-[13px] leading-relaxed" />
+          <Field as="textarea" value={item} onChange={(v) => set(i, v)} placeholder="Digite aqui..." className="text-[14px] leading-relaxed" />
           <button
             type="button"
             onClick={() => remove(i)}
@@ -254,14 +257,16 @@ function ReportDeckPage() {
     setExporting(true);
     try {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
-      const doc = new jsPDF({ orientation: "portrait", unit: "px", format: [PAGE_W, PAGE_H] });
+      const outW = PAGE_W * EXPORT_SCALE;
+      const outH = PAGE_H * EXPORT_SCALE;
+      const doc = new jsPDF({ orientation: "landscape", unit: "px", format: [outW, outH] });
       for (let i = 0; i < slideRefs.current.length; i++) {
         const el = slideRefs.current[i];
         if (!el) continue;
-        const canvas = await html2canvas(el, { scale: 2, backgroundColor: "#0a0a0c" });
+        const canvas = await html2canvas(el, { scale: EXPORT_SCALE, backgroundColor: "#0a0a0c" });
         const img = canvas.toDataURL("image/jpeg", 0.92);
-        if (i > 0) doc.addPage([PAGE_W, PAGE_H], "portrait");
-        doc.addImage(img, "JPEG", 0, 0, PAGE_W, PAGE_H);
+        if (i > 0) doc.addPage([outW, outH], "landscape");
+        doc.addImage(img, "JPEG", 0, 0, outW, outH);
       }
       doc.save(`relatorio-visual-${client?.name ?? "cliente"}.pdf`);
       toast.success("PDF exportado.");
@@ -345,17 +350,17 @@ function ReportDeckPage() {
             <Slide>
               <SlideEyebrow>Desempenho</SlideEyebrow>
               <SlideTitle>Resultado Meta Ads</SlideTitle>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-4 gap-3.5">
                 <MetricCard label="Valor investido" value={brl(totals.spend)} />
                 <MetricCard label="Impressões" value={totals.impressions.toLocaleString("pt-BR")} />
-                <MetricCard label="Custo por venda" value={<Field value={deck.meta_custo_venda ?? ""} onChange={(v) => patch({ meta_custo_venda: v })} placeholder="-" />} color="border-green-500/50" />
-                <MetricCard label="Faturamento" value={<Field value={deck.meta_faturamento ?? ""} onChange={(v) => patch({ meta_faturamento: v })} placeholder="Consultar loja" />} color="border-green-500/50" />
                 <MetricCard label="Leads" value={totals.leads.toLocaleString("pt-BR")} />
                 <MetricCard label="Custo por lead" value={totals.cpl !== null ? brl(totals.cpl) : "—"} />
+                <MetricCard label="Custo por venda" value={<Field value={deck.meta_custo_venda ?? ""} onChange={(v) => patch({ meta_custo_venda: v })} placeholder="-" />} color="border-green-500/50" />
+                <MetricCard label="Faturamento" value={<Field value={deck.meta_faturamento ?? ""} onChange={(v) => patch({ meta_faturamento: v })} placeholder="Consultar loja" />} color="border-green-500/50" />
                 <MetricCard label="Vendas" value={<Field value={deck.meta_vendas ?? ""} onChange={(v) => patch({ meta_vendas: v })} placeholder="-" />} color="border-green-500/50" />
                 <MetricCard label="Retorno sobre investimento" value={<Field value={deck.meta_roi ?? ""} onChange={(v) => patch({ meta_roi: v })} placeholder="Consultar loja" />} color="border-green-500/50" />
               </div>
-              <div className="mt-4">
+              <div className="mt-4 max-w-[220px]">
                 <MetricCard label="Seguidores" value={<Field value={deck.meta_seguidores ?? ""} onChange={(v) => patch({ meta_seguidores: v })} placeholder="-" />} />
               </div>
             </Slide>
@@ -420,7 +425,7 @@ function ReportDeckPage() {
             <Slide>
               <SlideEyebrow>Conversão</SlideEyebrow>
               <SlideTitle>Funil de Vendas</SlideTitle>
-              <div className="flex-1 flex flex-col justify-center gap-2.5">
+              <div className="flex-1 flex flex-col justify-center gap-2.5 max-w-[620px]">
                 {deck.funil_items.map((item, i) => {
                   const widthPct = 100 - i * (60 / Math.max(1, deck.funil_items.length - 1));
                   return (
