@@ -202,6 +202,10 @@ function ReportDeckPage() {
           metaVendas: deck.meta_vendas,
           metaRoi: deck.meta_roi,
           metaSeguidores: deck.meta_seguidores,
+          metaValorInvestido: deck.meta_valor_investido,
+          metaImpressoes: deck.meta_impressoes,
+          metaLeadsCount: deck.meta_leads_count,
+          metaCustoPorLead: deck.meta_custo_por_lead,
           diagnosticoItems: deck.diagnostico_items,
           creatives: deck.creatives,
           funilItems: deck.funil_items,
@@ -226,6 +230,20 @@ function ReportDeckPage() {
     const cpl = leads > 0 ? spend / leads : null;
     return { spend, impressions, leads, cpl };
   }, [campaigns]);
+
+  // Pré-preenche os 4 campos "automáticos" com o valor ao vivo da Meta, só na
+  // primeira vez que ainda estão vazios — depois disso o gestor já pode ter
+  // editado, então não sobrescreve mais (edição manual sempre vence).
+  useEffect(() => {
+    if (!deck || campaigns.length === 0) return;
+    const fills: Partial<ReportDeckRow> = {};
+    if (deck.meta_valor_investido === null) fills.meta_valor_investido = brl(totals.spend);
+    if (deck.meta_impressoes === null) fills.meta_impressoes = totals.impressions.toLocaleString("pt-BR");
+    if (deck.meta_leads_count === null) fills.meta_leads_count = totals.leads.toLocaleString("pt-BR");
+    if (deck.meta_custo_por_lead === null) fills.meta_custo_por_lead = totals.cpl !== null ? brl(totals.cpl) : "—";
+    if (Object.keys(fills).length > 0) setDeck((d) => (d ? { ...d, ...fills } : d));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [campaigns, deck?.meta_valor_investido, deck?.meta_impressoes, deck?.meta_leads_count, deck?.meta_custo_por_lead]);
 
   const handleLogoUpload = (file: File) => {
     const reader = new FileReader();
@@ -353,10 +371,10 @@ function ReportDeckPage() {
               <SlideEyebrow>Desempenho</SlideEyebrow>
               <SlideTitle>Resultado Meta Ads</SlideTitle>
               <div className="grid grid-cols-4 gap-3.5">
-                <MetricCard label="Valor investido" value={brl(totals.spend)} />
-                <MetricCard label="Impressões" value={totals.impressions.toLocaleString("pt-BR")} />
-                <MetricCard label="Leads" value={totals.leads.toLocaleString("pt-BR")} />
-                <MetricCard label="Custo por lead" value={totals.cpl !== null ? brl(totals.cpl) : "—"} />
+                <MetricCard label="Valor investido" value={<Field value={deck.meta_valor_investido ?? ""} onChange={(v) => patch({ meta_valor_investido: v })} placeholder={brl(totals.spend)} />} />
+                <MetricCard label="Impressões" value={<Field value={deck.meta_impressoes ?? ""} onChange={(v) => patch({ meta_impressoes: v })} placeholder={totals.impressions.toLocaleString("pt-BR")} />} />
+                <MetricCard label="Leads" value={<Field value={deck.meta_leads_count ?? ""} onChange={(v) => patch({ meta_leads_count: v })} placeholder={totals.leads.toLocaleString("pt-BR")} />} />
+                <MetricCard label="Custo por lead" value={<Field value={deck.meta_custo_por_lead ?? ""} onChange={(v) => patch({ meta_custo_por_lead: v })} placeholder={totals.cpl !== null ? brl(totals.cpl) : "—"} />} />
                 <MetricCard label="Custo por venda" value={<Field value={deck.meta_custo_venda ?? ""} onChange={(v) => patch({ meta_custo_venda: v })} placeholder="-" />} color="border-green-500/50" />
                 <MetricCard label="Faturamento" value={<Field value={deck.meta_faturamento ?? ""} onChange={(v) => patch({ meta_faturamento: v })} placeholder="Consultar loja" />} color="border-green-500/50" />
                 <MetricCard label="Vendas" value={<Field value={deck.meta_vendas ?? ""} onChange={(v) => patch({ meta_vendas: v })} placeholder="-" />} color="border-green-500/50" />

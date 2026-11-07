@@ -202,6 +202,13 @@ export const clientReportDecks = pgTable("client_report_decks", {
   metaVendas: text("meta_vendas"),
   metaRoi: text("meta_roi"),
   metaSeguidores: text("meta_seguidores"),
+  // Os 4 abaixo vêm pré-preenchidos com o valor ao vivo da Meta (ver tela),
+  // mas também são editáveis — uma vez que o gestor digita algo, esse valor
+  // fica salvo e não é mais sobrescrito pelo número ao vivo.
+  metaValorInvestido: text("meta_valor_investido"),
+  metaImpressoes: text("meta_impressoes"),
+  metaLeadsCount: text("meta_leads_count"),
+  metaCustoPorLead: text("meta_custo_por_lead"),
   diagnosticoItems: text("diagnostico_items").array().notNull().default([]),
   // [{ base64, mimetype, filename, caption }] — 1 ou mais criativos em destaque.
   creatives: jsonb("creatives").notNull().default([]),

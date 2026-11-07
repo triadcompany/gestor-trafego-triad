@@ -39,6 +39,10 @@ export interface ReportDeckRow {
   meta_vendas: string | null;
   meta_roi: string | null;
   meta_seguidores: string | null;
+  meta_valor_investido: string | null;
+  meta_impressoes: string | null;
+  meta_leads_count: string | null;
+  meta_custo_por_lead: string | null;
   diagnostico_items: string[];
   creatives: ReportDeckCreative[];
   funil_items: ReportDeckFunilItem[];
@@ -56,6 +60,10 @@ function emptyDeck(clientId: string): ReportDeckRow {
     meta_vendas: null,
     meta_roi: null,
     meta_seguidores: null,
+    meta_valor_investido: null,
+    meta_impressoes: null,
+    meta_leads_count: null,
+    meta_custo_por_lead: null,
     diagnostico_items: [],
     creatives: [],
     funil_items: [
@@ -95,6 +103,10 @@ const _fetchReportDeck = createServerFn({ method: "GET" })
       meta_vendas: row.metaVendas,
       meta_roi: row.metaRoi,
       meta_seguidores: row.metaSeguidores,
+      meta_valor_investido: row.metaValorInvestido,
+      meta_impressoes: row.metaImpressoes,
+      meta_leads_count: row.metaLeadsCount,
+      meta_custo_por_lead: row.metaCustoPorLead,
       diagnostico_items: row.diagnosticoItems,
       creatives: row.creatives as ReportDeckCreative[],
       funil_items: row.funilItems as ReportDeckFunilItem[],
@@ -116,6 +128,10 @@ const upsertSchema = z.object({
   metaVendas: z.string().nullable().optional(),
   metaRoi: z.string().nullable().optional(),
   metaSeguidores: z.string().nullable().optional(),
+  metaValorInvestido: z.string().nullable().optional(),
+  metaImpressoes: z.string().nullable().optional(),
+  metaLeadsCount: z.string().nullable().optional(),
+  metaCustoPorLead: z.string().nullable().optional(),
   diagnosticoItems: z.array(z.string()).optional(),
   creatives: z.array(creativeSchema).optional(),
   funilItems: z.array(funilItemSchema).optional(),
@@ -138,6 +154,10 @@ const _upsertReportDeck = createServerFn({ method: "POST" })
       ...(data.metaVendas !== undefined ? { metaVendas: data.metaVendas } : {}),
       ...(data.metaRoi !== undefined ? { metaRoi: data.metaRoi } : {}),
       ...(data.metaSeguidores !== undefined ? { metaSeguidores: data.metaSeguidores } : {}),
+      ...(data.metaValorInvestido !== undefined ? { metaValorInvestido: data.metaValorInvestido } : {}),
+      ...(data.metaImpressoes !== undefined ? { metaImpressoes: data.metaImpressoes } : {}),
+      ...(data.metaLeadsCount !== undefined ? { metaLeadsCount: data.metaLeadsCount } : {}),
+      ...(data.metaCustoPorLead !== undefined ? { metaCustoPorLead: data.metaCustoPorLead } : {}),
       ...(data.diagnosticoItems !== undefined ? { diagnosticoItems: data.diagnosticoItems } : {}),
       ...(data.creatives !== undefined ? { creatives: data.creatives } : {}),
       ...(data.funilItems !== undefined ? { funilItems: data.funilItems } : {}),
