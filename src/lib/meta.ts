@@ -462,7 +462,7 @@ export interface MetaSyncResult {
   syncedAt: string;
 }
 
-function extractMetrics(actions?: Array<{ action_type: string; value: string }>): { leads: number; forms: number } {
+export function extractMetrics(actions?: Array<{ action_type: string; value: string }>): { leads: number; forms: number } {
   const find = (types: string[]) => {
     const a = actions?.find((a) => types.includes(a.action_type));
     return a ? parseInt(a.value, 10) : 0;
@@ -1157,6 +1157,100 @@ export async function fetchCampaignLifetimeStats(campaignId: string, token: stri
   const spend = parseFloat(row?.spend ?? "0");
   const { leads } = extractMetrics(row?.actions);
   return { spend, leads };
+}
+
+// ── Detalhamento de tráfego (idade, gênero, dia da semana, horário) ──────────
+// Pensado pro gestor achar onde melhorar a segmentação: idade/gênero vêm num
+// breakdown nativo da Meta (1 chamada); dia da semana ela não oferece pronto,
+// então deriva dos dados diários (time_increment=1) agrupados pelo dia da
+// semana real em Brasília; horário usa o breakdown nativo
+// hourly_stats_aggregated_by_advertiser_time_zone (já no fuso do anunciante).
+// objectId: act_123... (conta inteira) ou um id de campanha — o edge
+// /insights funciona igual nos dois.
+
+const WEEKDAY_LABELS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
+const GENDER_LABELS: Record<string, string> = { male: "Masculino", female: "Feminino", unknown: "Não informado" };
+
+export interface TrafficBreakdownRow {
+  label: string;
+  leads: number;
+  spend: number;
+}
+export interface TrafficInsights {
+  byAge: TrafficBreakdownRow[];
+  byGender: TrafficBreakdownRow[];
+  byWeekday: TrafficBreakdownRow[]; // sempre 7, índice = weekday (0=Dom)
+  byHour: TrafficBreakdownRow[]; // sempre 24, índice = hora
+}
+
+export async function fetchTrafficInsights(objectId: string, token: string, since: string, until: string): Promise<TrafficInsights> {
+  const timeRange = JSON.stringify({ since, until });
+
+  const ageGenderParams = new URLSearchParams({ breakdowns: "age,gender", fields: "spend,actions", time_range: timeRange, access_token: token });
+  const ageGenderJson = await fetchMetaJson<{
+    data?: Array<{ age?: string; gender?: string; spend?: string; actions?: Array<{ action_type: string; value: string }> }>;
+  }>(`${BASE_URL}/${objectId}/insights?${ageGenderParams}`);
+
+  const ageMap = new Map<string, TrafficBreakdownRow>();
+  const genderMap = new Map<string, TrafficBreakdownRow>();
+  for (const row of ageGenderJson.data ?? []) {
+    const { leads } = extractMetrics(row.actions);
+    const spend = parseFloat(row.spend ?? "0");
+    if (row.age) {
+      const cur = ageMap.get(row.age) ?? { label: row.age, leads: 0, spend: 0 };
+      ageMap.set(row.age, { label: row.age, leads: cur.leads + leads, spend: cur.spend + spend });
+    }
+    if (row.gender) {
+      const label = GENDER_LABELS[row.gender] ?? row.gender;
+      const cur = genderMap.get(row.gender) ?? { label, leads: 0, spend: 0 };
+      genderMap.set(row.gender, { label, leads: cur.leads + leads, spend: cur.spend + spend });
+    }
+  }
+
+  const dailyParams = new URLSearchParams({ time_increment: "1", fields: "spend,actions,date_start", time_range: timeRange, access_token: token });
+  const dailyJson = await fetchMetaJson<{
+    data?: Array<{ date_start?: string; spend?: string; actions?: Array<{ action_type: string; value: string }> }>;
+  }>(`${BASE_URL}/${objectId}/insights?${dailyParams}`);
+
+  const weekdayAgg: TrafficBreakdownRow[] = WEEKDAY_LABELS.map((label) => ({ label, leads: 0, spend: 0 }));
+  for (const row of dailyJson.data ?? []) {
+    if (!row.date_start) continue;
+    const [y, m, d] = row.date_start.split("-").map(Number);
+    if (!y || !m || !d) continue;
+    // Meio-dia UTC: evita que a conversão de fuso jogue a data pro dia
+    // anterior/seguinte perto da virada (date_start já vem em Y-M-D puro).
+    const wd = weekdayInBrasilia(new Date(Date.UTC(y, m - 1, d, 12)));
+    const { leads } = extractMetrics(row.actions);
+    weekdayAgg[wd].leads += leads;
+    weekdayAgg[wd].spend += parseFloat(row.spend ?? "0");
+  }
+
+  const hourParams = new URLSearchParams({
+    breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone",
+    fields: "spend,actions",
+    time_range: timeRange,
+    access_token: token,
+  });
+  const hourJson = await fetchMetaJson<{
+    data?: Array<{ hourly_stats_aggregated_by_advertiser_time_zone?: string; spend?: string; actions?: Array<{ action_type: string; value: string }> }>;
+  }>(`${BASE_URL}/${objectId}/insights?${hourParams}`);
+
+  const hourAgg: TrafficBreakdownRow[] = Array.from({ length: 24 }, (_, h) => ({ label: `${String(h).padStart(2, "0")}h`, leads: 0, spend: 0 }));
+  for (const row of hourJson.data ?? []) {
+    const raw = row.hourly_stats_aggregated_by_advertiser_time_zone;
+    const hour = raw ? parseInt(raw.slice(0, 2), 10) : NaN;
+    if (Number.isNaN(hour) || hour < 0 || hour > 23) continue;
+    const { leads } = extractMetrics(row.actions);
+    hourAgg[hour].leads += leads;
+    hourAgg[hour].spend += parseFloat(row.spend ?? "0");
+  }
+
+  return {
+    byAge: Array.from(ageMap.values()).sort((a, b) => b.leads - a.leads),
+    byGender: Array.from(genderMap.values()).sort((a, b) => b.leads - a.leads),
+    byWeekday: weekdayAgg,
+    byHour: hourAgg,
+  };
 }
 
 // ── Ad sets & Ads ──────────────────────────────────────────────

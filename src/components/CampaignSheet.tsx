@@ -31,6 +31,7 @@ import {
   AlertTriangle,
   RefreshCw,
   MessageCircle,
+  TrendingUp,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -46,6 +47,7 @@ import {
 } from "@/lib/meta";
 import { TargetingEditor, formatWhatsappNumber } from "@/components/TargetingEditor";
 import { AdCreativeEditor } from "@/components/AdCreativeEditor";
+import { TrafficInsightsDialog } from "@/components/TrafficInsightsDialog";
 import { brl } from "@/lib/mock-data";
 import { statusTextClass } from "@/lib/status-colors";
 
@@ -354,6 +356,18 @@ function CampaignSection({
         <MetricCell label="CCI" value={campaign.cpl !== null ? brl(campaign.cpl) : "—"} valueClass={cplColor} />
         <MetricCell label="Impressões" value={campaign.impressions > 0 ? campaign.impressions.toLocaleString("pt-BR") : "—"} />
       </div>
+
+      <TrafficInsightsDialog
+        objectId={campaign.id}
+        clientId={clientId}
+        label={campaign.name}
+        trigger={
+          <Button variant="outline" size="sm" className="gap-2 w-fit">
+            <TrendingUp className="h-3.5 w-3.5" />
+            Detalhamento de tráfego
+          </Button>
+        }
+      />
     </div>
   );
 }

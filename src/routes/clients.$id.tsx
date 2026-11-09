@@ -15,11 +15,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 import { sendActiveCampaignsList } from "@/lib/whatsapp-messages";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
 import { ClientReportDialog } from "@/components/ClientReportDialog";
+import { TrafficInsightsDialog } from "@/components/TrafficInsightsDialog";
 import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import {
@@ -995,6 +996,17 @@ function ClientDetail() {
                 meta_ad_account_id: client.meta_ad_account_id,
                 cpl_max: client.cpl_max,
               }}
+            />
+            <TrafficInsightsDialog
+              objectId={client.meta_ad_account_id}
+              clientId={client.id}
+              label={client.name}
+              trigger={
+                <Button size="sm" variant="outline" className="gap-2">
+                  <TrendingUp className="h-4 w-4" />
+                  Detalhamento
+                </Button>
+              }
             />
             {isTriad && (
               <Button asChild size="sm" variant="outline" className="gap-2">
