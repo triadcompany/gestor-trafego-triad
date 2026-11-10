@@ -41,8 +41,26 @@ function rangeForPreset(preset: Preset): { since: string; until: string } {
 // Barra de magnitude — 1 hue só (a cor não codifica identidade aqui, todo
 // mundo mede a MESMA coisa: leads), proporcional ao maior valor do grupo.
 // Rótulo direto no lugar de legenda/tooltip, já que cada linha é seu próprio rótulo.
-function BarRow({ label, leads, maxLeads, highlight }: { label: string; leads: number; maxLeads: number; highlight: boolean }) {
+// Mostra também o custo por lead daquela linha — é o número que diz se vale
+// mexer na segmentação, não só quem trouxe mais volume.
+function BarRow({
+  label,
+  leads,
+  spend,
+  maxLeads,
+  isTopVolume,
+  isBestCpl,
+}: {
+  label: string;
+  leads: number;
+  spend: number;
+  maxLeads: number;
+  isTopVolume: boolean;
+  isBestCpl: boolean;
+}) {
   const pct = maxLeads > 0 ? Math.max(leads > 0 ? 4 : 0, (leads / maxLeads) * 100) : 0;
+  const highlight = isTopVolume || isBestCpl;
+  const cpl = leads > 0 && spend > 0 ? spend / leads : null;
   return (
     <div className="flex items-center gap-3">
       <span className={`w-16 shrink-0 text-xs text-right ${highlight ? "text-foreground font-semibold" : "text-muted-foreground"}`}>{label}</span>
@@ -52,8 +70,9 @@ function BarRow({ label, leads, maxLeads, highlight }: { label: string; leads: n
           style={{ width: `${pct}%` }}
         />
       </div>
-      <span className={`w-14 shrink-0 text-xs tabular-nums ${highlight ? "text-foreground font-semibold" : "text-muted-foreground"}`}>
-        {leads} lead{leads === 1 ? "" : "s"}
+      <span className={`w-36 shrink-0 text-xs tabular-nums ${highlight ? "text-foreground font-semibold" : "text-muted-foreground"}`}>
+        {leads} lead{leads === 1 ? "" : "s"}{cpl !== null ? ` · ${brl(cpl)}/lead` : ""}
+        {isBestCpl && <span className="ml-1" title="Melhor custo por lead">💰</span>}
       </span>
     </div>
   );
@@ -68,10 +87,17 @@ function Insight({ children }: { children: React.ReactNode }) {
   );
 }
 
-function bestOf(rows: TrafficBreakdownRow[]): TrafficBreakdownRow | null {
+function bestVolumeOf(rows: TrafficBreakdownRow[]): TrafficBreakdownRow | null {
   const totalLeads = rows.reduce((s, r) => s + r.leads, 0);
   if (totalLeads === 0) return null;
   return rows.reduce((best, r) => (r.leads > best.leads ? r : best), rows[0]);
+}
+
+// Menor custo por lead — só entre quem teve lead (sem isso, CPL não existe).
+function bestCplOf(rows: TrafficBreakdownRow[]): TrafficBreakdownRow | null {
+  const withLeads = rows.filter((r) => r.leads > 0 && r.spend > 0);
+  if (withLeads.length === 0) return null;
+  return withLeads.reduce((best, r) => (r.spend / r.leads < best.spend / best.leads ? r : best), withLeads[0]);
 }
 
 function BreakdownSection({
@@ -86,7 +112,9 @@ function BreakdownSection({
   sortByLeads?: boolean;
 }) {
   const totalLeads = rows.reduce((s, r) => s + r.leads, 0);
-  const best = bestOf(rows);
+  const topVolume = bestVolumeOf(rows);
+  const bestCpl = bestCplOf(rows);
+  const sameRow = !!topVolume && !!bestCpl && topVolume.label === bestCpl.label;
   const maxLeads = Math.max(1, ...rows.map((r) => r.leads));
   const display = sortByLeads ? [...rows].sort((a, b) => b.leads - a.leads) : rows;
 
@@ -97,15 +125,30 @@ function BreakdownSection({
         <p className="text-xs text-muted-foreground py-2">Sem leads suficientes no período pra esse detalhamento.</p>
       ) : (
         <>
-          {best && (
+          {topVolume && (
             <Insight>
-              {insightPrefix} <strong>{best.label}</strong>, com {best.leads} lead{best.leads === 1 ? "" : "s"}
-              {best.spend > 0 ? ` (${brl(best.spend / Math.max(1, best.leads))}/lead)` : ""}.
+              {insightPrefix} <strong>{topVolume.label}</strong>, com {topVolume.leads} lead{topVolume.leads === 1 ? "" : "s"}
+              {topVolume.spend > 0 ? ` (${brl(topVolume.spend / Math.max(1, topVolume.leads))}/lead)` : ""}
+              {sameRow ? " — também o melhor custo por lead." : "."}
+            </Insight>
+          )}
+          {bestCpl && !sameRow && (
+            <Insight>
+              💰 Melhor custo por lead: <strong>{bestCpl.label}</strong>, {brl(bestCpl.spend / bestCpl.leads)}/lead ({bestCpl.leads} lead{bestCpl.leads === 1 ? "" : "s"}).
+              {" "}Vale considerar puxar verba pra esse grupo.
             </Insight>
           )}
           <div className="space-y-1.5">
             {display.map((r) => (
-              <BarRow key={r.label} label={r.label} leads={r.leads} maxLeads={maxLeads} highlight={best?.label === r.label} />
+              <BarRow
+                key={r.label}
+                label={r.label}
+                leads={r.leads}
+                spend={r.spend}
+                maxLeads={maxLeads}
+                isTopVolume={topVolume?.label === r.label}
+                isBestCpl={bestCpl?.label === r.label}
+              />
             ))}
           </div>
         </>
