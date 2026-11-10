@@ -16,7 +16,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2, TrendingUp } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip as ChartTooltip, ResponsiveContainer, Cell, LabelList } from "recharts";
-import { getMetaToken, fetchTrafficInsights, type TrafficBreakdownRow } from "@/lib/meta";
+import { getMetaToken, fetchTrafficInsights, fetchCampaigns, type TrafficBreakdownRow } from "@/lib/meta";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 import { brl } from "@/lib/mock-data";
 
@@ -126,6 +126,93 @@ function bestCplOf(rows: TrafficBreakdownRow[]): TrafficBreakdownRow | null {
   return withLeads.reduce((best, r) => (r.spend / r.leads < best.spend / best.leads ? r : best), withLeads[0]);
 }
 
+// Objetivo da campanha não é um breakdown da Meta (é um atributo da própria
+// campanha, não do impression/action) — por isso agrupa a partir da lista de
+// campanhas do período (já buscada pro resto do painel), em vez de mais uma
+// chamada à API.
+const OBJECTIVE_LABELS: Record<string, string> = {
+  OUTCOME_ENGAGEMENT: "Engajamento",
+  OUTCOME_SALES: "Vendas",
+  OUTCOME_LEADS: "Cadastros (Leads Ads)",
+  OUTCOME_TRAFFIC: "Tráfego",
+  OUTCOME_AWARENESS: "Reconhecimento",
+  OUTCOME_APP_PROMOTION: "Promoção de app",
+};
+
+interface ObjectiveRow extends TrafficBreakdownRow {
+  campaigns: number;
+}
+
+function groupByObjective(campaigns: Array<{ objective: string; spend: number; leads: number; forms: number }>): ObjectiveRow[] {
+  const map = new Map<string, ObjectiveRow>();
+  for (const c of campaigns) {
+    const label = OBJECTIVE_LABELS[c.objective] ?? c.objective;
+    const cur = map.get(label) ?? { label, leads: 0, spend: 0, campaigns: 0 };
+    map.set(label, {
+      label,
+      leads: cur.leads + c.leads + c.forms,
+      spend: cur.spend + c.spend,
+      campaigns: cur.campaigns + 1,
+    });
+  }
+  return Array.from(map.values()).sort((a, b) => b.leads - a.leads);
+}
+
+function ObjectiveSection({ rows }: { rows: ObjectiveRow[] }) {
+  const totalLeads = rows.reduce((s, r) => s + r.leads, 0);
+  const topVolume = bestVolumeOf(rows) as ObjectiveRow | null;
+  const bestCpl = bestCplOf(rows) as ObjectiveRow | null;
+  const sameRow = !!topVolume && !!bestCpl && topVolume.label === bestCpl.label;
+  const worstCpl = rows.filter((r) => r.leads > 0 && r.spend > 0).reduce<ObjectiveRow | null>(
+    (worst, r) => (!worst || r.spend / r.leads > worst.spend / worst.leads ? r : worst),
+    null
+  );
+  const savingsPct =
+    bestCpl && worstCpl && worstCpl.label !== bestCpl.label
+      ? Math.round((1 - (bestCpl.spend / bestCpl.leads) / (worstCpl.spend / worstCpl.leads)) * 100)
+      : null;
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="space-y-2.5">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Objetivo da campanha</h3>
+      {totalLeads === 0 ? (
+        <p className="text-xs text-muted-foreground py-2">Sem leads suficientes no período pra esse detalhamento.</p>
+      ) : (
+        <>
+          <div className="space-y-1">
+            {rows.map((r) => (
+              <p key={r.label} className="text-xs text-muted-foreground">
+                <span className="text-foreground font-medium">{r.label}</span> — {r.campaigns} campanha{r.campaigns === 1 ? "" : "s"} · {r.leads} lead{r.leads === 1 ? "" : "s"}
+                {r.leads > 0 && r.spend > 0 ? ` · ${brl(r.spend / r.leads)}/lead` : ""}
+              </p>
+            ))}
+          </div>
+          {bestCpl && !sameRow && savingsPct !== null && savingsPct > 0 && (
+            <Insight>
+              💰 <strong>{bestCpl.label}</strong> tem o custo por lead mais barato ({brl(bestCpl.spend / bestCpl.leads)}/lead, {savingsPct}% mais
+              barato que {worstCpl!.label}). Vale considerar concentrar mais campanhas nesse objetivo.
+            </Insight>
+          )}
+          {sameRow && topVolume && (
+            <Insight>
+              <strong>{topVolume.label}</strong> é o objetivo com mais leads e também o melhor custo por lead ({brl(topVolume.spend / topVolume.leads)}/lead).
+            </Insight>
+          )}
+          <BreakdownChart rows={rows} topVolumeLabel={topVolume?.label ?? null} bestCplLabel={bestCpl?.label ?? null} />
+          {!sameRow && bestCpl && topVolume && (
+            <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[var(--chart-1)]" /> Mais leads</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[var(--chart-2)]" /> Melhor custo/lead</span>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
 function BreakdownSection({
   title,
   rows,
@@ -201,6 +288,21 @@ export function TrafficInsightsDialog({
     enabled: open,
   });
 
+  // Agrupamento por objetivo só faz sentido com mais de uma campanha —
+  // nível de conta (act_...), não dentro de 1 campanha específica (ela já
+  // tem 1 objetivo só, não tem o que comparar).
+  const isAccountLevel = objectId.startsWith("act_");
+  const { data: campaigns } = useQuery({
+    queryKey: ["traffic-insights-campaigns", objectId, range.since, range.until],
+    queryFn: async () => {
+      const token = await getMetaToken(clientId);
+      if (!token) return [];
+      return fetchCampaigns(objectId, token, "today", range);
+    },
+    enabled: open && isAccountLevel,
+  });
+  const objectiveRows = campaigns ? groupByObjective(campaigns) : [];
+
   // Período do dia em 4 janelas, mais fácil de ler que 24 barras soltas.
   const dayParts = data
     ? [
@@ -237,6 +339,7 @@ export function TrafficInsightsDialog({
               <BreakdownSection title="Gênero" rows={data.byGender} insightPrefix="O público que mais gerou lead foi" sortByLeads />
               <BreakdownSection title="Dia da semana" rows={data.byWeekday} insightPrefix="O dia da semana que mais gerou lead foi" />
               <BreakdownSection title="Horário do dia" rows={dayParts} insightPrefix="O período do dia que mais gerou lead foi" />
+              {isAccountLevel && <ObjectiveSection rows={objectiveRows} />}
             </>
           ) : null}
         </div>
