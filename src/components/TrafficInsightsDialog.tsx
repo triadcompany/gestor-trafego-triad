@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Loader2, TrendingUp } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip as ChartTooltip, ResponsiveContainer, Cell, LabelList } from "recharts";
 import { getMetaToken, fetchTrafficInsights, type TrafficBreakdownRow } from "@/lib/meta";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 import { brl } from "@/lib/mock-data";
@@ -38,42 +39,67 @@ function rangeForPreset(preset: Preset): { since: string; until: string } {
   return { since: daysAgoInBrasilia(Number(preset)), until: today };
 }
 
-// Barra de magnitude — 1 hue só (a cor não codifica identidade aqui, todo
-// mundo mede a MESMA coisa: leads), proporcional ao maior valor do grupo.
-// Rótulo direto no lugar de legenda/tooltip, já que cada linha é seu próprio rótulo.
-// Mostra também o custo por lead daquela linha — é o número que diz se vale
-// mexer na segmentação, não só quem trouxe mais volume.
-function BarRow({
-  label,
-  leads,
-  spend,
-  maxLeads,
-  isTopVolume,
-  isBestCpl,
-}: {
-  label: string;
-  leads: number;
-  spend: number;
-  maxLeads: number;
-  isTopVolume: boolean;
-  isBestCpl: boolean;
-}) {
-  const pct = maxLeads > 0 ? Math.max(leads > 0 ? 4 : 0, (leads / maxLeads) * 100) : 0;
-  const highlight = isTopVolume || isBestCpl;
-  const cpl = leads > 0 && spend > 0 ? spend / leads : null;
+// Gráfico de barras de magnitude — 1 hue só pro volume (leads), sem eixo
+// numérico (os rótulos diretos já mostram o valor — ver anti-pattern de
+// eixo redundante). Custo por lead entra pela cor (verde = melhor custo) e
+// pelo tooltip no hover, nunca como um 2º eixo — eixo duplo é sempre errado.
+function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: TrafficBreakdownRow & { isBestCpl?: boolean } }> }) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0].payload;
+  const cpl = row.leads > 0 && row.spend > 0 ? row.spend / row.leads : null;
   return (
-    <div className="flex items-center gap-3">
-      <span className={`w-16 shrink-0 text-xs text-right ${highlight ? "text-foreground font-semibold" : "text-muted-foreground"}`}>{label}</span>
-      <div className="flex-1 h-5 rounded bg-muted/40 overflow-hidden">
-        <div
-          className={`h-full rounded ${highlight ? "bg-[var(--chart-1)]" : "bg-[var(--chart-1)]/50"}`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-      <span className={`w-36 shrink-0 text-xs tabular-nums ${highlight ? "text-foreground font-semibold" : "text-muted-foreground"}`}>
-        {leads} lead{leads === 1 ? "" : "s"}{cpl !== null ? ` · ${brl(cpl)}/lead` : ""}
-        {isBestCpl && <span className="ml-1" title="Melhor custo por lead">💰</span>}
-      </span>
+    <div className="rounded-lg border border-border bg-popover px-3 py-2 text-xs shadow-sm">
+      <p className="font-semibold text-foreground mb-1">{row.label}</p>
+      <p className="text-muted-foreground">{row.leads} lead{row.leads === 1 ? "" : "s"}</p>
+      {cpl !== null && <p className="text-muted-foreground">{brl(cpl)} por lead</p>}
+      {row.spend > 0 && <p className="text-muted-foreground">{brl(row.spend)} investido</p>}
+    </div>
+  );
+}
+
+function BreakdownChart({
+  rows,
+  topVolumeLabel,
+  bestCplLabel,
+}: {
+  rows: TrafficBreakdownRow[];
+  topVolumeLabel: string | null;
+  bestCplLabel: string | null;
+}) {
+  const rowHeight = 30;
+  return (
+    <div style={{ height: Math.max(60, rows.length * rowHeight) }}>
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart data={rows} layout="vertical" margin={{ top: 0, right: 36, left: 0, bottom: 0 }} barCategoryGap={6}>
+          <XAxis type="number" hide />
+          <YAxis
+            type="category"
+            dataKey="label"
+            width={92}
+            tickLine={false}
+            axisLine={false}
+            fontSize={11}
+            stroke="var(--muted-foreground)"
+          />
+          <ChartTooltip content={<CustomTooltip />} cursor={{ fill: "var(--muted)", opacity: 0.3 }} />
+          <Bar dataKey="leads" radius={4} maxBarSize={18}>
+            <LabelList
+              dataKey="leads"
+              position="right"
+              fontSize={11}
+              fill="var(--muted-foreground)"
+              formatter={(v: number) => (v > 0 ? `${v}` : "")}
+            />
+            {rows.map((r) => {
+              const isBestCpl = r.label === bestCplLabel && bestCplLabel !== topVolumeLabel;
+              const isTopVolume = r.label === topVolumeLabel;
+              const fill = isBestCpl ? "var(--chart-2)" : isTopVolume ? "var(--chart-1)" : "var(--chart-1)";
+              const opacity = isBestCpl || isTopVolume ? 1 : 0.45;
+              return <Cell key={r.label} fill={fill} fillOpacity={opacity} />;
+            })}
+          </Bar>
+        </BarChart>
+      </ResponsiveContainer>
     </div>
   );
 }
@@ -115,7 +141,6 @@ function BreakdownSection({
   const topVolume = bestVolumeOf(rows);
   const bestCpl = bestCplOf(rows);
   const sameRow = !!topVolume && !!bestCpl && topVolume.label === bestCpl.label;
-  const maxLeads = Math.max(1, ...rows.map((r) => r.leads));
   const display = sortByLeads ? [...rows].sort((a, b) => b.leads - a.leads) : rows;
 
   return (
@@ -138,19 +163,13 @@ function BreakdownSection({
               {" "}Vale considerar puxar verba pra esse grupo.
             </Insight>
           )}
-          <div className="space-y-1.5">
-            {display.map((r) => (
-              <BarRow
-                key={r.label}
-                label={r.label}
-                leads={r.leads}
-                spend={r.spend}
-                maxLeads={maxLeads}
-                isTopVolume={topVolume?.label === r.label}
-                isBestCpl={bestCpl?.label === r.label}
-              />
-            ))}
-          </div>
+          <BreakdownChart rows={display} topVolumeLabel={topVolume?.label ?? null} bestCplLabel={bestCpl?.label ?? null} />
+          {!sameRow && bestCpl && topVolume && (
+            <div className="flex items-center gap-4 text-[11px] text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[var(--chart-1)]" /> Mais leads</span>
+              <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-[var(--chart-2)]" /> Melhor custo/lead</span>
+            </div>
+          )}
         </>
       )}
     </div>
@@ -195,7 +214,7 @@ export function TrafficInsightsDialog({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>{trigger}</DialogTrigger>
-      <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
+      <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Detalhamento de tráfego — {label}</DialogTitle>
         </DialogHeader>
