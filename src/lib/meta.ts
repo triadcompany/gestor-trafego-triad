@@ -2352,6 +2352,90 @@ async function postMeta(
   );
 }
 
+// ── Batch (várias escritas numa chamada HTTP só) ─────────────────────────────
+// Usado em fluxos que criam vários objetos dependentes em sequência (duplicar
+// campanha: campanha→conjunto→anúncio) — hoje cada criação é uma chamada
+// espaçada em ~33s por causa do rate limit (ver comentário em
+// WRITE_SPACING_MS); um batch processa todas como UMA chamada à Meta, então
+// só espera UM slot de escrita pro grupo inteiro, não um por objeto.
+//
+// Sub-requests referenciam o resultado de um anterior no MESMO batch via
+// "{result=<name>:$.<jsonpath>}" (sintaxe documentada da Meta) — assim
+// "criar conjunto" já manda campaign_id apontando pro id que "criar
+// campanha" ainda nem tinha retornado de verdade. A ordem no array importa:
+// uma dependência sempre precisa vir DEPOIS do que referencia.
+//
+// Propositalmente SEM retry automático (maxAttempts efetivo = 1): se o
+// batch falhar depois de já ter criado parte dos objetos (ex: campanha
+// criada, conjunto rejeitado), tentar de novo a chamada inteira recriaria a
+// campanha duplicada. Mesmo risco que já existia no fluxo sequencial (se o
+// conjunto falhasse, a campanha ficava órfã igual) — só não piora chamando
+// de novo sozinho. Erro sobe pro chamador, que decide se tenta de novo.
+export interface BatchSubRequest {
+  name?: string;
+  method: "GET" | "POST" | "DELETE";
+  relative_url: string;
+  body?: Record<string, string>;
+}
+
+async function postMetaBatch(subRequests: BatchSubRequest[], token: string, writeScope?: string): Promise<Array<Record<string, unknown>>> {
+  await waitForWriteSlot(writeScope);
+
+  // Não dá pra usar URLSearchParams aqui: ela faria percent-encode do
+  // próprio placeholder "{result=nome:$.id}" (vira %7Bresult%3D...%7D), e a
+  // Meta só reconhece a sintaxe de dependência literal, sem encoding. Só
+  // codifica o valor quando NÃO for exatamente um placeholder desses.
+  const encodeBatchBody = (params: Record<string, string>): string =>
+    Object.entries(params)
+      .map(([k, v]) => {
+        const isPlaceholder = /^\{result=[^}]+\}$/.test(v);
+        return `${encodeURIComponent(k)}=${isPlaceholder ? v : encodeURIComponent(v)}`;
+      })
+      .join("&");
+
+  const batchPayload = subRequests.map((r) => ({
+    method: r.method,
+    relative_url: r.relative_url,
+    ...(r.body ? { body: encodeBatchBody(r.body) } : {}),
+    ...(r.name ? { name: r.name } : {}),
+  }));
+
+  const form = new URLSearchParams();
+  form.set("access_token", token);
+  form.set("batch", JSON.stringify(batchPayload));
+
+  const res = await fetch(`${BASE_URL}/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: form,
+  });
+  const outer = (await res.json()) as Array<{ code: number; body: string }> | { error?: MetaApiError };
+
+  if (!Array.isArray(outer)) {
+    const err = outer.error;
+    if (err) {
+      await recordMetaApiError("batch", res.status, err);
+      throw new MetaApiCallError(formatMetaError(err), err.code);
+    }
+    throw new Error("Resposta inesperada da Meta pro batch (formato não é lista).");
+  }
+
+  return outer.map((sub, i) => {
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(sub.body ?? "{}") as Record<string, unknown>;
+    } catch {
+      throw new Error(`Resposta inválida da Meta pra "${subRequests[i].name ?? subRequests[i].relative_url}".`);
+    }
+    if (parsed.error) {
+      const err = parsed.error as MetaApiError;
+      const label = subRequests[i].name ?? subRequests[i].relative_url;
+      throw new MetaApiCallError(`[${label}] ${formatMetaError(err)}`, err.code);
+    }
+    return parsed;
+  });
+}
+
 // ── Diagnostics ───────────────────────────────────────────────
 
 export type PermissionStatus = "granted" | "declined" | "missing";
@@ -2650,31 +2734,35 @@ export async function duplicateCampaign(
     }
   }
 
-  // 4. Cria a nova campanha com daily_budget (CBO) — conjuntos não precisam de orçamento próprio
-  // Campanha CBO sem bid_strategy explícita — ad sets herdam budget sem exigir is_adset_budget_sharing_enabled
-  const newCampaign = (await postMeta(
-    `${adAccountId}/campaigns`,
+  // 4. Monta a escrita da campanha nova como o 1º passo de um batch — só
+  // dispara no fim (depois de montar conjuntos e anúncios também), pra
+  // criar tudo numa chamada HTTP só em vez de 1 escrita espaçada por objeto
+  // (ver postMetaBatch). "camp" é o nome que os passos seguintes referenciam
+  // via {result=camp:$.id} pra pegar o id antes mesmo da Meta responder de
+  // verdade — a própria Meta resolve essa referência na hora de processar.
+  const batch: BatchSubRequest[] = [
     {
-      name: newName,
-      objective,
-      status: "PAUSED",
-      special_ad_categories: "[]",
-      daily_budget: String(campaignDailyBudget),
-      bid_strategy: "LOWEST_COST_WITHOUT_CAP",
-      access_token: token,
+      name: "camp",
+      method: "POST",
+      relative_url: `${adAccountId}/campaigns`,
+      body: {
+        name: newName,
+        objective,
+        status: "PAUSED",
+        special_ad_categories: "[]",
+        daily_budget: String(campaignDailyBudget),
+        bid_strategy: "LOWEST_COST_WITHOUT_CAP",
+      },
     },
-    adAccountId
-  )) as { id: string };
+  ];
 
-  const newCampaignId = newCampaign.id;
-
-  // 5. Cria cada conjunto do zero no modo CBO:
+  // 5. Monta cada conjunto do zero no modo CBO (mesmas regras de sempre):
   //    - Sem daily_budget próprio (herda da campanha)
   //    - Sem is_adset_budget_sharing_enabled (não exigido em CBO)
   //    - Com bid_amount padrão de R$15 para satisfazer qualquer exigência de lance
   for (let i = 0; i < adSets.length; i++) {
     const adSet = adSets[i];
-    onProgress?.(`Criando conjunto ${i + 1}/${adSets.length}: ${adSet.name}...`);
+    onProgress?.(`Preparando conjunto ${i + 1}/${adSets.length}: ${adSet.name}...`);
 
     // ── Corrige targeting ──────────────────────────────────────
     const targeting = adSet.targeting ?? { geo_locations: { countries: ["BR"] } };
@@ -2706,18 +2794,37 @@ export async function duplicateCampaign(
 
     const adSetParams: Record<string, string> = {
       name: effectiveAdSetName,
-      campaign_id: newCampaignId,
+      // Referencia o id da campanha pelo resultado do passo "camp" no MESMO
+      // batch — ver comentário acima de postMetaBatch.
+      campaign_id: "{result=camp:$.id}",
       billing_event: billingEvent,
       optimization_goal: optimizationGoal,
       targeting: JSON.stringify(targeting),
       // Ativo por padrão — a campanha nova é criada PAUSED (trava de segurança única);
       // ativando só a campanha, conjunto e anúncio já sobem juntos.
       status: "ACTIVE",
-      access_token: token,
     };
 
     if (effectiveDestinationType) adSetParams.destination_type = effectiveDestinationType;
     if (adSet.instagram_actor_id) adSetParams.instagram_actor_id = adSet.instagram_actor_id;
+
+    // Busca os anúncios do conjunto ORIGINAL de uma vez só, já com o creative
+    // completo — essa única leitura cobre 3 necessidades que antes eram 3
+    // chamadas separadas: a lista de anúncios pra duplicar, o creative_id de
+    // cada um (evita um GET extra por anúncio), e o object_story_spec do
+    // primeiro anúncio pra extrair o número de WhatsApp quando precisa
+    // (mesma extração que fetchWhatsappNumberFromAdSet fazia numa chamada à
+    // parte).
+    const adsRes = await spacedFetch(
+      `${BASE_URL}/${adSet.id}/ads?fields=id,name,creative{id,object_story_spec}&limit=50&access_token=${encodeURIComponent(token)}`,
+      adAccountId
+    );
+    const adsJson = (await adsRes.json()) as {
+      data?: Array<{ id: string; name: string; creative?: { id: string; object_story_spec?: { link_data?: { link?: string; call_to_action?: { value?: { whatsapp_number?: string } } } } } }>;
+      error?: MetaApiError;
+    };
+    if (adsJson.error) throw new Error(adsJson.error.message);
+    const ads = adsJson.data ?? [];
 
     // whatsapp_phone_number é obrigatório no promoted_object para destino WHATSAPP (error 100.2446885).
     // Prioridade: promoted_object original → cadastro do cliente → criativo do primeiro anúncio.
@@ -2731,8 +2838,12 @@ export async function duplicateCampaign(
       if (adSet.promoted_object?.whatsapp_phone_number) po.whatsapp_phone_number = adSet.promoted_object.whatsapp_phone_number;
 
       if (effectiveDestinationType === "WHATSAPP" && !po.whatsapp_phone_number) {
-        // Tenta extrair do criativo do primeiro anúncio do conjunto original
-        const waFromCreative = await fetchWhatsappNumberFromAdSet(adSet.id, token, adAccountId);
+        // Mesma extração de fetchWhatsappNumberFromAdSet, mas a partir do creative
+        // que já veio junto na leitura acima (caminho 1: CTA; caminho 2: link wa.me).
+        const linkData = ads[0]?.creative?.object_story_spec?.link_data;
+        const ctaNum = linkData?.call_to_action?.value?.whatsapp_number;
+        const waMatch = (linkData?.link ?? "").match(/wa\.me\/(\d+)/);
+        const waFromCreative = ctaNum ? `+${ctaNum.replace(/\D/g, "")}` : waMatch ? `+${waMatch[1]}` : null;
         const resolved = whatsappNumber ?? waFromCreative;
         if (resolved) po.whatsapp_phone_number = resolved;
       }
@@ -2747,61 +2858,54 @@ export async function duplicateCampaign(
       );
     }
 
-    let newAdSetRes: { id: string };
-    try {
-      newAdSetRes = (await postMeta(`${adAccountId}/adsets`, adSetParams, adAccountId)) as { id: string };
-    } catch (err) {
-      const baseMsg = err instanceof Error ? err.message : String(err);
-      throw new Error(
-        `Falha ao duplicar o conjunto "${adSet.name}" (meta=CONVERSATIONS, destino=${effectiveDestinationType || "—"}): ${baseMsg}`
-      );
-    }
-    const newAdSetId = newAdSetRes.id;
-
-    // Busca anúncios do conjunto original
-    const adsRes = await spacedFetch(
-      `${BASE_URL}/${adSet.id}/ads?fields=id,name&limit=50&access_token=${encodeURIComponent(token)}`,
-      adAccountId
-    );
-    const adsJson = (await adsRes.json()) as {
-      data?: Array<{ id: string; name: string }>;
-      error?: MetaApiError;
-    };
-    if (adsJson.error) throw new Error(adsJson.error.message);
-    const ads = adsJson.data ?? [];
+    const adSetStepName = `adset${i}`;
+    batch.push({ name: adSetStepName, method: "POST", relative_url: `${adAccountId}/adsets`, body: adSetParams });
 
     for (let j = 0; j < ads.length; j++) {
       const ad = ads[j];
-      onProgress?.(`Copiando anúncio ${j + 1}/${ads.length} (conjunto ${i + 1})...`);
+      onProgress?.(`Preparando anúncio ${j + 1}/${ads.length} (conjunto ${i + 1})...`);
 
-      // Busca o creative_id do anúncio original (evita /copies que exige permissão extra)
-      const adDetailRes = await spacedFetch(
-        `${BASE_URL}/${ad.id}?fields=creative&access_token=${encodeURIComponent(token)}`,
-        adAccountId
-      );
-      const adDetailJson = (await adDetailRes.json()) as {
-        creative?: { id: string };
-        error?: MetaApiError;
-      };
-      if (adDetailJson.error) throw new Error(formatMetaError(adDetailJson.error));
-      const creativeId = adDetailJson.creative?.id;
+      const creativeId = ad.creative?.id;
       if (!creativeId) throw new Error(`Criativo não encontrado para o anúncio "${ad.name}"`);
 
       const effectiveAdName = applyCustomNames && ads.length === 1 && adName ? adName : ad.name;
 
-      await postMeta(
-        `${adAccountId}/ads`,
-        {
+      batch.push({
+        name: `ad${i}_${j}`,
+        method: "POST",
+        relative_url: `${adAccountId}/ads`,
+        body: {
           name: effectiveAdName,
-          adset_id: newAdSetId,
+          // Referencia o id do conjunto criado acima no mesmo batch.
+          adset_id: `{result=${adSetStepName}:$.id}`,
           creative: JSON.stringify({ creative_id: creativeId }),
           status: "ACTIVE",
-          access_token: token,
         },
-        adAccountId
-      );
+      });
     }
   }
+
+  // A Meta limita batch a 50 sub-requests por chamada. Campanha + N conjuntos
+  // + M anúncios raramente chega lá, mas se chegar é melhor falhar com uma
+  // mensagem clara ANTES de gastar o slot de escrita do que deixar a Meta
+  // rejeitar a chamada inteira com um erro genérico.
+  if (batch.length > 50) {
+    throw new Error(
+      `Essa duplicação precisa de ${batch.length} operações (campanha + conjuntos + anúncios), acima do limite de 50 por chamada da Meta. Duplique em partes menores.`
+    );
+  }
+
+  onProgress?.(`Criando campanha + ${adSets.length} conjunto(s) + anúncio(s) numa chamada só...`);
+  let results: Array<Record<string, unknown>>;
+  try {
+    results = await postMetaBatch(batch, token, adAccountId);
+  } catch (err) {
+    const baseMsg = err instanceof Error ? err.message : String(err);
+    throw new Error(`Falha ao duplicar a campanha: ${baseMsg}`);
+  }
+
+  const newCampaignId = results[0]?.id as string | undefined;
+  if (!newCampaignId) throw new Error("A Meta não retornou o id da campanha criada.");
 
   return newCampaignId;
 }
