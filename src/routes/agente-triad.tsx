@@ -24,6 +24,18 @@ export const Route = createFileRoute("/agente-triad")({
     if (!isTriadCompanyOrg(orgId)) throw redirect({ to: "/dashboard" });
   },
   component: AgenteTriadPage,
+  // Mostra o erro real (o padrão do app esconde em produção) — rota experimental.
+  errorComponent: ({ error, reset }) => (
+    <AppShell>
+      <div className="mx-auto max-w-2xl space-y-3 p-6">
+        <h1 className="text-lg font-semibold text-destructive">Erro no Agente Triad</h1>
+        <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-3 font-mono text-xs">
+          {String((error as Error)?.stack || (error as Error)?.message || error)}
+        </pre>
+        <Button onClick={reset}>Tentar de novo</Button>
+      </div>
+    </AppShell>
+  ),
 });
 
 type Item =
@@ -67,7 +79,10 @@ function AgenteTriadPage() {
     return () => clearInterval(t);
   }, []);
 
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [items]);
+  useEffect(() => {
+    // chaves de propósito: o efeito não pode devolver valor (React chamaria como cleanup)
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [items]);
 
   const say = (t: string) => {
     if (!speak || !t) return;
