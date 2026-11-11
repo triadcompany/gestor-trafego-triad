@@ -24,7 +24,7 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const PORT = 3055;
+const PORT = Number(process.env.PORT) || 3055;
 const META = 'mcp__claude_ai_Meta_Ads__';
 // só o gestor (e o próprio painel) podem falar com este servidor
 const ORIGINS = new Set(['https://gestor.triadcomp4ny.com.br', `http://localhost:${PORT}`, 'http://localhost:3000', 'http://localhost:5173', ...(process.env.PAINEL_ORIGINS || '').split(',').filter(Boolean)]);
@@ -110,8 +110,26 @@ async function runChat(text, res, corsOrigin, convId) {
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', ...(corsOrigin ? { 'Access-Control-Allow-Origin': corsOrigin, 'Vary': 'Origin' } : {}) });
   let n = 0;
   try {
-    const q = query({
-      prompt: text,
+    // O conector Meta conecta 2-4s DEPOIS do início da sessão; se o agente perguntar antes,
+    // ele acha que o conector "caiu". Então só enviamos a mensagem quando o Meta estiver conectado.
+    let q;
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    async function* input() {
+      const t0 = Date.now();
+      let told = false;
+      while (Date.now() - t0 < 30000) {
+        try {
+          const st = await q.mcpServerStatus();
+          const m = st.find((x) => /Meta Ads/i.test(x.name));
+          if (m?.status === 'connected') break;
+          if (!told && Date.now() - t0 > 1500) { sse(res, 'tool', { name: 'conectando ao Meta Ads…' }); told = true; }
+        } catch { /* sessão ainda iniciando */ }
+        await sleep(400);
+      }
+      yield { type: 'user', message: { role: 'user', content: text }, parent_tool_use_id: null, session_id: '' };
+    }
+    q = query({
+      prompt: input(),
       options: {
         cwd: ROOT,
         systemPrompt: { type: 'preset', preset: 'claude_code', append: SYSTEM },
