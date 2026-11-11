@@ -79,7 +79,10 @@ function AgenteTriadPage() {
     return () => clearInterval(t);
   }, []);
 
-  useEffect(() => endRef.current?.scrollIntoView({ behavior: "smooth" }), [items]);
+  useEffect(() => {
+    // chaves de propósito: o efeito não pode devolver valor (React chamaria como cleanup)
+    endRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [items]);
 
   const say = (t: string) => {
     if (!speak || !t) return;
