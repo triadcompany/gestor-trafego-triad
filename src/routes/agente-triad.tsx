@@ -27,7 +27,7 @@ export const Route = createFileRoute("/agente-triad")({
 });
 
 type Item =
-  | { kind: "me" | "ag" | "err"; text: string }
+  | { kind: "me" | "ag" | "err"; text: string; id?: string }
   | { kind: "tool"; text: string }
   | { kind: "approval"; id: string; tool: string; detail: string; danger: boolean; state: "wait" | "ok" | "no" };
 
@@ -92,7 +92,7 @@ function AgenteTriadPage() {
     setBusy(true);
     speechSynthesis.cancel();
     let full = "";
-    let curIdx = -1;
+    let curId: string | null = null;
     try {
       const res = await fetch(`${PAINEL}/api/chat`, { method: "POST", body: JSON.stringify({ text, clients: clientCtx }) });
       const reader = res.body!.getReader();
@@ -110,20 +110,21 @@ function AgenteTriadPage() {
           if (ev === "text") {
             full += data;
             const snapshot = full;
+            if (!curId) curId = `m${Date.now()}${Math.random()}`;
+            const id = curId;
             setItems((p) => {
+              const idx = p.findIndex((x) => x.kind === "ag" && x.id === id);
+              if (idx === -1) return [...p, { kind: "ag", text: snapshot, id }];
               const copy = [...p];
-              if (curIdx === -1) {
-                copy.push({ kind: "ag", text: snapshot });
-                curIdx = copy.length - 1;
-              } else copy[curIdx] = { kind: "ag", text: snapshot };
+              copy[idx] = { kind: "ag", text: snapshot, id };
               return copy;
             });
           } else if (ev === "tool") {
-            curIdx = -1;
+            curId = null;
             full = "";
             setItems((p) => [...p, { kind: "tool", text: data.name }]);
           } else if (ev === "approval") {
-            curIdx = -1;
+            curId = null;
             full = "";
             setItems((p) => [...p, { kind: "approval", ...data, state: "wait" }]);
           } else if (ev === "done") {
@@ -201,6 +202,7 @@ function AgenteTriadPage() {
 
         <div className="flex-1 space-y-3 overflow-y-auto rounded-xl border bg-card/40 p-4">
           {items.map((it, i) => {
+            if (!it) return null;
             if (it.kind === "tool") return <div key={i} className="font-mono text-[11px] text-muted-foreground">▸ {it.text}</div>;
             if (it.kind === "approval")
               return (
