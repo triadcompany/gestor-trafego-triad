@@ -85,6 +85,7 @@ function AgenteTriadPage() {
   const [listening, setListening] = useState(false);
   const [attached, setAttached] = useState<string[]>([]);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const recRef = useRef<any>(null);
 
   const { data: clients = [] } = useQuery({
@@ -180,6 +181,14 @@ function AgenteTriadPage() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, busy, convId]);
+
+  // a caixa cresce com o texto até ~10 linhas; passando disso, rola
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 216)}px`;
+  }, [input]);
 
   useEffect(() => {
     // chaves de propósito: o efeito não pode devolver valor (React chamaria como cleanup)
@@ -481,6 +490,7 @@ function AgenteTriadPage() {
               <Mic className="h-4 w-4" />
             </Button>
             <textarea
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={(e) => {
@@ -491,7 +501,7 @@ function AgenteTriadPage() {
               }}
               rows={1}
               placeholder="Fale o cliente e o que precisa… (arraste o vídeo aqui)"
-              className="max-h-36 min-h-10 flex-1 resize-none rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
+              className="max-h-[216px] min-h-10 flex-1 resize-none overflow-y-auto rounded-lg border bg-background px-3 py-2 text-sm leading-5 outline-none focus:border-primary"
             />
             <Button size="icon" onClick={() => send()} disabled={busy || !online}>
               <Send className="h-4 w-4" />
