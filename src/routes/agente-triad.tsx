@@ -83,7 +83,10 @@ function AgenteTriadPage() {
   const [online, setOnline] = useState<boolean | null>(null);
   const [speak, setSpeak] = useState(true);
   const [listening, setListening] = useState(false);
-  const [attached, setAttached] = useState<string[]>([]);
+  const [attached, setAttached] = useState<
+    Array<{ path: string; transcript: string | null; error: string | null }>
+  >([]);
+  const [uploading, setUploading] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recRef = useRef<any>(null);
@@ -213,7 +216,18 @@ function AgenteTriadPage() {
     let text = (textArg ?? input).trim();
     if (!text || busy) return;
     const shown = text;
-    if (attached.length) text += `\n\nArquivo(s) enviados pelo painel: ${attached.join(", ")}`;
+    if (attached.length)
+      text += attached
+        .map(
+          (a) =>
+            `\n\nArquivo enviado pelo painel: ${a.path}` +
+            (a.transcript
+              ? `\nTranscrição do vídeo (já feita, use direto):\n${a.transcript}`
+              : a.error
+                ? `\nTranscrição indisponível (${a.error}). Peça os dados do carro ao usuário.`
+                : ""),
+        )
+        .join("");
     setAttached([]);
     setInput("");
     dirty.current = true;
@@ -309,12 +323,24 @@ function AgenteTriadPage() {
   async function onDrop(e: React.DragEvent) {
     e.preventDefault();
     for (const f of Array.from(e.dataTransfer.files)) {
-      const r = await fetch(`${PAINEL}/api/upload?name=${encodeURIComponent(f.name)}`, {
-        method: "POST",
-        body: f,
-      });
-      const j = await r.json();
-      setAttached((a) => [...a, j.path]);
+      setUploading(f.name);
+      try {
+        const r = await fetch(`${PAINEL}/api/upload?name=${encodeURIComponent(f.name)}`, {
+          method: "POST",
+          body: f,
+        });
+        const j = await r.json();
+        setAttached((a) => [
+          ...a,
+          { path: j.path, transcript: j.transcript ?? null, error: j.transcriptError ?? null },
+        ]);
+      } catch {
+        setItems((p) => [
+          ...p,
+          { kind: "err", text: `Não consegui enviar ${f.name} para o painel.` },
+        ]);
+      }
+      setUploading(null);
     }
   }
 
@@ -474,10 +500,16 @@ function AgenteTriadPage() {
             <div ref={endRef} />
           </div>
 
+          {uploading && (
+            <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" /> Enviando e transcrevendo {uploading}…
+            </div>
+          )}
           {attached.length > 0 && (
             <div className="mt-2 flex items-center gap-1 text-xs text-emerald-500">
-              <Paperclip className="h-3 w-3" /> {attached.length} arquivo(s) pronto(s) — vão junto
-              na próxima mensagem
+              <Paperclip className="h-3 w-3" /> {attached.length} arquivo(s) pronto(s)
+              {attached.some((a) => a.transcript) ? " (transcrito)" : ""} — vão junto na próxima
+              mensagem
             </div>
           )}
           <div className="mt-3 flex items-end gap-2">

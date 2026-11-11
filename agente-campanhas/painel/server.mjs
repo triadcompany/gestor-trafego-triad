@@ -2,6 +2,24 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import os from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+const run = promisify(execFile);
+const VIBE_BIN = '/Applications/vibe.app/Contents/MacOS';
+const VIBE_CFG = path.join(os.homedir(), 'Library/Application Support/github.com.thewh1teagle.vibe/app_config.json');
+
+// Transcreve vídeo/áudio localmente (ffmpeg + vibe-server do Vibe). Rápido (~15% da duração) e sem passar pelo agente.
+async function transcribe(file) {
+  const cfg = JSON.parse(fs.readFileSync(VIBE_CFG, 'utf8'));
+  const model = cfg['model.path'];
+  const wav = file + '.16k.wav';
+  await run(path.join(VIBE_BIN, 'ffmpeg'), ['-y', '-loglevel', 'error', '-i', file, '-vn', '-ac', '1', '-ar', '16000', wav], { timeout: 120000 });
+  try {
+    const { stdout } = await run(path.join(VIBE_BIN, 'vibe-server'), ['transcribe', model, wav, '-l', 'pt'], { timeout: 600000, maxBuffer: 20 * 1024 * 1024 });
+    return stdout.trim();
+  } finally { fs.rmSync(wav, { force: true }); }
+}
 import { query } from '@anthropic-ai/claude-agent-sdk';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -174,7 +192,12 @@ http.createServer(async (req, res) => {
       const dest = path.join(__dirname, 'uploads', name);
       fs.writeFileSync(dest, await readBody(req));
       res.setHeader('Content-Type', 'application/json');
-      return res.end(JSON.stringify({ path: dest }));
+      let transcript = null, transcriptError = null;
+      if (/\.(mp4|mov|m4v|mkv|webm|mp3|m4a|wav|ogg)$/i.test(name)) {
+        try { transcript = await transcribe(dest); fs.writeFileSync(dest + '.txt', transcript); }
+        catch (e) { transcriptError = String(e.message || e).slice(0, 300); }
+      }
+      return res.end(JSON.stringify({ path: dest, transcript, transcriptError }));
     }
     const file = url.pathname === '/' ? '/index.html' : url.pathname;
     const p = path.join(__dirname, 'public', path.normalize(file).replace(/^(\.\.[/\\])+/, ''));

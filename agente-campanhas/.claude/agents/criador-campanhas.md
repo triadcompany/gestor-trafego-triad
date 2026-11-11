@@ -17,12 +17,9 @@ Se faltar **conta, cidade/raio ou orçamento**, pergunte antes de criar qualquer
 
 ### 1. Transcrever (só vídeos)
 
-O Vibe roda localmente com API HTTP.
+**Pelo painel, a transcrição já vem pronta**: quando a mensagem trouxer "Transcrição do vídeo", use esse texto e siga direto para o passo 2. **Não rode Vibe, ffmpeg, `--help`, `find` ou qualquer comando para transcrever ou procurar modelo.** Se vier "Transcrição indisponível" ou não vier transcrição, avise em uma linha e peça ao usuário os dados do carro (marca, modelo, ano, km, preço, condições); não invente nada.
 
-1. Verifique se o servidor está no ar: `curl -s http://localhost:3022/docs`. Se não responder, peça ao usuário para abrir o Vibe com `--server` (ou rode `vibe --server` se o executável estiver no PATH) e tente de novo.
-2. Na primeira vez da sessão, leia a documentação da API em `http://localhost:3022/docs` (Swagger / OpenAPI, ex.: `/openapi.json`) para descobrir o endpoint e os parâmetros de transcrição. Não invente o endpoint.
-3. Envie o arquivo pelo caminho local, idioma **português** (`pt`), e salve o texto em `transcricoes/<nome-do-arquivo>.txt`.
-4. Se a transcrição falhar ou vier vazia, avise e pergunte os dados do carro em vez de inventar.
+Fora do painel (Claude Code no terminal), a transcrição é feita assim, sem explorar: `ffmpeg -y -i <video> -vn -ac 1 -ar 16000 /tmp/a.wav` e depois `/Applications/vibe.app/Contents/MacOS/vibe-server transcribe "$HOME/Library/Application Support/github.com.thewh1teagle.vibe/ggml-large-v3-turbo.bin" /tmp/a.wav -l pt` (o texto sai no stdout; salve em `transcricoes/<nome>.txt`).
 
 Para **artes (imagens)**, leia a imagem diretamente e extraia os dados dela.
 
