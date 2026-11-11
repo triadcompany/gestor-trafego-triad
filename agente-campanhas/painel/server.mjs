@@ -63,7 +63,21 @@ function bashSafe(cmd) {
   return segs.length > 0 && segs.every((x) => [...BASH_OK, ...EXTRA].some((re) => re.test(x)));
 }
 
-let sessionId = null;
+const CONV_DIR = path.join(__dirname, 'conversas');
+fs.mkdirSync(CONV_DIR, { recursive: true });
+const okId = (id) => typeof id === 'string' && /^[\w-]{8,64}$/.test(id);
+const convPath = (id) => path.join(CONV_DIR, id + '.json');
+const readConv = (id) => { try { return JSON.parse(fs.readFileSync(convPath(id), 'utf8')); } catch { return null; } };
+const writeConv = (id, patch) => {
+  const cur = readConv(id) || { id, title: 'Nova conversa', items: [], sessionId: null, createdAt: Date.now() };
+  const next = { ...cur, ...patch, id, updatedAt: Date.now() };
+  fs.writeFileSync(convPath(id), JSON.stringify(next));
+  return next;
+};
+const listConvs = () => fs.readdirSync(CONV_DIR).filter((f) => f.endsWith('.json')).map((f) => {
+  try { const c = JSON.parse(fs.readFileSync(path.join(CONV_DIR, f), 'utf8')); return { id: c.id, title: c.title, updatedAt: c.updatedAt }; } catch { return null; }
+}).filter(Boolean).sort((a, b) => b.updatedAt - a.updatedAt);
+
 const pending = new Map(); // id -> resolve
 
 function sse(res, ev, data) { res.write(`event: ${ev}\ndata: ${JSON.stringify(data)}\n\n`); }
@@ -73,7 +87,8 @@ function summarize(name, input) {
   return s.length > 600 ? s.slice(0, 600) + '…' : s;
 }
 
-async function runChat(text, res, corsOrigin) {
+async function runChat(text, res, corsOrigin, convId) {
+  let sessionId = okId(convId) ? readConv(convId)?.sessionId ?? null : null;
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', ...(corsOrigin ? { 'Access-Control-Allow-Origin': corsOrigin, 'Vary': 'Origin' } : {}) });
   let n = 0;
   try {
@@ -97,7 +112,7 @@ async function runChat(text, res, corsOrigin) {
       },
     });
     for await (const m of q) {
-      if (m.session_id) sessionId = m.session_id;
+      if (m.session_id && m.session_id !== sessionId) { sessionId = m.session_id; if (okId(convId)) writeConv(convId, { sessionId }); }
       if (m.type === 'stream_event') {
         const d = m.event?.delta;
         if (m.event?.type === 'content_block_delta' && d?.type === 'text_delta') sse(res, 'text', d.text);
@@ -125,25 +140,35 @@ http.createServer(async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', origin);
     res.setHeader('Vary', 'Origin');
     res.setHeader('Access-Control-Allow-Headers', 'content-type');
-    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET,POST,DELETE,OPTIONS');
     res.setHeader('Access-Control-Allow-Private-Network', 'true');
   }
   if (req.method === 'OPTIONS') { res.statusCode = 204; return res.end(); }
   try {
     if (url.pathname === '/api/ping') return res.end('ok');
     if (req.method === 'POST' && url.pathname === '/api/chat') {
-      const { text, clients } = JSON.parse((await readBody(req)).toString());
+      const { text, clients, conversationId } = JSON.parse((await readBody(req)).toString());
       const ctx = Array.isArray(clients) && clients.length
         ? `CLIENTES DO GESTOR (nome | conta de anúncio | página | WhatsApp | orçamento mensal):\n` + clients.map((c) => `- ${c.name} | ${c.account} | ${c.page || '?'} | ${c.whatsapp || '?'} | ${c.budget ?? '?'}`).join('\n') + '\n\n'
         : '';
-      return runChat(ctx + text, res, origin);
+      return runChat(ctx + text, res, origin, conversationId);
     }
     if (req.method === 'POST' && url.pathname === '/api/approve') {
       const { id, allow } = JSON.parse((await readBody(req)).toString());
       pending.get(id)?.(!!allow); pending.delete(id);
       return res.end('ok');
     }
-    if (req.method === 'POST' && url.pathname === '/api/reset') { sessionId = null; return res.end('ok'); }
+    if (req.method === 'POST' && url.pathname === '/api/reset') return res.end('ok');
+    const cm = url.pathname.match(/^\/api\/conversations(?:\/([\w-]+))?$/);
+    if (cm) {
+      res.setHeader('Content-Type', 'application/json');
+      const id = cm[1];
+      if (!id && req.method === 'GET') return res.end(JSON.stringify(listConvs()));
+      if (!okId(id)) { res.statusCode = 400; return res.end('{}'); }
+      if (req.method === 'GET') { const c = readConv(id); if (!c) { res.statusCode = 404; return res.end('{}'); } return res.end(JSON.stringify({ id: c.id, title: c.title, items: c.items })); }
+      if (req.method === 'POST') { const { title, items } = JSON.parse((await readBody(req)).toString()); writeConv(id, { title: String(title || 'Conversa').slice(0, 80), items: Array.isArray(items) ? items : [] }); return res.end('{"ok":true}'); }
+      if (req.method === 'DELETE') { try { fs.unlinkSync(convPath(id)); } catch {} return res.end('{"ok":true}'); }
+    }
     if (req.method === 'POST' && url.pathname === '/api/upload') {
       const name = path.basename(url.searchParams.get('name') || 'video.mp4').replace(/[^\w.\-]/g, '_');
       const dest = path.join(__dirname, 'uploads', name);
