@@ -38,7 +38,8 @@ const navGroups = [
     label: "Ferramentas",
     items: [
       { to: "/mensagens", label: "Automações", icon: MessageCircle, exact: false },
-      { to: "/agente", label: "Agente IA", icon: Bot, exact: false },
+      { to: "/agente", label: "Agente IA", icon: Bot, exact: true },
+      { to: "/agente-triad", label: "Agente Triad", icon: Bot, exact: false },
       { to: "/campaigns/new", label: "Nova Campanha", icon: PlusSquare, exact: false },
       { to: "/diagnostico-meta", label: "Diagnóstico", icon: Stethoscope, exact: false },
       { to: "/settings", label: "Configurações", icon: Settings, exact: false },
@@ -111,7 +112,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const showExperimental = isTriadCompanyOrg(effectiveOrgId);
   const baseNavGroups = navGroups.map((group) => ({
     ...group,
-    items: group.items.filter((item) => item.to !== "/conversas" || showExperimental),
+    items: group.items.filter((item) => (item.to !== "/conversas" && item.to !== "/agente-triad") || showExperimental),
   }));
   const visibleNavGroups = currentUser?.isPlatformAdmin ? [...baseNavGroups, adminNavGroup] : baseNavGroups;
 
