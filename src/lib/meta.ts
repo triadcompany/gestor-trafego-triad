@@ -2947,6 +2947,15 @@ export async function duplicateCampaign(
 
   if (!newCampaignId) throw new Error("A Meta não retornou o id da campanha criada.");
 
+  // O batch faz 3 escritas (campanha+conjunto+anúncio) numa chamada HTTP só,
+  // sem o espaçamento natural que o fluxo sequencial antigo tinha entre cada
+  // uma (33s por objeto). Reserva aqui a MESMA folga de uma escrita isolada
+  // antes de devolver o controle — sem isso, editar a campanha recém-criada
+  // e salvar em seguida (fluxo comum logo após duplicar) esbarra no 613 da
+  // Meta porque a conta ainda está "quente" desse batch.
+  onProgress?.("Aguardando a Meta liberar a próxima escrita...");
+  await waitForWriteSlot(adAccountId, WRITE_SPACING_MS);
+
   return newCampaignId;
 }
 
@@ -3111,28 +3120,21 @@ export async function fetchBaseCampaignPrefill(
   campaignId: string,
   token: string
 ): Promise<CampaignPrefillData> {
-  // Campaign — inclui account_id pra conseguir espaçar as leituras seguintes
-  // no mesmo escopo usado pelas escritas (ver comentário em spacedFetch:
-  // leitura nessa família de endpoints conta no mesmo limite de 613 que as
-  // escritas — sem isso, abrir a tela de editar uma campanha recém-duplicada
-  // (ainda "quente" do batch de criação) estourava o limite da Meta).
-  const campRes = await spacedFetch(
-    `${BASE_URL}/${campaignId}?fields=name,objective,daily_budget,account_id&access_token=${encodeURIComponent(token)}`
+  // Campaign
+  const campRes = await fetch(
+    `${BASE_URL}/${campaignId}?fields=name,objective,daily_budget&access_token=${encodeURIComponent(token)}`
   );
   const campJson = (await campRes.json()) as {
     name?: string;
     objective?: string;
     daily_budget?: string;
-    account_id?: string;
     error?: MetaApiError;
   };
   if (campJson.error) throw new Error(formatMetaError(campJson.error));
-  const accountScope = campJson.account_id ? `act_${campJson.account_id}` : undefined;
 
   // First adset
-  const asRes = await spacedFetch(
-    `${BASE_URL}/${campaignId}/adsets?fields=targeting,promoted_object,instagram_actor_id,daily_budget&limit=1&access_token=${encodeURIComponent(token)}`,
-    accountScope
+  const asRes = await fetch(
+    `${BASE_URL}/${campaignId}/adsets?fields=targeting,promoted_object,instagram_actor_id,daily_budget&limit=1&access_token=${encodeURIComponent(token)}`
   );
   const asJson = (await asRes.json()) as {
     data?: Array<{
@@ -3159,20 +3161,14 @@ export async function fetchBaseCampaignPrefill(
   let resolvedAdId: string | undefined;
 
   if (adSet) {
-    const adsRes = await spacedFetch(
-      `${BASE_URL}/${adSet.id}/ads?fields=id&limit=1&access_token=${encodeURIComponent(token)}`,
-      accountScope
+    const adsRes = await fetch(
+      `${BASE_URL}/${adSet.id}/ads?fields=id&limit=1&access_token=${encodeURIComponent(token)}`
     );
     const adsJson = (await adsRes.json()) as { data?: Array<{ id: string }> };
     const adId = adsJson.data?.[0]?.id;
     if (adId) {
       resolvedAdId = adId;
       try {
-        // fetchAdWithCreative faz várias chamadas próprias sem espaçamento
-        // (reusada em vários pontos do código que não têm esse problema) —
-        // só a espera ANTES da primeira garante que não emende direto numa
-        // escrita recente (ex: duplicação) que ainda deixou a conta "quente".
-        await waitForWriteSlot(accountScope);
         const cr = await fetchAdWithCreative(adId, token);
         primaryText = cr.body ?? cr.object_story_spec?.video_data?.message ?? cr.object_story_spec?.link_data?.message ?? "";
         headline = cr.title ?? cr.object_story_spec?.video_data?.title ?? cr.object_story_spec?.link_data?.name ?? "";
