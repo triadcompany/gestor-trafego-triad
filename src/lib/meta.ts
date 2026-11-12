@@ -2424,13 +2424,18 @@ async function postMetaBatch(subRequests: BatchSubRequest[], token: string, writ
   return outer.map((sub, i) => {
     const label = subRequests[i].name ?? subRequests[i].relative_url;
 
-    // Em rate-limit interno ou erro de processamento no meio do batch, a Meta
-    // às vezes devolve `null` no lugar do objeto da sub-resposta (em vez de um
-    // erro estruturado) — sem isso, "sub.body" explodiria com TypeError e
-    // caía no catch genérico de JSON inválido, escondendo a causa real.
-    if (!sub) {
-      throw new Error(`Meta não processou a sub-requisição "${label}" (resposta nula — provável limite de chamadas atingido).`);
-    }
+    // Quirk confirmado na prática: quando o resultado de um passo é
+    // referenciado por outro sub-request no MESMO batch (via
+    // "{result=nome:$.path}"), a Meta às vezes devolve `null` nesse índice
+    // MESMO TENDO processado a escrita com sucesso — já vimos campanha,
+    // conjunto e anúncio criados corretamente na conta com a campanha vindo
+    // null na resposta. Então null não é erro automático: vira objeto vazio.
+    // Se a escrita referenciada tiver falhado de verdade, o passo dependente
+    // dela volta com ".error" explícito (a referência não resolve), e isso
+    // ainda é pego pela checagem abaixo — quem chama o batch decide se
+    // precisa confirmar o id de um passo que voltou vazio (ex: buscando pelo
+    // nome), em vez de postMetaBatch assumir falha sozinho.
+    if (!sub) return {};
 
     // O body normalmente vem como string JSON, mas trata também o caso de já
     // vir como objeto (observado em alguns retornos da Graph API).
@@ -2921,7 +2926,25 @@ export async function duplicateCampaign(
     throw new Error(`Falha ao duplicar a campanha: ${baseMsg}`);
   }
 
-  const newCampaignId = results[0]?.id as string | undefined;
+  let newCampaignId = results[0]?.id as string | undefined;
+
+  if (!newCampaignId) {
+    // A Meta pode não devolver o id da campanha no índice "camp" do batch
+    // mesmo tendo criado ela de verdade (ver comentário em postMetaBatch) —
+    // busca pelo nome antes de considerar falha. newName é determinístico
+    // (gerado por esta mesma chamada), então a campanha mais recente com
+    // esse nome exato é a que acabamos de criar.
+    onProgress?.("Meta não confirmou o id da campanha no batch — verificando se foi criada...");
+    const lookupRes = await spacedFetch(
+      `${BASE_URL}/${adAccountId}/campaigns?fields=id,name&filtering=${encodeURIComponent(
+        JSON.stringify([{ field: "name", operator: "EQUAL", value: newName }])
+      )}&sort=created_time_descending&limit=1&access_token=${encodeURIComponent(token)}`,
+      adAccountId
+    );
+    const lookupJson = (await lookupRes.json()) as { data?: Array<{ id: string; name: string }>; error?: MetaApiError };
+    newCampaignId = lookupJson.data?.[0]?.id;
+  }
+
   if (!newCampaignId) throw new Error("A Meta não retornou o id da campanha criada.");
 
   return newCampaignId;
