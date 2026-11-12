@@ -394,13 +394,14 @@ function EditCampaign() {
       };
       if (genders) targeting.genders = genders;
       if (interests.length > 0) targeting.flexible_spec = [{ interests: interests.map((i) => ({ id: i.id, name: i.name })) }];
-      if (platforms.facebook && fbPositions.length > 0) targeting.facebook_positions = fbPositions;
-      if (platforms.instagram) {
-        let igPos = igPositions;
-        if (igPos.includes("explore_home") && !igPos.includes("explore")) igPos = [...igPos, "explore"];
-        igPos = igPos.filter((p) => p !== "ig_search");
-        targeting.instagram_positions = igPos;
-      }
+      // Posicionamento manual (facebook_positions/instagram_positions) fica de
+      // fora de propósito — mesmo motivo já documentado em duplicateCampaign:
+      // pra campanha WhatsApp/Conversas, mandar posicionamento manual numa
+      // ATUALIZAÇÃO de conjunto já existente bate num erro interno da própria
+      // Meta (HTTP 500, "An unknown error has occurred") consistentemente,
+      // mesmo com valores que a própria Meta usaria automaticamente. Deixar
+      // a Meta resolver os posicionamentos sozinha (modo Advantage+) é o que
+      // já funciona de forma confiável em toda duplicação.
 
       const fields: Record<string, string> = { targeting: JSON.stringify(targeting) };
       // Só page_id + whatsapp_phone_number — nunca whats_app_business_phone_number_id
