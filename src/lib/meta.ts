@@ -2360,10 +2360,13 @@ async function postMeta(
 // só espera UM slot de escrita pro grupo inteiro, não um por objeto.
 //
 // Sub-requests referenciam o resultado de um anterior no MESMO batch via
-// "{result=<name>:$.<jsonpath>}" (sintaxe documentada da Meta) — assim
-// "criar conjunto" já manda campaign_id apontando pro id que "criar
-// campanha" ainda nem tinha retornado de verdade. A ordem no array importa:
-// uma dependência sempre precisa vir DEPOIS do que referencia.
+// "{result=<name>:$.<jsonpath>}" (sintaxe documentada da Marketing API —
+// ver exemplo oficial de campanha+conjunto em batch) — assim "criar
+// conjunto" já manda campaign_id apontando pro id que "criar campanha"
+// ainda nem tinha retornado de verdade. A ordem no array importa: uma
+// dependência sempre precisa vir DEPOIS do que referencia. O placeholder
+// entra no body como qualquer outro valor — urlencoded normalmente,
+// a Meta resolve a referência depois de decodificar o body.
 //
 // Propositalmente SEM retry automático (maxAttempts efetivo = 1): se o
 // batch falhar depois de já ter criado parte dos objetos (ex: campanha
@@ -2381,17 +2384,15 @@ export interface BatchSubRequest {
 async function postMetaBatch(subRequests: BatchSubRequest[], token: string, writeScope?: string): Promise<Array<Record<string, unknown>>> {
   await waitForWriteSlot(writeScope);
 
-  // Não dá pra usar URLSearchParams aqui: ela faria percent-encode do
-  // próprio placeholder "{result=nome:$.id}" (vira %7Bresult%3D...%7D), e a
-  // Meta só reconhece a sintaxe de dependência literal, sem encoding. Só
-  // codifica o valor quando NÃO for exatamente um placeholder desses.
-  const encodeBatchBody = (params: Record<string, string>): string =>
-    Object.entries(params)
-      .map(([k, v]) => {
-        const isPlaceholder = /^\{result=[^}]+\}$/.test(v);
-        return `${encodeURIComponent(k)}=${isPlaceholder ? v : encodeURIComponent(v)}`;
-      })
-      .join("&");
+  // O body de cada sub-request é codificado normalmente, igual qualquer form
+  // application/x-www-form-urlencoded — INCLUSIVE o placeholder
+  // "{result=nome:$.id}", que vira "%7Bresult%3Dnome%3A%24.id%7D". A Meta
+  // decodifica o body primeiro e só depois resolve a referência (confirmado
+  // no exemplo oficial da Marketing API, que mostra o placeholder
+  // percent-encoded dentro do body). Deixar o placeholder sem codificar
+  // (como numa versão anterior deste código) manda "{" e "}" literais, que
+  // não são caracteres válidos em x-www-form-urlencoded e quebram o parsing.
+  const encodeBatchBody = (params: Record<string, string>): string => new URLSearchParams(params).toString();
 
   const batchPayload = subRequests.map((r) => ({
     method: r.method,
