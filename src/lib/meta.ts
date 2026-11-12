@@ -3240,7 +3240,12 @@ export async function fetchBaseCampaignPrefill(
     platforms,
     // Sem posicionamento explícito (ex: campanha duplicada, que sai em modo
     // Advantage+/automático) marca tudo por padrão — nunca só feed+story.
-    fbPositions: fbPlaces.length > 0 ? fbPlaces : ["feed", "story", "facebook_reels", "right_hand_column"],
+    // SEM right_hand_column: campanhas WhatsApp/Conversas nunca têm essa
+    // posição na lista de effective_facebook_positions resolvida pela própria
+    // Meta (confirmado direto na conta) — mandar ela de volta manualmente
+    // numa atualização de conjunto já existente derruba a escrita com um erro
+    // genérico da Meta ("An unknown error has occurred", code 1).
+    fbPositions: fbPlaces.length > 0 ? fbPlaces : ["feed", "story", "facebook_reels"],
     igPositions: igPlaces.filter((p) => p !== "ig_search").length > 0
       ? igPlaces.filter((p) => p !== "ig_search")
       : ["stream", "story", "explore", "reels"],
