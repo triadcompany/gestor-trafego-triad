@@ -2410,7 +2410,7 @@ async function postMetaBatch(subRequests: BatchSubRequest[], token: string, writ
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: form,
   });
-  const outer = (await res.json()) as Array<{ code: number; body: string }> | { error?: MetaApiError };
+  const outer = (await res.json()) as Array<{ code: number; body: string | Record<string, unknown> | null } | null> | { error?: MetaApiError };
 
   if (!Array.isArray(outer)) {
     const err = outer.error;
@@ -2422,15 +2422,31 @@ async function postMetaBatch(subRequests: BatchSubRequest[], token: string, writ
   }
 
   return outer.map((sub, i) => {
-    let parsed: Record<string, unknown>;
-    try {
-      parsed = JSON.parse(sub.body ?? "{}") as Record<string, unknown>;
-    } catch {
-      throw new Error(`Resposta inválida da Meta pra "${subRequests[i].name ?? subRequests[i].relative_url}".`);
+    const label = subRequests[i].name ?? subRequests[i].relative_url;
+
+    // Em rate-limit interno ou erro de processamento no meio do batch, a Meta
+    // às vezes devolve `null` no lugar do objeto da sub-resposta (em vez de um
+    // erro estruturado) — sem isso, "sub.body" explodiria com TypeError e
+    // caía no catch genérico de JSON inválido, escondendo a causa real.
+    if (!sub) {
+      throw new Error(`Meta não processou a sub-requisição "${label}" (resposta nula — provável limite de chamadas atingido).`);
     }
+
+    // O body normalmente vem como string JSON, mas trata também o caso de já
+    // vir como objeto (observado em alguns retornos da Graph API).
+    let parsed: Record<string, unknown>;
+    if (typeof sub.body === "string") {
+      try {
+        parsed = JSON.parse(sub.body || "{}") as Record<string, unknown>;
+      } catch {
+        throw new Error(`Resposta inválida da Meta pra "${label}" (HTTP ${sub.code}): ${sub.body.slice(0, 300)}`);
+      }
+    } else {
+      parsed = (sub.body ?? {}) as Record<string, unknown>;
+    }
+
     if (parsed.error) {
       const err = parsed.error as MetaApiError;
-      const label = subRequests[i].name ?? subRequests[i].relative_url;
       throw new MetaApiCallError(`[${label}] ${formatMetaError(err)}`, err.code);
     }
     return parsed;
