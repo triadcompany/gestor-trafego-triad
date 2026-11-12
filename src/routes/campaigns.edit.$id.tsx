@@ -55,6 +55,7 @@ import {
   fetchAdWithCreative,
   searchMetaLocations,
   searchMetaInterests,
+  WRITE_SPACING_MS,
   type MetaLocationResult,
   type SelectedLocation,
   type MetaInterest,
@@ -347,10 +348,13 @@ function EditCampaign() {
     mutationFn: async () => {
       const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token Meta não encontrado.");
+      // Espaçamento cheio (não o leve padrão): isso roda logo após duplicar a
+      // campanha (conta ainda "quente") e é seguido por mais 2 escritas no
+      // mesmo wizard — 8s não é suficiente nessa sequência (ver 613 reportado).
       await updateMetaObject(campaignId, {
         name: campaignName,
         daily_budget: String(Math.round(budget * 100)),
-      }, token, campaignAccountId ?? undefined);
+      }, token, campaignAccountId ?? undefined, WRITE_SPACING_MS);
     },
     onSuccess: () => {
       toast.success("Campanha atualizada.");
@@ -405,7 +409,7 @@ function EditCampaign() {
       if (whatsappNumber && pageId) {
         fields.promoted_object = JSON.stringify({ page_id: pageId, whatsapp_phone_number: whatsappNumber });
       }
-      await updateMetaObject(adsetId, fields, token, campaignAccountId ?? undefined);
+      await updateMetaObject(adsetId, fields, token, campaignAccountId ?? undefined, WRITE_SPACING_MS);
     },
     onSuccess: () => {
       toast.success("Conjunto atualizado.");

@@ -2039,12 +2039,16 @@ export async function updateMetaObject(
   id: string,
   fields: Record<string, string>,
   token: string,
-  adAccountId?: string
+  adAccountId?: string,
+  // Edição avulsa de um objeto já existente — espaçamento leve por padrão
+  // (ver LIGHT_WRITE_SPACING_MS), não os 33s inteiros usados nos fluxos de
+  // duplicar/criar campanha em sequência. Chamadores que fazem parte de um
+  // wizard de várias escritas seguidas (ex: editar campanha recém-duplicada,
+  // passo a passo) devem passar WRITE_SPACING_MS explicitamente — 8s não é
+  // suficiente quando a conta acabou de levar um lote de escritas.
+  spacingMs: number = LIGHT_WRITE_SPACING_MS
 ): Promise<void> {
-  // Edição avulsa de um objeto já existente — espaçamento leve (ver
-  // LIGHT_WRITE_SPACING_MS), não os 33s inteiros usados nos fluxos de
-  // duplicar/criar campanha em sequência.
-  await postMeta(id, { ...fields, access_token: token }, adAccountId, LIGHT_WRITE_SPACING_MS);
+  await postMeta(id, { ...fields, access_token: token }, adAccountId, spacingMs);
 }
 
 // ── Campaign creation ──────────────────────────────────────────
@@ -2211,7 +2215,7 @@ async function withRetry<T>(
 // mesmo com a trava "funcionando". Guardando em app_config (por organização +
 // escopo, com lock de linha na transação pra não racear entre abas/chamadas
 // concorrentes), a trava sobrevive a navegação e F5.
-const WRITE_SPACING_MS = 33_000;
+export const WRITE_SPACING_MS = 33_000;
 
 // Edições avulsas de UM objeto já existente (pausar/ativar, mudar orçamento,
 // renomear) nunca foram a causa do 613 original — isso veio de SEQUÊNCIAS de
