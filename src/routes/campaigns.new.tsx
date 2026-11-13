@@ -447,6 +447,10 @@ function NewCampaign() {
       toast.dismiss("n8n-progress");
       toast.success("Anúncio criado com sucesso pelo n8n!", { duration: 10000 });
       setPendingJobId(null);
+      // Mesma tela de sucesso do caminho direto da API ("Campanha criada!" +
+      // botão "Abrir campanha") — sem isso, ficava preso na própria tela do
+      // formulário mesmo depois do n8n terminar com sucesso.
+      if (jobStatus.campaignId) setCreatedId(jobStatus.campaignId);
     } else if (jobStatus.status === "error") {
       toast.dismiss("n8n-progress");
       toast.error(`Erro no n8n: ${jobStatus.errorMessage ?? "Erro desconhecido"}`, { duration: 20000 });
