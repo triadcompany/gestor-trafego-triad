@@ -61,6 +61,13 @@ import {
   type MetaInterest,
 } from "@/lib/meta";
 import { getN8nMetaWriter } from "@/lib/n8n";
+import {
+  FB_POSITION_OPTIONS as FB_POSITIONS,
+  IG_POSITION_OPTIONS as IG_POSITIONS,
+  DEFAULT_FB_POSITIONS,
+  DEFAULT_IG_POSITIONS,
+  buildManualPlacementTargeting,
+} from "@/lib/placements";
 import { fetchWhatsappNumbersForPage, resolveCampaignAccountId } from "@/server/facebook-directory";
 
 async function withSaveToast<T>(
@@ -76,19 +83,6 @@ async function withSaveToast<T>(
     toast.dismiss(id);
   }
 }
-
-const FB_POSITIONS = [
-  { value: "feed", label: "Feed" },
-  { value: "story", label: "Stories" },
-  { value: "facebook_reels", label: "Reels" },
-];
-
-const IG_POSITIONS = [
-  { value: "stream", label: "Feed" },
-  { value: "story", label: "Stories" },
-  { value: "explore", label: "Explorar" },
-  { value: "reels", label: "Reels" },
-];
 
 interface SearchParams {
   clientId?: string;
@@ -208,9 +202,10 @@ function EditCampaign() {
   const [genderMode, setGenderMode] = useState<"all" | "male" | "female">("all");
   const [locations, setLocations] = useState<SelectedLocation[]>([]);
   const [interests, setInterests] = useState<MetaInterest[]>([]);
+  const [placementMode, setPlacementMode] = useState<"advantage_plus" | "manual">("advantage_plus");
   const [platforms, setPlatforms] = useState({ facebook: true, instagram: true });
-  const [fbPositions, setFbPositions] = useState(["feed", "story", "facebook_reels"]);
-  const [igPositions, setIgPositions] = useState(["stream", "story", "explore", "reels"]);
+  const [fbPositions, setFbPositions] = useState(DEFAULT_FB_POSITIONS);
+  const [igPositions, setIgPositions] = useState(DEFAULT_IG_POSITIONS);
 
   // Step 3
   const [primaryText, setPrimaryText] = useState("");
@@ -260,6 +255,7 @@ function EditCampaign() {
     setLocations(prefill.locations);
     setInterests(prefill.interests);
     setPlatforms(prefill.platforms);
+    setPlacementMode(prefill.placementMode);
     setFbPositions(prefill.fbPositions);
     setIgPositions(prefill.igPositions);
     setPrimaryText(prefill.primaryText);
@@ -397,27 +393,21 @@ function EditCampaign() {
       if (cities.length === 0 && regions.length === 0) geoLocations.countries = ["BR"];
 
       const genders = genderMode === "all" ? undefined : genderMode === "male" ? [1] : [2];
-      const publisherPlatforms: string[] = [];
-      if (platforms.facebook) publisherPlatforms.push("facebook");
-      if (platforms.instagram) publisherPlatforms.push("instagram");
 
       const targeting: Record<string, unknown> = {
         age_min: ageMin,
         age_max: ageMax,
         geo_locations: geoLocations,
-        publisher_platforms: publisherPlatforms,
         targeting_automation: { advantage_audience: 0 },
       };
       if (genders) targeting.genders = genders;
       if (interests.length > 0) targeting.flexible_spec = [{ interests: interests.map((i) => ({ id: i.id, name: i.name })) }];
-      // Posicionamento manual (facebook_positions/instagram_positions) fica de
-      // fora de propósito — mesmo motivo já documentado em duplicateCampaign:
-      // pra campanha WhatsApp/Conversas, mandar posicionamento manual numa
-      // ATUALIZAÇÃO de conjunto já existente bate num erro interno da própria
-      // Meta (HTTP 500, "An unknown error has occurred") consistentemente,
-      // mesmo com valores que a própria Meta usaria automaticamente. Deixar
-      // a Meta resolver os posicionamentos sozinha (modo Advantage+) é o que
-      // já funciona de forma confiável em toda duplicação.
+      // O HTTP 500 que a Meta dava ao alterar posicionamento de conjunto
+      // existente vinha junto com coluna direita + "todos os dispositivos";
+      // buildManualPlacementTargeting já manda só celular e sem coluna direita.
+      if (placementMode === "manual") {
+        Object.assign(targeting, buildManualPlacementTargeting({ ...platforms, fbPositions, igPositions }));
+      }
 
       const fields: Record<string, string> = { targeting: JSON.stringify(targeting) };
       // Só page_id + whatsapp_phone_number — nunca whats_app_business_phone_number_id
@@ -650,6 +640,30 @@ function EditCampaign() {
             <Card className="p-5 space-y-4">
               <SectionTitle>Posicionamentos</SectionTitle>
 
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPlacementMode("advantage_plus")}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                    placementMode === "advantage_plus" ? "border-primary bg-primary/5" : "border-border"
+                  }`}
+                >
+                  <div className="font-medium">Advantage+ <span className="text-xs text-muted-foreground font-normal">(recomendado)</span></div>
+                  <div className="text-xs text-muted-foreground mt-0.5">A Meta escolhe automaticamente</div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPlacementMode("manual")}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-left text-sm transition-colors ${
+                    placementMode === "manual" ? "border-primary bg-primary/5" : "border-border"
+                  }`}
+                >
+                  <div className="font-medium">Manual</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">Você escolhe onde aparece</div>
+                </button>
+              </div>
+
+              {placementMode === "manual" && (
               <div className="flex gap-4">
                 {(["facebook", "instagram"] as const).map((p) => (
                   <label key={p} className="flex items-center gap-2 cursor-pointer">
@@ -661,8 +675,9 @@ function EditCampaign() {
                   </label>
                 ))}
               </div>
+              )}
 
-              {platforms.facebook && (
+              {placementMode === "manual" && platforms.facebook && (
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Facebook</p>
                   <div className="grid grid-cols-2 gap-1.5">
@@ -681,7 +696,7 @@ function EditCampaign() {
                 </div>
               )}
 
-              {platforms.instagram && (
+              {placementMode === "manual" && platforms.instagram && (
                 <div className="space-y-2">
                   <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Instagram</p>
                   <div className="grid grid-cols-2 gap-1.5">

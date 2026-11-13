@@ -16,13 +16,21 @@ import {
   updateAdSetWhatsappNumber,
   searchMetaInterests,
   searchMetaLocations,
-  mobileFbPositions,
-  MANUAL_PLACEMENT_DEVICES,
   type MetaTargeting,
   type MetaInterest,
   type MetaLocationResult,
   type SelectedLocation,
 } from "@/lib/meta";
+import {
+  FB_POSITION_OPTIONS as FB_POSITIONS,
+  IG_POSITION_OPTIONS as IG_POSITIONS,
+  DEFAULT_FB_POSITIONS,
+  DEFAULT_IG_POSITIONS,
+  normalizeFbPositions,
+  normalizeIgPositions,
+  buildManualPlacementTargeting,
+} from "@/lib/placements";
+import { getN8nMetaWriter } from "@/lib/n8n";
 // Import dinâmico (nunca estático) — o Leaflet acessa `window` na hora de
 // carregar o módulo e derruba a renderização no servidor (SSR) se for
 // importado direto no topo do arquivo.
@@ -34,22 +42,6 @@ const MAP_FALLBACK = (
     Carregando mapa...
   </div>
 );
-
-// ── Facebook & Instagram position options ────────────────────
-
-const FB_POSITIONS: { value: string; label: string }[] = [
-  { value: "feed", label: "Feed" },
-  { value: "story", label: "Stories" },
-  { value: "facebook_reels", label: "Reels" },
-  { value: "instream_video", label: "Vídeo in-stream" },
-];
-
-const IG_POSITIONS: { value: string; label: string }[] = [
-  { value: "stream", label: "Feed" },
-  { value: "story", label: "Stories" },
-  { value: "explore", label: "Explorar" },
-  { value: "reels", label: "Reels" },
-];
 
 // ── Main component ────────────────────────────────────────────
 
@@ -72,8 +64,8 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
   >([]);
   const [placementMode, setPlacementMode] = useState<"advantage_plus" | "manual">("advantage_plus");
   const [platforms, setPlatforms] = useState({ facebook: true, instagram: true });
-  const [fbPositions, setFbPositions] = useState<string[]>(["feed", "story"]);
-  const [igPositions, setIgPositions] = useState<string[]>(["stream", "story"]);
+  const [fbPositions, setFbPositions] = useState<string[]>(DEFAULT_FB_POSITIONS);
+  const [igPositions, setIgPositions] = useState<string[]>(DEFAULT_IG_POSITIONS);
   const [dirty, setDirty] = useState(false);
 
   const { data: targeting, isLoading } = useQuery({
@@ -123,8 +115,10 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
         facebook: targeting.publisher_platforms.includes("facebook"),
         instagram: targeting.publisher_platforms.includes("instagram"),
       });
-      setFbPositions(mobileFbPositions(targeting.facebook_positions ?? ["feed", "story"]));
-      setIgPositions(targeting.instagram_positions ?? ["stream", "story"]);
+      const fb = normalizeFbPositions(targeting.facebook_positions ?? []);
+      const ig = normalizeIgPositions(targeting.instagram_positions ?? []);
+      setFbPositions(fb.length ? fb : DEFAULT_FB_POSITIONS);
+      setIgPositions(ig.length ? ig : DEFAULT_IG_POSITIONS);
     } else {
       setPlacementMode("advantage_plus");
     }
@@ -148,30 +142,20 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
             }
           : { countries: ["BR"] },
         targeting_automation: { advantage_audience: 0 },
-        ...(placementMode === "manual" ? {
-          publisher_platforms: [
-            ...(platforms.facebook ? ["facebook"] : []),
-            ...(platforms.instagram ? ["instagram"] : []),
-          ],
-          device_platforms: MANUAL_PLACEMENT_DEVICES,
-          ...(platforms.facebook ? { facebook_positions: mobileFbPositions(fbPositions) } : {}),
-          ...(platforms.instagram ? {
-            instagram_positions: (() => {
-              let pos = igPositions;
-              // explore_home requires explore (Meta rule)
-              if (pos.includes("explore_home") && !pos.includes("explore")) pos = [...pos, "explore"];
-              // ig_search conflicts with other placements
-              pos = pos.filter((p) => p !== "ig_search");
-              return pos;
-            })(),
-          } : {}),
-        } : {}),
+        ...(placementMode === "manual"
+          ? buildManualPlacementTargeting({ ...platforms, fbPositions, igPositions })
+          : {}),
         // Advantage+: nenhum campo de posicionamento é enviado, deixando a Meta escolher.
         ...(ageMin > 18 ? { age_min: ageMin } : {}),
         ...(ageMax < 65 ? { age_max: ageMax } : {}),
         ...(genderMode !== "all" ? { genders: genderMode === "male" ? [1] : [2] } : {}),
         ...(interests.length > 0 ? { flexible_spec: [{ interests }] } : {}),
       };
+      const writer = await getN8nMetaWriter(token, "editar-segmentacao");
+      if (writer) {
+        await writer([{ path: adSetId, params: { targeting: JSON.stringify(newTargeting) }, label: "segmentacao" }]);
+        return;
+      }
       await updateAdSetTargeting(adSetId, newTargeting, token);
     },
     onSuccess: () => { toast.success("Segmentação salva."); setDirty(false); },

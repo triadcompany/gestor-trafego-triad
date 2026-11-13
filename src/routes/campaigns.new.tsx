@@ -70,19 +70,12 @@ import {
 } from "@/lib/meta";
 import { isN8nConfigured, triggerN8nCampaign, pollN8nJob, isN8nDuplicateConfigured, triggerN8nDuplicateCampaign } from "@/lib/n8n";
 
-// Sem "Reels" — não é suportado pelo posicionamento manual em campanhas de
-// WhatsApp (destination_type CONVERSATIONS), que é o único tipo criado aqui.
-const FB_POSITIONS = [
-  { value: "feed", label: "Feed" },
-  { value: "story", label: "Stories" },
-];
-
-const IG_POSITIONS = [
-  { value: "stream", label: "Feed" },
-  { value: "story", label: "Stories" },
-  { value: "explore", label: "Explorar" },
-  { value: "reels", label: "Reels" },
-];
+import {
+  FB_POSITION_OPTIONS as FB_POSITIONS,
+  IG_POSITION_OPTIONS as IG_POSITIONS,
+  DEFAULT_FB_POSITIONS,
+  DEFAULT_IG_POSITIONS,
+} from "@/lib/placements";
 
 // ── Criar em massa: 1 campanha por carro, mesma config. compartilhada ────────
 
@@ -290,8 +283,8 @@ function NewCampaign() {
   const [placementMode, setPlacementMode] = useState<"advantage_plus" | "manual">("advantage_plus");
   const [bidAmount, setBidAmount] = useState<number | "">("");
   const [platforms, setPlatforms] = useState({ facebook: true, instagram: true });
-  const [fbPositions, setFbPositions] = useState(["feed", "story"]);
-  const [igPositions, setIgPositions] = useState(["stream", "story", "explore", "reels"]);
+  const [fbPositions, setFbPositions] = useState(DEFAULT_FB_POSITIONS);
+  const [igPositions, setIgPositions] = useState(DEFAULT_IG_POSITIONS);
 
   // ── Step 3: Ad creative ─────────────────────────────────────
   const [mediaType, setMediaType] = useState<"image" | "video">("image");
@@ -519,6 +512,7 @@ function NewCampaign() {
         setLocations(d.locations);
         setInterests(d.interests);
         setPlatforms(d.platforms);
+        setPlacementMode(d.placementMode);
         setFbPositions(d.fbPositions);
         setIgPositions(d.igPositions);
         setPrimaryText(d.primaryText);

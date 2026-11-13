@@ -6,6 +6,13 @@ import { appConfig, campaignSnapshots, clients as clientsTable, metaTokens, metr
 import { requireOrgContext } from "@/server/session";
 import { clientAccessCondition, canAccessClient } from "@/lib/client-access";
 import { isoDateInBrasilia, daysAgoInBrasilia, weekdayInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
+import {
+  buildManualPlacementTargeting,
+  normalizeFbPositions,
+  normalizeIgPositions,
+  DEFAULT_FB_POSITIONS,
+  DEFAULT_IG_POSITIONS,
+} from "@/lib/placements";
 
 async function getConfigValues(keys: string[]): Promise<Record<string, string>> {
   const { organizationId } = await requireOrgContext();
@@ -1272,17 +1279,6 @@ export interface MetaTargeting {
   instagram_positions?: string[];
   device_platforms?: string[];
   targeting_automation?: { advantage_audience?: number };
-}
-
-// Anúncio de WhatsApp no Gerenciador da Meta é sempre só celular: todo conjunto
-// com posicionamento manual montado lá tem device_platforms=["mobile"] e nunca
-// usa posições de desktop (coluna direita). Sem isso, a Meta aceita e veicula,
-// mas a tela do Gerenciador não consegue representar a combinação e mostra os
-// posicionamentos todos desmarcados.
-export const MANUAL_PLACEMENT_DEVICES = ["mobile"];
-const DESKTOP_ONLY_FB_POSITIONS = new Set(["right_hand_column"]);
-export function mobileFbPositions(positions: string[]): string[] {
-  return positions.filter((p) => !DESKTOP_ONLY_FB_POSITIONS.has(p));
 }
 
 export interface MetaAdCreative {
@@ -3157,6 +3153,7 @@ export interface CampaignPrefillData {
   locations: SelectedLocation[];
   interests: MetaInterest[];
   platforms: { facebook: boolean; instagram: boolean };
+  placementMode: "manual" | "advantage_plus";
   fbPositions: string[];
   igPositions: string[];
   primaryText: string;
@@ -3307,17 +3304,13 @@ export async function fetchBaseCampaignPrefill(
     locations,
     interests,
     platforms,
-    // Sem posicionamento explícito (ex: campanha duplicada, que sai em modo
-    // Advantage+/automático) marca tudo por padrão — nunca só feed+story.
-    // SEM right_hand_column: campanhas WhatsApp/Conversas nunca têm essa
-    // posição na lista de effective_facebook_positions resolvida pela própria
-    // Meta (confirmado direto na conta) — mandar ela de volta manualmente
-    // numa atualização de conjunto já existente derruba a escrita com um erro
-    // genérico da Meta ("An unknown error has occurred", code 1).
-    fbPositions: fbPlaces.length > 0 ? fbPlaces : ["feed", "story", "facebook_reels"],
-    igPositions: igPlaces.filter((p) => p !== "ig_search").length > 0
-      ? igPlaces.filter((p) => p !== "ig_search")
-      : ["stream", "story", "explore", "reels"],
+    // Sem posições explícitas o conjunto está em Advantage+ (ex: campanha
+    // duplicada); se o usuário trocar pra manual, já começa com tudo marcado.
+    placementMode: (fbPlaces.length > 0 || igPlaces.length > 0 ? "manual" : "advantage_plus") as
+      | "manual"
+      | "advantage_plus",
+    fbPositions: normalizeFbPositions(fbPlaces).length > 0 ? normalizeFbPositions(fbPlaces) : DEFAULT_FB_POSITIONS,
+    igPositions: normalizeIgPositions(igPlaces).length > 0 ? normalizeIgPositions(igPlaces) : DEFAULT_IG_POSITIONS,
     primaryText,
     headline,
     description,
@@ -3402,33 +3395,15 @@ export async function createCampaignFromScratch(
   if (t?.interests?.length) targeting.flexible_spec = [{ interests: t.interests }];
 
   if (opts.placementMode === "manual") {
-    const publisher_platforms: string[] = [];
-    const facebook_positions: string[] = [];
-    const instagram_positions: string[] = [];
-
-    if (opts.placements.facebook) {
-      publisher_platforms.push("facebook");
-      const rawFbPos = opts.fbPositions?.length ? opts.fbPositions : ["feed", "story"];
-      // reels/facebook_reels not supported for WHATSAPP destination
-      const fbPos = mobileFbPositions(rawFbPos.filter((p) => p !== "reels" && p !== "facebook_reels"));
-      facebook_positions.push(...(fbPos.length ? fbPos : ["feed", "story"]));
-    }
-    if (opts.placements.instagram) {
-      publisher_platforms.push("instagram");
-      instagram_positions.push(...(opts.igPositions?.length ? opts.igPositions : ["stream", "story"]));
-      // explore_home requires explore (Meta rule)
-      if (instagram_positions.includes("explore_home") && !instagram_positions.includes("explore")) {
-        instagram_positions.push("explore");
-      }
-      // ig_search conflicts with other placements
-      const igSearchIdx = instagram_positions.indexOf("ig_search");
-      if (igSearchIdx !== -1) instagram_positions.splice(igSearchIdx, 1);
-    }
-
-    if (publisher_platforms.length) targeting.publisher_platforms = publisher_platforms;
-    if (facebook_positions.length) targeting.facebook_positions = facebook_positions;
-    if (instagram_positions.length) targeting.instagram_positions = instagram_positions;
-    targeting.device_platforms = MANUAL_PLACEMENT_DEVICES;
+    Object.assign(
+      targeting,
+      buildManualPlacementTargeting({
+        facebook: opts.placements.facebook,
+        instagram: opts.placements.instagram,
+        fbPositions: opts.fbPositions ?? [],
+        igPositions: opts.igPositions ?? [],
+      })
+    );
   }
   // Advantage+ (padrão): nenhum campo de posicionamento é enviado, deixando a Meta escolher.
 
