@@ -2215,18 +2215,19 @@ async function withRetry<T>(
 // mesmo com a trava "funcionando". Guardando em app_config (por organização +
 // escopo, com lock de linha na transação pra não racear entre abas/chamadas
 // concorrentes), a trava sobrevive a navegação e F5.
-export const WRITE_SPACING_MS = 33_000;
+// 33s era o necessário enquanto o app estava no nível Limited do Marketing
+// API Access Tier (limite real de ~1 chamada de escrita a cada 30s por
+// conta). Aprovado pra Full em 13/11/2026 — o limite real agora é bem mais
+// folgado, então isso cai pra só uma folga mínima contra double-click/corrida
+// entre abas, não mais uma proteção contra 613. Se o 613 voltar a aparecer
+// com volume alto (múltiplos clientes usando contas pesadas ao mesmo tempo),
+// subir esse valor de novo é o primeiro lugar a mexer.
+export const WRITE_SPACING_MS = 2_000;
 
-// Edições avulsas de UM objeto já existente (pausar/ativar, mudar orçamento,
-// renomear) nunca foram a causa do 613 original — isso veio de SEQUÊNCIAS de
-// várias escritas (duplicar campanha: criar campanha→conjunto→anúncio em
-// cadeia). Uma ação isolada não precisa dos 33s inteiros; 8s já é folga de
-// sobra pra evitar duplo-clique acidental, sem fazer um simples pausar/ativar
-// parecer travado. Continua usando a MESMA trava persistida (mesma chave por
-// conta) — se tiver um fluxo pesado rodando na mesma conta bem na hora, essa
-// edição avulsa ainda respeita a fila dele, só não impõe os 33s inteiros
-// quando a conta está parada.
-const LIGHT_WRITE_SPACING_MS = 8_000;
+// Mesma lógica acima, só que pra edições avulsas de um objeto já existente
+// (pausar/ativar, mudar orçamento, renomear) — sempre foi mais leve que
+// WRITE_SPACING_MS, agora cai proporcionalmente.
+const LIGHT_WRITE_SPACING_MS = 500;
 
 const _acquireMetaWriteSlot = createServerFn({ method: "POST" })
   .inputValidator(z.object({ scope: z.string().optional(), spacingMs: z.number().optional() }).optional())
