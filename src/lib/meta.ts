@@ -1270,7 +1270,19 @@ export interface MetaTargeting {
   publisher_platforms?: string[];
   facebook_positions?: string[];
   instagram_positions?: string[];
+  device_platforms?: string[];
   targeting_automation?: { advantage_audience?: number };
+}
+
+// Anúncio de WhatsApp no Gerenciador da Meta é sempre só celular: todo conjunto
+// com posicionamento manual montado lá tem device_platforms=["mobile"] e nunca
+// usa posições de desktop (coluna direita). Sem isso, a Meta aceita e veicula,
+// mas a tela do Gerenciador não consegue representar a combinação e mostra os
+// posicionamentos todos desmarcados.
+export const MANUAL_PLACEMENT_DEVICES = ["mobile"];
+const DESKTOP_ONLY_FB_POSITIONS = new Set(["right_hand_column"]);
+export function mobileFbPositions(positions: string[]): string[] {
+  return positions.filter((p) => !DESKTOP_ONLY_FB_POSITIONS.has(p));
 }
 
 export interface MetaAdCreative {
@@ -3375,7 +3387,8 @@ export async function createCampaignFromScratch(
       publisher_platforms.push("facebook");
       const rawFbPos = opts.fbPositions?.length ? opts.fbPositions : ["feed", "story"];
       // reels/facebook_reels not supported for WHATSAPP destination
-      facebook_positions.push(...rawFbPos.filter((p) => p !== "reels" && p !== "facebook_reels"));
+      const fbPos = mobileFbPositions(rawFbPos.filter((p) => p !== "reels" && p !== "facebook_reels"));
+      facebook_positions.push(...(fbPos.length ? fbPos : ["feed", "story"]));
     }
     if (opts.placements.instagram) {
       publisher_platforms.push("instagram");
@@ -3392,6 +3405,7 @@ export async function createCampaignFromScratch(
     if (publisher_platforms.length) targeting.publisher_platforms = publisher_platforms;
     if (facebook_positions.length) targeting.facebook_positions = facebook_positions;
     if (instagram_positions.length) targeting.instagram_positions = instagram_positions;
+    targeting.device_platforms = MANUAL_PLACEMENT_DEVICES;
   }
   // Advantage+ (padrão): nenhum campo de posicionamento é enviado, deixando a Meta escolher.
 

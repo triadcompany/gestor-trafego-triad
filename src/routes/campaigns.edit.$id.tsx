@@ -66,7 +66,6 @@ const FB_POSITIONS = [
   { value: "feed", label: "Feed" },
   { value: "story", label: "Stories" },
   { value: "facebook_reels", label: "Reels" },
-  { value: "right_hand_column", label: "Coluna direita" },
 ];
 
 const IG_POSITIONS = [
@@ -195,7 +194,7 @@ function EditCampaign() {
   const [locations, setLocations] = useState<SelectedLocation[]>([]);
   const [interests, setInterests] = useState<MetaInterest[]>([]);
   const [platforms, setPlatforms] = useState({ facebook: true, instagram: true });
-  const [fbPositions, setFbPositions] = useState(["feed", "story", "facebook_reels", "right_hand_column"]);
+  const [fbPositions, setFbPositions] = useState(["feed", "story", "facebook_reels"]);
   const [igPositions, setIgPositions] = useState(["stream", "story", "explore", "reels"]);
 
   // Step 3

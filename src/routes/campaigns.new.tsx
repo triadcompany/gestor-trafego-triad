@@ -75,7 +75,6 @@ import { isN8nConfigured, triggerN8nCampaign, pollN8nJob, isN8nDuplicateConfigur
 const FB_POSITIONS = [
   { value: "feed", label: "Feed" },
   { value: "story", label: "Stories" },
-  { value: "right_hand_column", label: "Coluna direita" },
 ];
 
 const IG_POSITIONS = [
@@ -291,7 +290,7 @@ function NewCampaign() {
   const [placementMode, setPlacementMode] = useState<"advantage_plus" | "manual">("advantage_plus");
   const [bidAmount, setBidAmount] = useState<number | "">("");
   const [platforms, setPlatforms] = useState({ facebook: true, instagram: true });
-  const [fbPositions, setFbPositions] = useState(["feed", "story", "right_hand_column"]);
+  const [fbPositions, setFbPositions] = useState(["feed", "story"]);
   const [igPositions, setIgPositions] = useState(["stream", "story", "explore", "reels"]);
 
   // ── Step 3: Ad creative ─────────────────────────────────────

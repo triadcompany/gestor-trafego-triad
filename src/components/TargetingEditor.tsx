@@ -16,6 +16,8 @@ import {
   updateAdSetWhatsappNumber,
   searchMetaInterests,
   searchMetaLocations,
+  mobileFbPositions,
+  MANUAL_PLACEMENT_DEVICES,
   type MetaTargeting,
   type MetaInterest,
   type MetaLocationResult,
@@ -39,7 +41,6 @@ const FB_POSITIONS: { value: string; label: string }[] = [
   { value: "feed", label: "Feed" },
   { value: "story", label: "Stories" },
   { value: "facebook_reels", label: "Reels" },
-  { value: "right_hand_column", label: "Coluna direita" },
   { value: "instream_video", label: "Vídeo in-stream" },
 ];
 
@@ -122,7 +123,7 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
         facebook: targeting.publisher_platforms.includes("facebook"),
         instagram: targeting.publisher_platforms.includes("instagram"),
       });
-      setFbPositions(targeting.facebook_positions ?? ["feed", "story"]);
+      setFbPositions(mobileFbPositions(targeting.facebook_positions ?? ["feed", "story"]));
       setIgPositions(targeting.instagram_positions ?? ["stream", "story"]);
     } else {
       setPlacementMode("advantage_plus");
@@ -152,7 +153,8 @@ export function TargetingEditor({ adSetId, token }: TargetingEditorProps) {
             ...(platforms.facebook ? ["facebook"] : []),
             ...(platforms.instagram ? ["instagram"] : []),
           ],
-          ...(platforms.facebook ? { facebook_positions: fbPositions } : {}),
+          device_platforms: MANUAL_PLACEMENT_DEVICES,
+          ...(platforms.facebook ? { facebook_positions: mobileFbPositions(fbPositions) } : {}),
           ...(platforms.instagram ? {
             instagram_positions: (() => {
               let pos = igPositions;
