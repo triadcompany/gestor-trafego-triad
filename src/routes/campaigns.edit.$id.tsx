@@ -60,7 +60,22 @@ import {
   type SelectedLocation,
   type MetaInterest,
 } from "@/lib/meta";
+import { getN8nMetaWriter } from "@/lib/n8n";
 import { fetchWhatsappNumbersForPage, resolveCampaignAccountId } from "@/server/facebook-directory";
+
+async function withSaveToast<T>(
+  id: string,
+  initialMsg: string,
+  fn: (progress: (msg: string) => void) => Promise<T>
+): Promise<T> {
+  const progress = (msg: string) => toast.loading(msg, { id });
+  progress(initialMsg);
+  try {
+    return await fn(progress);
+  } finally {
+    toast.dismiss(id);
+  }
+}
 
 const FB_POSITIONS = [
   { value: "feed", label: "Feed" },
@@ -347,13 +362,15 @@ function EditCampaign() {
     mutationFn: async () => {
       const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token Meta não encontrado.");
-      // Espaçamento cheio (não o leve padrão): isso roda logo após duplicar a
-      // campanha (conta ainda "quente") e é seguido por mais 2 escritas no
-      // mesmo wizard — 8s não é suficiente nessa sequência (ver 613 reportado).
-      await updateMetaObject(campaignId, {
+      const fields = {
         name: campaignName,
         daily_budget: String(Math.round(budget * 100)),
-      }, token, campaignAccountId ?? undefined, WRITE_SPACING_MS);
+      };
+      await withSaveToast("save-campaign", "Salvando campanha...", async (progress) => {
+        const writer = await getN8nMetaWriter(token, "editar-campanha", progress);
+        if (writer) return writer([{ path: campaignId, params: fields, label: "campanha" }]);
+        await updateMetaObject(campaignId, fields, token, campaignAccountId ?? undefined, WRITE_SPACING_MS);
+      });
     },
     onSuccess: () => {
       toast.success("Campanha atualizada.");
@@ -409,7 +426,11 @@ function EditCampaign() {
       if (whatsappNumber && pageId) {
         fields.promoted_object = JSON.stringify({ page_id: pageId, whatsapp_phone_number: whatsappNumber });
       }
-      await updateMetaObject(adsetId, fields, token, campaignAccountId ?? undefined, WRITE_SPACING_MS);
+      await withSaveToast("save-adset", "Salvando conjunto...", async (progress) => {
+        const writer = await getN8nMetaWriter(token, "editar-conjunto", progress);
+        if (writer) return writer([{ path: adsetId, params: fields, label: "conjunto" }]);
+        await updateMetaObject(adsetId, fields, token, campaignAccountId ?? undefined, WRITE_SPACING_MS);
+      });
     },
     onSuccess: () => {
       toast.success("Conjunto atualizado.");
@@ -429,30 +450,34 @@ function EditCampaign() {
         ? { whatsappGreeting, whatsappMessage }
         : undefined;
 
-      if (mediaFile) {
-        const pid = "creative-progress";
-        await swapAdCreativeMedia(
-          adId,
-          await fetchAdWithCreative(adId, token),
-          mediaFile,
-          token,
-          whatsappNumber,
-          (msg) => toast.loading(msg, { id: pid }),
-          { body: primaryText, title: headline, description: adDescription },
-          conversationOverrides
-        );
-        toast.dismiss(pid);
-      } else {
+      await withSaveToast("creative-progress", "Salvando anúncio...", async (progress) => {
+        const writer = await getN8nMetaWriter(token, "editar-anuncio", progress);
         const creative = await fetchAdWithCreative(adId, token);
-        await updateAdCreative(
-          adId,
-          creative,
-          { body: primaryText, title: headline, description: adDescription },
-          token,
-          whatsappNumber,
-          conversationOverrides
-        );
-      }
+        if (mediaFile) {
+          await swapAdCreativeMedia(
+            adId,
+            creative,
+            mediaFile,
+            token,
+            whatsappNumber,
+            progress,
+            { body: primaryText, title: headline, description: adDescription },
+            conversationOverrides,
+            writer
+          );
+        } else {
+          await updateAdCreative(
+            adId,
+            creative,
+            { body: primaryText, title: headline, description: adDescription },
+            token,
+            whatsappNumber,
+            conversationOverrides,
+            undefined,
+            writer
+          );
+        }
+      });
     },
     onSuccess: () => {
       toast.success("Anúncio atualizado.");

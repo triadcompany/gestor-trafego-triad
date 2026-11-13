@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/db/client";
 import { n8nJobs } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
-import type { AdCreativeOptions, CreateFromScratchOptions } from "./meta";
+import type { AdCreativeOptions, CreateFromScratchOptions, MetaWriteOp } from "./meta";
 
 export interface N8nCampaignPayload {
   campaignOptions: Omit<CreateFromScratchOptions, "token">;
@@ -177,4 +177,81 @@ const _triggerN8nDuplicateCampaign = createServerFn({ method: "POST" })
 
 export async function triggerN8nDuplicateCampaign(payload: N8nDuplicatePayload): Promise<{ jobId: string }> {
   return _triggerN8nDuplicateCampaign({ data: payload });
+}
+
+// ── Gravações avulsas na Meta via n8n ──────────────────────────
+// Workflow "Gestor Tráfego — Executar Escritas Meta": recebe uma lista de
+// gravações já montadas pelo app (ver MetaWriteOp) e executa em sequência, com
+// a mesma espera automática no 613. Mesmo host dos outros webhooks, então a
+// URL sai da de criar anúncio em vez de exigir mais uma variável de ambiente.
+function metaWritesWebhookUrl(): string | null {
+  if (process.env.N8N_META_WRITES_WEBHOOK_URL) return process.env.N8N_META_WRITES_WEBHOOK_URL;
+  const base = process.env.N8N_CAMPAIGN_WEBHOOK_URL;
+  return base ? new URL("executar-escritas-meta", base).toString() : null;
+}
+
+const _isN8nMetaWritesConfigured = createServerFn({ method: "GET" }).handler(async (): Promise<boolean> => {
+  return !!metaWritesWebhookUrl();
+});
+
+const _triggerN8nMetaWrites = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      token: z.string(),
+      callbackId: z.string(),
+      label: z.string(),
+      ops: z
+        .array(z.object({ path: z.string(), params: z.record(z.string()), label: z.string().optional() }))
+        .min(1)
+        .max(20),
+    })
+  )
+  .handler(async ({ data }): Promise<{ jobId: string }> => {
+    const { organizationId } = await requireOrgContext();
+    const webhookUrl = metaWritesWebhookUrl();
+    if (!webhookUrl) throw new Error("Webhook do n8n não configurado no servidor.");
+
+    await db.insert(n8nJobs).values({
+      id: data.callbackId,
+      organizationId,
+      status: "pending",
+      payload: { label: data.label, ops: data.ops.map((o) => o.label ?? o.path) },
+    });
+
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...data, organizationId }),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`n8n retornou erro ${res.status}: ${text}`);
+    }
+    return { jobId: data.callbackId };
+  });
+
+/**
+ * Devolve um executor que manda as gravações pro n8n e espera ele terminar,
+ * ou undefined quando o n8n não está configurado (aí quem chama grava direto).
+ */
+export async function getN8nMetaWriter(
+  token: string,
+  label: string,
+  onProgress?: (msg: string) => void
+): Promise<((ops: MetaWriteOp[]) => Promise<void>) | undefined> {
+  if (!(await _isN8nMetaWritesConfigured())) return undefined;
+  return async (ops) => {
+    const callbackId = crypto.randomUUID();
+    onProgress?.("Enviando para o n8n...");
+    await _triggerN8nMetaWrites({ data: { token, callbackId, label, ops } });
+    const start = Date.now();
+    while (Date.now() - start < 5 * 60 * 1000) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const status = await pollN8nJob(callbackId);
+      if (status?.status === "done") return;
+      if (status?.status === "error") throw new Error(status.errorMessage || "Erro desconhecido no n8n.");
+      onProgress?.("Salvando na Meta via n8n...");
+    }
+    throw new Error("O n8n não respondeu a tempo (5min). A alteração pode ter sido aplicada mesmo assim.");
+  };
 }

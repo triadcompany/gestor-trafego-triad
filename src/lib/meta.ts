@@ -1574,6 +1574,37 @@ export async function waitForVideoReady(
   throw new Error("Timeout: o vídeo demorou mais que 2 minutos para processar. Tente novamente.");
 }
 
+// Uma gravação na Meta descrita como dado, pra poder ser executada fora do
+// navegador (workflow "Executar Escritas Meta" no n8n). Valores de params
+// podem referenciar o resultado de uma operação anterior da mesma lista com
+// "{{op:N.campo}}" — ex. o id do criativo recém-criado.
+export interface MetaWriteOp {
+  path: string;
+  params: Record<string, string>;
+  label?: string;
+}
+export type MetaWriter = (ops: MetaWriteOp[]) => Promise<void>;
+
+// Criativo usado em anúncio é imutável: toda edição cria um novo e aponta o
+// anúncio pra ele.
+async function commitNewCreative(
+  accountId: string,
+  adId: string,
+  creativeParams: Record<string, string>,
+  token: string,
+  writer?: MetaWriter
+): Promise<void> {
+  if (writer) {
+    await writer([
+      { path: `${accountId}/adcreatives`, params: creativeParams, label: "criar-criativo" },
+      { path: adId, params: { creative: JSON.stringify({ creative_id: "{{op:0.id}}" }) }, label: "trocar-criativo-do-anuncio" },
+    ]);
+    return;
+  }
+  const newCreative = (await postMeta(`${accountId}/adcreatives`, { ...creativeParams, access_token: token })) as { id: string };
+  await updateMetaObject(adId, { creative: JSON.stringify({ creative_id: newCreative.id }) }, token);
+}
+
 export async function swapAdCreativeMedia(
   adId: string,
   creative: MetaAdCreative,
@@ -1582,7 +1613,8 @@ export async function swapAdCreativeMedia(
   clientWhatsappNumber?: string,
   onProgress?: (msg: string) => void,
   textOverrides?: { body?: string; title?: string; description?: string },
-  conversationOverrides?: { whatsappGreeting?: string; whatsappMessage?: string }
+  conversationOverrides?: { whatsappGreeting?: string; whatsappMessage?: string },
+  writer?: MetaWriter
 ): Promise<void> {
   const accountId = await fetchAdAccountId(adId, token);
   // O tipo da NOVA mídia sendo enviada decide o formato — nunca o do criativo antigo
@@ -1607,7 +1639,7 @@ export async function swapAdCreativeMedia(
     const thumbUrl = (await waitForVideoReady(videoId, token, onProgress)) ?? creative.thumbnail_url;
     if (!resolvedWa) throw new Error("Número WhatsApp não encontrado. Cadastre o número em Configurações do cliente.");
     onProgress?.("Criando criativo...");
-    const newCreative = (await postMeta(`${accountId}/adcreatives`, {
+    await commitNewCreative(accountId, adId, {
       name: `media_swap_${Date.now()}`,
       object_story_spec: JSON.stringify({
         page_id: pageId,
@@ -1621,9 +1653,7 @@ export async function swapAdCreativeMedia(
           ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
         },
       }),
-      access_token: token,
-    })) as { id: string };
-    await updateMetaObject(adId, { creative: JSON.stringify({ creative_id: newCreative.id }) }, token);
+    }, token, writer);
     return;
   }
 
@@ -1631,7 +1661,7 @@ export async function swapAdCreativeMedia(
   const imageHash = await uploadAdImage(accountId, mediaFile, token);
   onProgress?.("Criando criativo...");
   const waLink = resolvedWa ? `https://wa.me/${resolvedWa}` : undefined;
-  const newCreative = (await postMeta(`${accountId}/adcreatives`, {
+  await commitNewCreative(accountId, adId, {
     name: `media_swap_${Date.now()}`,
     object_story_spec: JSON.stringify({
       page_id: pageId,
@@ -1646,9 +1676,7 @@ export async function swapAdCreativeMedia(
         ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
       },
     }),
-    access_token: token,
-  })) as { id: string };
-  await updateMetaObject(adId, { creative: JSON.stringify({ creative_id: newCreative.id }) }, token);
+  }, token, writer);
 }
 
 export async function updateAdCreative(
@@ -1658,7 +1686,8 @@ export async function updateAdCreative(
   token: string,
   clientWhatsappNumber?: string, // from client record — most reliable source
   conversationOverrides?: { whatsappGreeting?: string; whatsappMessage?: string },
-  newWhatsappNumber?: string // troca explícita do número que recebe os leads deste anúncio
+  newWhatsappNumber?: string, // troca explícita do número que recebe os leads deste anúncio
+  writer?: MetaWriter
 ): Promise<void> {
   // NOTA: não tentar PATCH direto em creative.id — a Meta aceita o POST e responde sucesso
   // mesmo sem aplicar nada (criativos já usados em anúncio são efetivamente imutáveis pra
@@ -1711,12 +1740,10 @@ export async function updateAdCreative(
           },
         };
 
-    const newCreative = (await postMeta(`${accountId}/adcreatives`, {
+    await commitNewCreative(accountId, adId, {
       name: `edited_${Date.now()}`,
       object_story_spec: JSON.stringify(updatedSpec),
-      access_token: token,
-    })) as { id: string };
-    await updateMetaObject(adId, { creative: JSON.stringify({ creative_id: newCreative.id }) }, token);
+    }, token, writer);
     return;
   }
 
@@ -1731,12 +1758,10 @@ export async function updateAdCreative(
       ...(updates.title !== undefined ? { titles: [{ text: updates.title }] } : {}),
       ...(updates.description !== undefined ? { descriptions: [{ text: updates.description }] } : {}),
     };
-    const newCreative = (await postMeta(`${accountId}/adcreatives`, {
+    await commitNewCreative(accountId, adId, {
       name: `edited_${Date.now()}`,
       asset_feed_spec: JSON.stringify(updatedFeed),
-      access_token: token,
-    })) as { id: string };
-    await updateMetaObject(adId, { creative: JSON.stringify({ creative_id: newCreative.id }) }, token);
+    }, token, writer);
     return;
   }
 
@@ -1748,7 +1773,7 @@ export async function updateAdCreative(
     const resolvedWa = (overrideWa ?? clientWhatsappNumber ?? creative.whatsapp_number ?? "").replace(/\D/g, "");
     if (!resolvedWa) throw new Error("Número WhatsApp não encontrado. Cadastre o número em Configurações do cliente.");
 
-    const newCreative = (await postMeta(`${accountId}/adcreatives`, {
+    await commitNewCreative(accountId, adId, {
       name: `edited_${Date.now()}`,
       object_story_spec: JSON.stringify({
         page_id: pageId2,
@@ -1764,9 +1789,7 @@ export async function updateAdCreative(
             : {}),
         },
       }),
-      access_token: token,
-    })) as { id: string };
-    await updateMetaObject(adId, { creative: JSON.stringify({ creative_id: newCreative.id }) }, token);
+    }, token, writer);
     return;
   }
 
