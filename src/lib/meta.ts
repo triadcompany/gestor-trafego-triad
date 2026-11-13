@@ -2155,9 +2155,19 @@ class MetaApiCallError extends Error {
   }
 }
 
+// Full tier deixou o espaçamento preventivo bem menor (WRITE_SPACING_MS/
+// LIGHT_WRITE_SPACING_MS), mas isso é só a NOSSA estimativa — se a Meta ainda
+// assim devolver um 613 de verdade (visto ao vivo em 13/11/2026 mesmo após a
+// aprovação Full, numa conta específica), é porque o limite real pra aquela
+// chamada/conta continua "1 call per 30s" e insistir no espaçamento curto só
+// faz as 3 tentativas falharem em menos de 2s. Por isso, a primeira vez que
+// bate um 613 de verdade, toda tentativa seguinte passa a esperar o intervalo
+// que a própria Meta informou (30s + folga), em vez do espaçamento curto.
+const REAL_RATE_LIMIT_WAIT_MS = 31_000;
+
 // isWrite=true: cada tentativa (inclusive a 1ª) espera waitForWriteSlot()
 // antes de disparar, então uma 2ª/3ª tentativa automaticamente já respeita o
-// espaçamento de ~33s — não dá só um backoff curto que nunca resolve o 613.
+// espaçamento — não dá só um backoff curto que nunca resolve o 613.
 // Code 1 ("unknown error") também aparece disfarçando rate limit nas chamadas
 // de escrita dessa conta (visto ao vivo seguido de um 613 na mesma rajada),
 // por isso toda tentativa de escrita usa o mesmo espaçamento, não só o 613.
@@ -2167,8 +2177,9 @@ async function withRetry<T>(
 ): Promise<T> {
   const { maxAttempts = 3, isWrite = false, writeScope, spacingMs } = opts;
   let lastError: Error = new Error("Unknown error");
+  let hitRealRateLimit = false;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
-    if (isWrite) await waitForWriteSlot(writeScope, spacingMs);
+    if (isWrite) await waitForWriteSlot(writeScope, hitRealRateLimit ? REAL_RATE_LIMIT_WAIT_MS : spacingMs);
     try {
       return await fn();
     } catch (err) {
@@ -2177,9 +2188,10 @@ async function withRetry<T>(
         if (lastError.code !== undefined && !META_RETRYABLE_CODES.has(lastError.code)) {
           throw lastError;
         }
+        if (lastError.code === 613) hitRealRateLimit = true;
       }
       if (attempt < maxAttempts - 1 && !isWrite) {
-        await new Promise<void>((r) => setTimeout(r, 1000 * 2 ** attempt));
+        await new Promise<void>((r) => setTimeout(r, hitRealRateLimit ? REAL_RATE_LIMIT_WAIT_MS : 1000 * 2 ** attempt));
       }
       // isWrite: a espera já acontece no topo do próximo loop, via waitForWriteSlot().
     }
