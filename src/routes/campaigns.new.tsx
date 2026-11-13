@@ -68,7 +68,7 @@ import {
   type SelectedLocation,
   type MetaInterest,
 } from "@/lib/meta";
-import { isN8nConfigured, triggerN8nCampaign, pollN8nJob } from "@/lib/n8n";
+import { isN8nConfigured, triggerN8nCampaign, pollN8nJob, isN8nDuplicateConfigured, triggerN8nDuplicateCampaign } from "@/lib/n8n";
 
 // Sem "Reels" — não é suportado pelo posicionamento manual em campanhas de
 // WhatsApp (destination_type CONVERSATIONS), que é o único tipo criado aqui.
@@ -332,6 +332,10 @@ function NewCampaign() {
   // ── Result ──────────────────────────────────────────────────
   const [createdId, setCreatedId] = useState<string | null>(null);
   const [pendingJobId, setPendingJobId] = useState<string | null>(null);
+  // Qual mutation deixou esse job pendente — muda o que fazer quando o n8n
+  // termina (duplicar navega pro editor da campanha nova; criar do zero
+  // mostra a tela "Campanha criada!").
+  const [pendingJobKind, setPendingJobKind] = useState<"scratch" | "duplicate" | null>(null);
 
   // ── Criar em massa ────────────────────────────────────────────
   const [cars, setCars] = useState<BulkCar[]>([makeEmptyBulkCar()]);
@@ -445,8 +449,23 @@ function NewCampaign() {
     if (!jobStatus || !pendingJobId) return;
     if (jobStatus.status === "done") {
       toast.dismiss("n8n-progress");
-      toast.success("Anúncio criado com sucesso pelo n8n!", { duration: 10000 });
+      const kind = pendingJobKind;
       setPendingJobId(null);
+      setPendingJobKind(null);
+      if (kind === "duplicate") {
+        if (!jobStatus.campaignId) {
+          toast.error("n8n concluiu a duplicação mas não retornou o ID da campanha.", { duration: 20000 });
+          return;
+        }
+        toast.success("Campanha duplicada via n8n! Abrindo editor...");
+        navigate({
+          to: "/campaigns/edit/$id",
+          params: { id: jobStatus.campaignId },
+          search: { clientId: clientId ?? "" },
+        });
+        return;
+      }
+      toast.success("Anúncio criado com sucesso pelo n8n!", { duration: 10000 });
       // Mesma tela de sucesso do caminho direto da API ("Campanha criada!" +
       // botão "Abrir campanha") — sem isso, ficava preso na própria tela do
       // formulário mesmo depois do n8n terminar com sucesso.
@@ -455,8 +474,9 @@ function NewCampaign() {
       toast.dismiss("n8n-progress");
       toast.error(`Erro no n8n: ${jobStatus.errorMessage ?? "Erro desconhecido"}`, { duration: 20000 });
       setPendingJobId(null);
+      setPendingJobKind(null);
     }
-  }, [jobStatus, pendingJobId]);
+  }, [jobStatus, pendingJobId, pendingJobKind, clientId, navigate]);
 
   // Aviso brando aos 60s (sem parar de checar — vídeo pode demorar mais que isso pra processar)
   useEffect(() => {
@@ -655,6 +675,23 @@ function NewCampaign() {
       const pid = "duplicate-progress";
       toast.loading("Duplicando campanha na Meta...", { id: pid });
       try {
+        if (await isN8nDuplicateConfigured()) {
+          const callbackId = crypto.randomUUID();
+          await triggerN8nDuplicateCampaign({
+            callbackId,
+            token,
+            adAccountId: selectedClient.meta_ad_account_id,
+            campaignId: baseCampaignId,
+            newName: campaignName,
+            whatsappNumber: selectedClient.meta_whatsapp_number ?? undefined,
+            adSetName: adSetName || undefined,
+            adName: adName || undefined,
+          });
+          toast.dismiss(pid);
+          toast.loading("Duplicando campanha via n8n...", { id: "n8n-progress", duration: Infinity });
+          return { n8nJobId: callbackId };
+        }
+
         const id = await duplicateCampaign(
           baseCampaignId,
           selectedClient.meta_ad_account_id,
@@ -672,11 +709,16 @@ function NewCampaign() {
         throw err;
       }
     },
-    onSuccess: (id) => {
+    onSuccess: (result) => {
+      if (typeof result === "object" && "n8nJobId" in result) {
+        setPendingJobKind("duplicate");
+        setPendingJobId(result.n8nJobId);
+        return;
+      }
       toast.success("Campanha duplicada! Abrindo editor...");
       navigate({
         to: "/campaigns/edit/$id",
-        params: { id },
+        params: { id: result },
         search: { clientId: clientId ?? "" },
       });
     },
@@ -788,6 +830,7 @@ function NewCampaign() {
     onSuccess: (result) => {
       if (!result) return;
       if (typeof result === "object" && "n8nJobId" in result) {
+        setPendingJobKind("scratch");
         setPendingJobId(result.n8nJobId);
       } else {
         setCreatedId(result);
@@ -1171,11 +1214,15 @@ function NewCampaign() {
               {mode === "duplicate" ? (
                 <Button
                   onClick={() => duplicateMutation.mutate()}
-                  disabled={!step1ValidDuplicate || duplicateMutation.isPending}
+                  disabled={
+                    !step1ValidDuplicate ||
+                    duplicateMutation.isPending ||
+                    (!!pendingJobId && pendingJobKind === "duplicate")
+                  }
                 >
-                  {duplicateMutation.isPending
+                  {duplicateMutation.isPending || (pendingJobId && pendingJobKind === "duplicate")
                     ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Duplicando...</>
-                    : "Duplicar via API"}
+                    : "Duplicar campanha"}
                 </Button>
               ) : (
                 <Button onClick={() => setStep(2)} disabled={mode === "bulk" ? !step1ValidBulk : !step1ValidScratch}>

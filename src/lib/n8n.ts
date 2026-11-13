@@ -103,3 +103,78 @@ const _pollN8nJob = createServerFn({ method: "GET" })
 export async function pollN8nJob(jobId: string): Promise<N8nJobStatus | null> {
   return _pollN8nJob({ data: { jobId } });
 }
+
+// ── Duplicar campanha via n8n ──────────────────────────────────
+// Mesmo padrão do criar do zero (webhook + job assíncrono), mas num workflow
+// separado ("Gestor Tráfego — Duplicar Campanha Meta") porque a duplicação
+// não parte de um formulário — ela lê a campanha original na Meta e replica
+// a estrutura, então tem um contrato de payload diferente.
+
+export interface N8nDuplicatePayload {
+  token: string;
+  callbackId: string;
+  adAccountId: string;
+  campaignId: string; // campanha de origem
+  newName: string;
+  whatsappNumber?: string;
+  adSetName?: string;
+  adName?: string;
+  flipObjective?: boolean;
+}
+
+const _isN8nDuplicateConfigured = createServerFn({ method: "GET" }).handler(async (): Promise<boolean> => {
+  return !!process.env.N8N_DUPLICATE_CAMPAIGN_WEBHOOK_URL;
+});
+
+export async function isN8nDuplicateConfigured(): Promise<boolean> {
+  return _isN8nDuplicateConfigured();
+}
+
+const _triggerN8nDuplicateCampaign = createServerFn({ method: "POST" })
+  .inputValidator(
+    z.object({
+      token: z.string(),
+      callbackId: z.string(),
+      adAccountId: z.string(),
+      campaignId: z.string(),
+      newName: z.string(),
+      whatsappNumber: z.string().optional(),
+      adSetName: z.string().optional(),
+      adName: z.string().optional(),
+      flipObjective: z.boolean().optional(),
+    })
+  )
+  .handler(async ({ data }): Promise<{ jobId: string }> => {
+    const { organizationId } = await requireOrgContext();
+    const payload = data as N8nDuplicatePayload;
+    const webhookUrl = process.env.N8N_DUPLICATE_CAMPAIGN_WEBHOOK_URL;
+    if (!webhookUrl) throw new Error("N8N_DUPLICATE_CAMPAIGN_WEBHOOK_URL não configurado no servidor.");
+
+    db.insert(n8nJobs)
+      .values({
+        id: payload.callbackId,
+        organizationId,
+        status: "pending",
+        payload: { newName: payload.newName, campaignId: payload.campaignId },
+      })
+      .catch((error: { code?: string; message?: string }) => {
+        if (error?.code !== "23505") console.warn("[n8n] job insert failed:", error?.message);
+      });
+
+    const res = await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...payload, organizationId }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText);
+      throw new Error(`n8n retornou erro ${res.status}: ${text}`);
+    }
+
+    return { jobId: payload.callbackId };
+  });
+
+export async function triggerN8nDuplicateCampaign(payload: N8nDuplicatePayload): Promise<{ jobId: string }> {
+  return _triggerN8nDuplicateCampaign({ data: payload });
+}
