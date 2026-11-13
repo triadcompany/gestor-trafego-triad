@@ -62,6 +62,7 @@ import {
   uploadAdVideo,
   createAdCreative,
   createAd,
+  fetchPageInstagramUserId,
   searchMetaLocations,
   searchMetaInterests,
   type MetaLocationResult,
@@ -211,6 +212,7 @@ async function createOneBulkCampaign(
     imageHash: finalImageHash,
     videoId: finalVideoId,
     thumbnailUrl: finalThumbnailUrl,
+    instagramUserId: await fetchPageInstagramUserId(shared.pageId, token),
   };
 
   if (await isN8nConfigured()) {
@@ -785,6 +787,7 @@ function NewCampaign() {
           imageHash: finalImageHash,
           videoId: finalVideoId,
           thumbnailUrl: finalThumbnailUrl,
+          instagramUserId: await fetchPageInstagramUserId(pageId, token),
         };
 
         if (await isN8nConfigured()) {

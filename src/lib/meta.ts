@@ -1590,6 +1590,15 @@ async function commitNewCreative(
   token: string,
   writer?: MetaWriter
 ): Promise<void> {
+  // Recriar o criativo a partir do spec lido não traz a conta do Instagram
+  // (não vem na leitura) — sem repor aqui, toda edição desmarcava o perfil.
+  if (creativeParams.object_story_spec) {
+    const spec = JSON.parse(creativeParams.object_story_spec) as Record<string, unknown>;
+    if (!spec.instagram_user_id && typeof spec.page_id === "string") {
+      const igUserId = await fetchPageInstagramUserId(spec.page_id, token);
+      if (igUserId) creativeParams = { ...creativeParams, object_story_spec: JSON.stringify({ ...spec, instagram_user_id: igUserId }) };
+    }
+  }
   if (writer) {
     await writer([
       { path: `${accountId}/adcreatives`, params: creativeParams, label: "criar-criativo" },
@@ -3571,6 +3580,35 @@ export interface AdCreativeOptions {
   imageHash?: string;
   videoId?: string;
   thumbnailUrl?: string; // existing thumbnail for video creatives (e.g. from duplicate flow)
+  instagramUserId?: string; // conta do Instagram ligada à página (ver fetchPageInstagramUserId)
+}
+
+const pageInstagramCache = new Map<string, string | null>();
+
+/**
+ * Conta do Instagram ligada à página — vai como instagram_user_id no criativo.
+ * Sem isso a Meta até deduz a conta pela página, mas o Gerenciador mostra o
+ * "Perfil do Instagram" do anúncio como não selecionado. (O campo antigo,
+ * instagram_actor_id, foi descontinuado pela Meta.)
+ */
+export async function fetchPageInstagramUserId(pageId: string, token: string): Promise<string | undefined> {
+  if (pageInstagramCache.has(pageId)) return pageInstagramCache.get(pageId) ?? undefined;
+  try {
+    const res = await fetch(
+      `${BASE_URL}/${pageId}?fields=instagram_business_account,connected_instagram_account&access_token=${encodeURIComponent(token)}`
+    );
+    const json = (await res.json()) as {
+      instagram_business_account?: { id: string };
+      connected_instagram_account?: { id: string };
+      error?: MetaApiError;
+    };
+    if (json.error) return undefined;
+    const id = json.instagram_business_account?.id ?? json.connected_instagram_account?.id ?? null;
+    pageInstagramCache.set(pageId, id);
+    return id ?? undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // Formato validado direto na API da Meta (POST /adcreatives com page_welcome_message em
@@ -3658,7 +3696,9 @@ export async function createAdCreative(
     `${adAccountId}/adcreatives`,
     {
       name: opts.name,
-      object_story_spec: JSON.stringify(objectStorySpec),
+      object_story_spec: JSON.stringify(
+        opts.instagramUserId ? { ...objectStorySpec, instagram_user_id: opts.instagramUserId } : objectStorySpec
+      ),
       access_token: token,
     },
     adAccountId
