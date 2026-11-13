@@ -2263,8 +2263,8 @@ async function waitForWriteSlot(scope?: string, spacingMs?: number): Promise<voi
 // conjunto, criativo de cada anúncio) disparavam soltas, sem respeitar o
 // espaçamento, entre uma escrita e outra. O limite da Meta aparenta contar
 // qualquer chamada nessa família de endpoints, não só POST/PUT/DELETE.
-async function spacedFetch(url: string, scope?: string): Promise<Response> {
-  await waitForWriteSlot(scope);
+async function spacedFetch(url: string, scope?: string, spacingMs?: number): Promise<Response> {
+  await waitForWriteSlot(scope, spacingMs);
   return fetch(url);
 }
 
@@ -3124,21 +3124,35 @@ export async function fetchBaseCampaignPrefill(
   campaignId: string,
   token: string
 ): Promise<CampaignPrefillData> {
-  // Campaign
+  // Campaign — primeira leitura não espera (a campanha acabou de ser criada
+  // via duplicateCampaign, que já reserva sua própria folga antes de devolver
+  // o controle pra cá). Pede account_id pra espaçar as leituras seguintes no
+  // MESMO escopo das escritas — contas com Marketing API Access Tier Limited
+  // contam leitura E escrita no mesmo limite de concorrência, então disparar
+  // 4-7 leituras soltas em sequência (sem espaçamento nenhum entre elas)
+  // também estoura o 613/"code 1", não só escritas em sequência.
   const campRes = await fetch(
-    `${BASE_URL}/${campaignId}?fields=name,objective,daily_budget&access_token=${encodeURIComponent(token)}`
+    `${BASE_URL}/${campaignId}?fields=name,objective,daily_budget,account_id&access_token=${encodeURIComponent(token)}`
   );
   const campJson = (await campRes.json()) as {
     name?: string;
     objective?: string;
     daily_budget?: string;
+    account_id?: string;
     error?: MetaApiError;
   };
   if (campJson.error) throw new Error(formatMetaError(campJson.error));
+  const accountScope = campJson.account_id ? `act_${campJson.account_id}` : undefined;
 
-  // First adset
-  const asRes = await fetch(
-    `${BASE_URL}/${campaignId}/adsets?fields=targeting,promoted_object,instagram_actor_id,daily_budget&limit=1&access_token=${encodeURIComponent(token)}`
+  // Daqui pra frente, cada leitura espera seu PRÓPRIO espaçamento leve (não
+  // acumula: cada chamada só espera uma vez, pela sua vez na fila) — espaçar
+  // é inevitável quando a conta só libera 1 chamada por janela, mas nunca
+  // chamar waitForWriteSlot mais de uma vez por leitura evita a soma de
+  // esperas que travou a tela antes.
+  const asRes = await spacedFetch(
+    `${BASE_URL}/${campaignId}/adsets?fields=targeting,promoted_object,instagram_actor_id,daily_budget&limit=1&access_token=${encodeURIComponent(token)}`,
+    accountScope,
+    LIGHT_WRITE_SPACING_MS
   );
   const asJson = (await asRes.json()) as {
     data?: Array<{
@@ -3165,14 +3179,21 @@ export async function fetchBaseCampaignPrefill(
   let resolvedAdId: string | undefined;
 
   if (adSet) {
-    const adsRes = await fetch(
-      `${BASE_URL}/${adSet.id}/ads?fields=id&limit=1&access_token=${encodeURIComponent(token)}`
+    const adsRes = await spacedFetch(
+      `${BASE_URL}/${adSet.id}/ads?fields=id&limit=1&access_token=${encodeURIComponent(token)}`,
+      accountScope,
+      LIGHT_WRITE_SPACING_MS
     );
     const adsJson = (await adsRes.json()) as { data?: Array<{ id: string }> };
     const adId = adsJson.data?.[0]?.id;
     if (adId) {
       resolvedAdId = adId;
       try {
+        // fetchAdWithCreative faz várias chamadas próprias sem espaçamento
+        // (reusada em vários pontos do código sem esse problema) — só a
+        // espera ANTES da primeira garante que não emende direto na leitura
+        // anterior.
+        await waitForWriteSlot(accountScope, LIGHT_WRITE_SPACING_MS);
         const cr = await fetchAdWithCreative(adId, token);
         primaryText = cr.body ?? cr.object_story_spec?.video_data?.message ?? cr.object_story_spec?.link_data?.message ?? "";
         headline = cr.title ?? cr.object_story_spec?.video_data?.title ?? cr.object_story_spec?.link_data?.name ?? "";
