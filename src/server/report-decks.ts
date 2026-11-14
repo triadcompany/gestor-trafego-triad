@@ -69,6 +69,17 @@ export interface ReportDeckRow {
   consideracoes_items: string[];
 }
 
+// Plano de ação que já vem preenchido (o gestor edita, remove ou acrescenta).
+export const DEFAULT_PLANO_ACAO = [
+  "Converter cerca de 3% dos leads",
+  "Apontar a quantidade de vendas",
+  "Revisar o funil de vendas",
+  "Responder os leads em até 5 minutos",
+  "Recontactar ao menos 3 vezes os contatos por dia por 5 dias.",
+  "Ligar para o lead quando ele chegar no funil",
+  "Abordagem de forma personalizada para cada resposta de veículo de interesse",
+];
+
 function emptyDeck(clientId: string): ReportDeckRow {
   return {
     client_id: clientId,
@@ -94,7 +105,7 @@ function emptyDeck(clientId: string): ReportDeckRow {
       { label: "Visitas", value: "" },
       { label: "Vendas", value: "" },
     ],
-    plano_acao_items: [],
+    plano_acao_items: [...DEFAULT_PLANO_ACAO],
     consideracoes_items: [],
   };
 }
@@ -131,7 +142,7 @@ const _fetchReportDeck = createServerFn({ method: "GET" })
       diagnostico_items: row.diagnosticoItems,
       ...splitCreatives(row.creatives),
       funil_items: row.funilItems as ReportDeckFunilItem[],
-      plano_acao_items: row.planoAcaoItems,
+      plano_acao_items: row.planoAcaoItems.length > 0 ? row.planoAcaoItems : [...DEFAULT_PLANO_ACAO],
       consideracoes_items: row.consideracoesItems,
     };
   });

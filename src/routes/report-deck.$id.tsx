@@ -111,7 +111,8 @@ function Field({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        rows={2}
+        rows={1}
+        style={{ fieldSizing: "content" } as React.CSSProperties}
         className={`${common} resize-none ${className}`}
       />
     );
