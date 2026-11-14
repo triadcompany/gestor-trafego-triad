@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { fetchAdSetsForOptimization, fetchAdSetTargeting, getMetaToken, updateAdSetTargeting, type MetaTargeting } from "@/lib/meta";
+import { fetchAdSetsForOptimization, fetchAdSetTargeting, getMetaToken, updateAdSetTargeting, type MetaTargeting, type OptimizableAdSet } from "@/lib/meta";
 import { getN8nMetaWriter } from "@/lib/n8n";
 import { FB_POSITION_OPTIONS, IG_POSITION_OPTIONS } from "@/lib/placements";
 import { applyTargetingChange, describeChange, type TargetingChange } from "@/lib/optimization-apply";
@@ -15,6 +15,7 @@ import type { Suggestion } from "@/lib/optimization";
 import { cn } from "@/lib/utils";
 
 const MAX_OPS_PER_CALL = 20;
+const NO_AD_SETS: OptimizableAdSet[] = [];
 
 export function ApplySuggestionDialog({
   suggestion,
@@ -31,7 +32,7 @@ export function ApplySuggestionDialog({
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [applying, setApplying] = useState(false);
 
-  const { data: adSets = [], isLoading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["optimization-adsets", objectId],
     queryFn: async () => {
       const token = await getMetaToken(clientId);
@@ -41,10 +42,14 @@ export function ApplySuggestionDialog({
     staleTime: 0,
   });
 
-  // Por padrão, só os conjuntos ativos.
+  // Lista fixa enquanto carrega: um "[]" novo a cada render disparava o efeito
+  // abaixo em laço e derrubava a página.
+  const adSets = data ?? NO_AD_SETS;
+
+  // Por padrão, só os conjuntos ativos — marcado uma vez, quando a lista chega.
   useEffect(() => {
-    setSelected(new Set(adSets.filter((a) => a.status === "ACTIVE").map((a) => a.id)));
-  }, [adSets]);
+    if (data) setSelected(new Set(data.filter((a) => a.status === "ACTIVE").map((a) => a.id)));
+  }, [data]);
 
   const toggle = (id: string, on: boolean) =>
     setSelected((prev) => {
