@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, TrendingUp, Menu, X, Sun, Moon, MessageCircle, MessagesSquare, Target, ChevronsLeft, Building2 } from "lucide-react";
+import { LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, TrendingUp, Menu, X, Sun, Moon, MessageCircle, MessagesSquare, Target, ChevronsLeft, Building2, Lightbulb } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout, getCurrentUser } from "@/server/session";
 import { useQuery } from "@tanstack/react-query";
@@ -31,6 +31,7 @@ const navGroups = [
       { to: "/tarefas", label: "Tarefas", icon: ClipboardList, exact: false },
       { to: "/vendas", label: "Vendas", icon: TrendingUp, exact: false },
       { to: "/rastreamento", label: "Rastreamento", icon: Target, exact: false },
+      { to: "/otimizacao", label: "Otimização", icon: Lightbulb, exact: false },
       { to: "/conversas", label: "Conversas", icon: MessagesSquare, exact: false },
     ],
   },
@@ -112,7 +113,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const showExperimental = isTriadCompanyOrg(effectiveOrgId);
   const baseNavGroups = navGroups.map((group) => ({
     ...group,
-    items: group.items.filter((item) => (item.to !== "/conversas" && item.to !== "/agente-triad") || showExperimental),
+    items: group.items.filter((item) => (item.to !== "/conversas" && item.to !== "/agente-triad" && item.to !== "/otimizacao") || showExperimental),
   }));
   const visibleNavGroups = currentUser?.isPlatformAdmin ? [...baseNavGroups, adminNavGroup] : baseNavGroups;
 

@@ -1260,6 +1260,156 @@ export async function fetchTrafficInsights(objectId: string, token: string, sinc
   };
 }
 
+// ── Otimização (página /otimizacao) ──────────────────────────────────────────
+// Mesmas fontes do detalhamento acima + plataforma/posicionamento e a grade
+// dia da semana × hora (breakdown horário com time_increment=1, agregado pelo
+// dia da semana em Brasília). A Meta não tem quebra por cidade nos relatórios.
+
+export interface OptimizationRow {
+  key: string;
+  label: string;
+  spend: number;
+  leads: number;
+}
+export interface OptimizationInsights {
+  totals: { spend: number; leads: number; impressions: number; clicks: number };
+  byAge: OptimizationRow[];
+  byGender: OptimizationRow[];
+  byPlatform: OptimizationRow[];
+  byPosition: OptimizationRow[];
+  // [dia 0=Dom][bloco de 2h 0..11]
+  heatLeads: number[][];
+  heatSpend: number[][];
+}
+
+const PLATFORM_LABELS: Record<string, string> = {
+  facebook: "Facebook",
+  instagram: "Instagram",
+  audience_network: "Audience Network",
+  messenger: "Messenger",
+  whatsapp: "WhatsApp",
+  threads: "Threads",
+};
+const POSITION_LABELS: Record<string, string> = {
+  "facebook:feed": "Feed do Facebook",
+  "facebook:facebook_profile_feed": "Feed do perfil (Facebook)",
+  "facebook:facebook_stories": "Stories do Facebook",
+  "facebook:facebook_reels": "Reels do Facebook",
+  "facebook:facebook_reels_overlay": "Anúncios sobre Reels (Facebook)",
+  "facebook:marketplace": "Marketplace",
+  "facebook:instream_video": "Vídeo in-stream (Facebook)",
+  "facebook:search": "Pesquisa do Facebook",
+  "facebook:notification": "Notificações do Facebook",
+  "facebook:facebook_notification": "Notificações do Facebook",
+  "whatsapp:status": "Status do WhatsApp",
+  "audience_network:an_classic": "Audience Network",
+  "audience_network:rewarded_video": "Audience Network (vídeo premiado)",
+  "facebook:right_hand_column": "Coluna direita",
+  "facebook:video_feeds": "Feed de vídeos (Facebook)",
+  "facebook:biz_disco_feed": "Facebook Business Explore",
+  "instagram:feed": "Feed do Instagram",
+  "instagram:stream": "Feed do Instagram",
+  "instagram:instagram_profile_feed": "Feed do perfil (Instagram)",
+  "instagram:instagram_stories": "Stories do Instagram",
+  "instagram:instagram_reels": "Reels do Instagram",
+  "instagram:instagram_explore": "Explorar do Instagram",
+  "instagram:instagram_explore_grid_home": "Início do Explorar",
+  "instagram:instagram_search": "Pesquisa do Instagram",
+};
+
+type InsightsActionsRow = { spend?: string; actions?: Array<{ action_type: string; value: string }> };
+
+async function fetchAllInsightPages<T>(url: string): Promise<T[]> {
+  const out: T[] = [];
+  let next: string | undefined = url;
+  for (let page = 0; next && page < 20; page++) {
+    const json: { data?: T[]; paging?: { next?: string } } = await fetchMetaJson(next);
+    out.push(...(json.data ?? []));
+    next = json.paging?.next;
+  }
+  return out;
+}
+
+export async function fetchOptimizationInsights(objectId: string, token: string, since: string, until: string): Promise<OptimizationInsights> {
+  const timeRange = JSON.stringify({ since, until });
+  const q = (extra: Record<string, string>) =>
+    `${BASE_URL}/${objectId}/insights?${new URLSearchParams({ time_range: timeRange, access_token: token, limit: "500", ...extra })}`;
+
+  const [totalsRows, ageGenderRows, positionRows, hourlyRows] = await Promise.all([
+    fetchAllInsightPages<InsightsActionsRow & { impressions?: string; inline_link_clicks?: string }>(
+      q({ fields: "spend,impressions,inline_link_clicks,actions" })
+    ),
+    fetchAllInsightPages<InsightsActionsRow & { age?: string; gender?: string }>(
+      q({ breakdowns: "age,gender", fields: "spend,actions" })
+    ),
+    fetchAllInsightPages<InsightsActionsRow & { publisher_platform?: string; platform_position?: string }>(
+      q({ breakdowns: "publisher_platform,platform_position", fields: "spend,actions" })
+    ),
+    fetchAllInsightPages<InsightsActionsRow & { date_start?: string; hourly_stats_aggregated_by_advertiser_time_zone?: string }>(
+      q({ breakdowns: "hourly_stats_aggregated_by_advertiser_time_zone", time_increment: "1", fields: "spend,actions,date_start" })
+    ),
+  ]);
+
+  const t = totalsRows[0];
+  const totals = {
+    spend: parseFloat(t?.spend ?? "0"),
+    leads: extractMetrics(t?.actions).leads,
+    impressions: parseInt(t?.impressions ?? "0", 10),
+    clicks: parseInt(t?.inline_link_clicks ?? "0", 10),
+  };
+
+  const add = (map: Map<string, OptimizationRow>, key: string, label: string, row: InsightsActionsRow) => {
+    const cur = map.get(key) ?? { key, label, spend: 0, leads: 0 };
+    cur.spend += parseFloat(row.spend ?? "0");
+    cur.leads += extractMetrics(row.actions).leads;
+    map.set(key, cur);
+  };
+
+  const ageMap = new Map<string, OptimizationRow>();
+  const genderMap = new Map<string, OptimizationRow>();
+  for (const row of ageGenderRows) {
+    if (row.age) add(ageMap, row.age, row.age.replace("-", "–"), row);
+    if (row.gender) add(genderMap, row.gender, GENDER_LABELS[row.gender] ?? row.gender, row);
+  }
+
+  const platformMap = new Map<string, OptimizationRow>();
+  const positionMap = new Map<string, OptimizationRow>();
+  for (const row of positionRows) {
+    if (!row.publisher_platform || row.publisher_platform === "unknown") continue;
+    const p = row.publisher_platform;
+    add(platformMap, p, PLATFORM_LABELS[p] ?? p, row);
+    if (row.platform_position) {
+      const key = `${p}:${row.platform_position}`;
+      add(positionMap, key, POSITION_LABELS[key] ?? `${PLATFORM_LABELS[p] ?? p} · ${row.platform_position}`, row);
+    }
+  }
+
+  const heatLeads = Array.from({ length: 7 }, () => Array(12).fill(0) as number[]);
+  const heatSpend = Array.from({ length: 7 }, () => Array(12).fill(0) as number[]);
+  for (const row of hourlyRows) {
+    const raw = row.hourly_stats_aggregated_by_advertiser_time_zone;
+    const hour = raw ? parseInt(raw.slice(0, 2), 10) : NaN;
+    if (!row.date_start || Number.isNaN(hour)) continue;
+    const [y, m, d] = row.date_start.split("-").map(Number);
+    if (!y || !m || !d) continue;
+    const wd = weekdayInBrasilia(new Date(Date.UTC(y, m - 1, d, 12)));
+    const block = Math.min(11, Math.floor(hour / 2));
+    heatLeads[wd][block] += extractMetrics(row.actions).leads;
+    heatSpend[wd][block] += parseFloat(row.spend ?? "0");
+  }
+
+  const bySpend = (a: OptimizationRow, b: OptimizationRow) => b.spend - a.spend;
+  return {
+    totals,
+    byAge: Array.from(ageMap.values()).sort((a, b) => a.key.localeCompare(b.key)),
+    byGender: Array.from(genderMap.values()).sort(bySpend),
+    byPlatform: Array.from(platformMap.values()).sort(bySpend),
+    byPosition: Array.from(positionMap.values()).sort(bySpend),
+    heatLeads,
+    heatSpend,
+  };
+}
+
 // ── Ad sets & Ads ──────────────────────────────────────────────
 
 export interface MetaTargeting {
