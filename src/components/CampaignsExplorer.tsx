@@ -252,6 +252,13 @@ export function CampaignsExplorer({
 
   const hasFilter = selectedCampaignIds.size > 0;
 
+  // A busca é pelo nome do que está na aba: o texto digitado pra achar a
+  // campanha ("moto") não casa com o nome do conjunto/anúncio e escondia tudo
+  // ao trocar de aba — limpa junto com a troca.
+  useEffect(() => {
+    setSearch("");
+  }, [level]);
+
   const { since: leadStatsSince, until: leadStatsUntil } = resolveDatePresetRange(datePreset, customRange);
   const { data: leadStats = [] } = useQuery({
     queryKey: ["explorer-lead-stats", clientId, level, leadStatsSince, leadStatsUntil],
