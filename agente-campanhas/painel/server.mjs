@@ -20,7 +20,8 @@ async function transcribe(file) {
     return stdout.trim();
   } finally { fs.rmSync(wav, { force: true }); }
 }
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { query, tool, createSdkMcpServer } from '@anthropic-ai/claude-agent-sdk';
+import { z } from 'zod';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
@@ -38,10 +39,77 @@ const SYSTEM = `${agentMd}
 ## Regras do painel (prioridade máxima)
 - Você está num painel local. Responda curto, em português do Brasil, em texto simples (sem tabelas).
 - Em toda chamada das ferramentas Meta, envie client_conversation_id "painel-triad-local", client_model "claude-sonnet-5-5", advertiser_job e advertiser_request.
+- GRAVAÇÕES NA META: use SEMPRE a ferramenta escrever_meta (n8n) para criar ou alterar qualquer coisa (campanha, conjunto, criativo, anúncio, vídeo, status, orçamento). As ferramentas ads_create_*/ads_update_*/upload do conector Meta estão bloqueadas; o conector serve só para LER (ads_get_*, insights). Ao criar em sequência, use "{{op:N.id}}" para referenciar o id da gravação anterior na mesma chamada (ex.: campaign_id do conjunto = "{{op:0.id}}"). Se uma chamada voltar ok:false, leia "results" (o que já foi criado) e continue de onde parou, sem recriar. O token é aplicado pelo painel: nunca peça nem escreva token.
+- Vídeo: publique o arquivo por link temporário e crie com escrever_meta em act_<ID>/advideos com params {file_url: "<link>"}; espere ficar "ready" lendo com ads_get. Imagem: act_<ID>/adimages com params {bytes: "@arquivo:<caminho em uploads>"} (o painel troca pelo conteúdo em base64).
 - Tudo é criado como rascunho. NUNCA ative sem o usuário pedir; a ativação abre um cartão de aprovação no painel.
 - Para vídeo enviado pelo painel (pasta ${path.join(__dirname, 'uploads')}), publique por link temporário (cloudflared quick tunnel + python3 -m http.server) e apague o link depois do upload.
 - Quando a mensagem trouxer "CLIENTES DO GESTOR", essa é a fonte de verdade de quem é cliente e qual a conta de anúncio (act_), página e WhatsApp dele. Resolva o nome citado pelo usuário nessa lista (aceite grafia aproximada, ex.: "devetim" = DV Team). Se houver dúvida entre dois clientes, pergunte antes de criar ou alterar qualquer coisa. Se a conta do cliente não aparecer no conector (ads_get_ad_accounts), avise que o conector não enxerga essa conta e não tente outra.
 - Modelo de copy:\n${copyMd}`;
+
+// Toda gravação na Meta passa pelo n8n (workflow "Agente: Escrever na Meta"); o conector Meta Ads só lê.
+const N8N_URL = process.env.AGENTE_N8N_URL || 'https://triadcompany-n8n.upw28y.easypanel.host/webhook/agente-escrever-meta';
+const N8N_TOOL = 'mcp__gestor-n8n__escrever_meta';
+const UPLOADS = path.join(__dirname, 'uploads');
+const META_READ = /__ads_(get|insights|library|account_get)|offer_report$/;
+
+// "@arquivo:/caminho" (só dentro de uploads/) vira o conteúdo em base64 — usado no campo "bytes" de /adimages.
+function resolveFileRefs(params) {
+  const out = {};
+  for (const [k, v] of Object.entries(params || {})) {
+    if (typeof v === 'string' && v.startsWith('@arquivo:')) {
+      const f = path.resolve(v.slice('@arquivo:'.length));
+      if (!f.startsWith(UPLOADS + path.sep)) throw new Error('arquivo fora da pasta de uploads do painel: ' + f);
+      out[k] = fs.readFileSync(f).toString('base64');
+    } else out[k] = v;
+  }
+  return out;
+}
+
+function n8nServer(tokens) {
+  return createSdkMcpServer({
+    name: 'gestor-n8n',
+    version: '1.0.0',
+    tools: [
+      tool(
+        'escrever_meta',
+        'ÚNICA forma de criar/alterar algo na Meta (campanha, conjunto, criativo, anúncio, vídeo, status, orçamento). Executa em sequência via n8n e devolve os resultados (ids) de cada gravação. Em um param, "{{op:N.id}}" vira o campo "id" do resultado da gravação N (0 = a primeira) desta mesma chamada. O token da Meta é aplicado automaticamente pelo painel.',
+        {
+          conta: z.string().describe('Conta de anúncio do cliente, ex.: act_123456 (a mesma da lista CLIENTES DO GESTOR)'),
+          ops: z.array(z.object({
+            path: z.string().describe('act_<ID>/campaigns | act_<ID>/adsets | act_<ID>/ads | act_<ID>/adcreatives | act_<ID>/advideos | act_<ID>/adimages para CRIAR; o id numérico do objeto para ALTERAR'),
+            params: z.record(z.string(), z.any()).describe('campos do Graph API v21.0; objetos/listas podem ir como JSON'),
+            label: z.string().optional(),
+          })).min(1).max(20),
+        },
+        async ({ conta, ops }) => {
+          const token = tokens[conta];
+          if (!token) return { isError: true, content: [{ type: 'text', text: `Não tenho o token da Meta para a conta ${conta}. Confirme a conta na lista CLIENTES DO GESTOR.` }] };
+          try {
+            const body = { token, conta, ops: ops.map((o) => ({ ...o, params: resolveFileRefs(o.params) })) };
+            const r = await fetch(N8N_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(110000) });
+            const text = await r.text();
+            let j; try { j = JSON.parse(text); } catch { j = { ok: false, error: `n8n respondeu ${r.status}: ${text.slice(0, 300)}` }; }
+            return { isError: !j.ok, content: [{ type: 'text', text: JSON.stringify(j) }] };
+          } catch (e) {
+            return { isError: true, content: [{ type: 'text', text: 'Falha ao falar com o n8n: ' + String(e.message || e) }] };
+          }
+        },
+      ),
+    ],
+  });
+}
+
+// criar (path act_X/...) é rascunho e roda sozinho; ligar (status ACTIVE) ou mexer em status/orçamento/lance de objeto existente pede aprovação
+function n8nWriteSafe(input) {
+  const ops = Array.isArray(input?.ops) ? input.ops : [];
+  return ops.every((o) => {
+    const p = String(o?.path || '');
+    const params = o?.params || {};
+    if (String(params.status || '').toUpperCase() === 'ACTIVE') return false;
+    if (p.includes('/')) return /^act_\d+\/(campaigns|adsets|ads|adcreatives|advideos|adimages)$/.test(p);
+    return /^\d+$/.test(p) && !RISKY_INPUT.test(JSON.stringify(params));
+  });
+}
 
 // ferramentas que rodam sem perguntar (leitura + criação em rascunho)
 const SAFE = (n) =>
@@ -105,7 +173,7 @@ function summarize(name, input) {
   return s.length > 600 ? s.slice(0, 600) + '…' : s;
 }
 
-async function runChat(text, res, corsOrigin, convId) {
+async function runChat(text, res, corsOrigin, convId, tokens = {}) {
   let sessionId = okId(convId) ? readConv(convId)?.sessionId ?? null : null;
   res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive', ...(corsOrigin ? { 'Access-Control-Allow-Origin': corsOrigin, 'Vary': 'Origin' } : {}) });
   let n = 0;
@@ -137,11 +205,14 @@ async function runChat(text, res, corsOrigin, convId) {
         resume: sessionId ?? undefined,
         includePartialMessages: true,
         disallowedTools: ['Write', 'Edit', 'NotebookEdit'],
+        mcpServers: { 'gestor-n8n': n8nServer(tokens) },
         canUseTool: async (name, input) => {
+          if (name.startsWith(META) && !META_READ.test(name)) return { behavior: 'deny', message: 'Gravações na Meta só pelo n8n: use a ferramenta escrever_meta (conector Meta é só leitura).' };
+          if (name === N8N_TOOL && n8nWriteSafe(input)) return { behavior: 'allow', updatedInput: input };
           if (SAFE(name) || metaOk(name, input) || READ_LOCAL.has(name) || (name === 'Bash' && bashSafe(String(input.command || '')))) return { behavior: 'allow', updatedInput: input };
           const id = 'a' + Date.now() + '_' + n++;
-          const label = name.startsWith(META) ? name.slice(META.length) : name;
-          sse(res, 'approval', { id, tool: label, detail: name === 'Bash' ? input.command : summarize(name, input), danger: /activate/.test(name) });
+          const label = name.startsWith(META) ? name.slice(META.length) : name === N8N_TOOL ? 'escrever_meta (n8n)' : name;
+          sse(res, 'approval', { id, tool: label, detail: name === 'Bash' ? input.command : summarize(name, input), danger: /activate/.test(name) || /"ACTIVE"/.test(JSON.stringify(input)) });
           const ok = await new Promise((r) => pending.set(id, r));
           return ok ? { behavior: 'allow', updatedInput: input } : { behavior: 'deny', message: 'O usuário negou no painel.' };
         },
@@ -153,7 +224,7 @@ async function runChat(text, res, corsOrigin, convId) {
         const d = m.event?.delta;
         if (m.event?.type === 'content_block_delta' && d?.type === 'text_delta') sse(res, 'text', d.text);
       } else if (m.type === 'assistant') {
-        for (const b of m.message.content) if (b.type === 'tool_use') sse(res, 'tool', { name: b.name.replace(META, '') });
+        for (const b of m.message.content) if (b.type === 'tool_use') sse(res, 'tool', { name: b.name === N8N_TOOL ? 'gravando na Meta via n8n…' : b.name.replace(META, '') });
       } else if (m.type === 'result') {
         sse(res, 'done', { error: m.is_error ? (m.result || 'erro') : null });
       }
@@ -183,11 +254,11 @@ http.createServer(async (req, res) => {
   try {
     if (url.pathname === '/api/ping') return res.end('ok');
     if (req.method === 'POST' && url.pathname === '/api/chat') {
-      const { text, clients, conversationId } = JSON.parse((await readBody(req)).toString());
+      const { text, clients, conversationId, tokens } = JSON.parse((await readBody(req)).toString());
       const ctx = Array.isArray(clients) && clients.length
         ? `CLIENTES DO GESTOR (nome | conta de anúncio | página | WhatsApp | orçamento mensal):\n` + clients.map((c) => `- ${c.name} | ${c.account} | ${c.page || '?'} | ${c.whatsapp || '?'} | ${c.budget ?? '?'}`).join('\n') + '\n\n'
         : '';
-      return runChat(ctx + text, res, origin, conversationId);
+      return runChat(ctx + text, res, origin, conversationId, tokens && typeof tokens === 'object' ? tokens : {});
     }
     if (req.method === 'POST' && url.pathname === '/api/approve') {
       const { id, allow } = JSON.parse((await readBody(req)).toString());

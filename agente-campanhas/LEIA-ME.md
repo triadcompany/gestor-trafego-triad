@@ -61,3 +61,4 @@ npm ci
 - A tela do gestor `/agente-triad` (só org Triad Company) conversa com este painel e envia a lista de clientes.
 - O painel só aceita pedidos do gestor (CORS/Origin) e pede aprovação para ativar, apagar ou mexer em status/orçamento.
 - Nunca roda no servidor do gestor; está fora do build (`.dockerignore`).
+- **Gravações na Meta só pelo n8n**: o agente usa a ferramenta `escrever_meta`, que chama o workflow "Gestor Tráfego — Agente: Escrever na Meta" (`AGENTE_N8N_URL` muda o endereço). O conector Meta Ads fica só pra leitura (as ferramentas de criar/alterar dele são bloqueadas). O token de cada conta vem da tela do gestor a cada mensagem e o modelo nunca o vê.

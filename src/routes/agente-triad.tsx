@@ -16,12 +16,14 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { fetchAllClients } from "@/lib/queries";
+import { getMetaToken } from "@/lib/meta";
 import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
 
 // Agente de campanhas (Claude + conector Meta Ads) que roda no Mac do dono
-// em http://localhost:3055 (pasta agente-campanhas2/painel). Experimental —
+// em http://localhost:3055 (pasta agente-campanhas/painel). Toda gravação na
+// Meta sai pelo n8n; o conector Meta Ads é só leitura. Experimental —
 // só pra organização da Triad Company. O navegador fala direto com o
 // localhost; o servidor do gestor nunca vê essa conversa.
 const PAINEL = "http://localhost:3055";
@@ -95,6 +97,26 @@ function AgenteTriadPage() {
     queryKey: ["clients"],
     queryFn: fetchAllClients,
     staleTime: 60_000,
+  });
+  // Token da Meta por conta de anúncio — vai separado do texto (o modelo nunca
+  // vê) e o painel só o repassa ao n8n quando o agente grava na Meta.
+  const clientIds = clients.filter((c) => c.active).map((c) => c.id);
+  const { data: tokenMap, refetch: loadTokens } = useQuery({
+    queryKey: ["agente-triad-tokens", clientIds.join(",")],
+    queryFn: async () => {
+      const out: Record<string, string> = {};
+      await Promise.all(
+        clients
+          .filter((c) => c.active && c.meta_ad_account_id)
+          .map(async (c) => {
+            const t = await getMetaToken(c.id).catch(() => null);
+            if (t) out[c.meta_ad_account_id] = t;
+          }),
+      );
+      return out;
+    },
+    enabled: clientIds.length > 0,
+    staleTime: 5 * 60_000,
   });
   const clientCtx = useMemo(
     () =>
@@ -237,9 +259,11 @@ function AgenteTriadPage() {
     let full = "";
     let curId: string | null = null;
     try {
+      const tokens =
+        tokenMap && Object.keys(tokenMap).length > 0 ? tokenMap : ((await loadTokens()).data ?? {});
       const res = await fetch(`${PAINEL}/api/chat`, {
         method: "POST",
-        body: JSON.stringify({ text, clients: clientCtx, conversationId: convId }),
+        body: JSON.stringify({ text, clients: clientCtx, conversationId: convId, tokens }),
       });
       const reader = res.body!.getReader();
       const dec = new TextDecoder();
