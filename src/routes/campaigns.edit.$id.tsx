@@ -231,6 +231,7 @@ function EditCampaign() {
   const [adsetId, setAdsetId] = useState<string | undefined>();
   const [adId, setAdId] = useState<string | undefined>();
   const [whatsappNumber, setWhatsappNumber] = useState<string | undefined>();
+  const originalWhatsapp = useRef<string | undefined>(undefined);
   const [pageId, setPageId] = useState<string | undefined>();
   const [prefillLoaded, setPrefillLoaded] = useState(false);
 
@@ -268,6 +269,7 @@ function EditCampaign() {
     setAdsetId(prefill.adsetId);
     setAdId(prefill.adId);
     setWhatsappNumber(prefill.whatsappNumber || undefined);
+    originalWhatsapp.current = prefill.whatsappNumber || undefined;
     setPageId(prefill.pageId || undefined);
     setPrefillLoaded(true);
   }, [prefill, prefillLoaded, campaignId]);
@@ -413,7 +415,11 @@ function EditCampaign() {
       // Só page_id + whatsapp_phone_number — nunca whats_app_business_phone_number_id
       // (a Meta devolve esse campo ao ler o conjunto, mas reenviá-lo derruba a
       // atualização com "(#200) Permissions error", mesmo bug já visto na duplicação).
-      if (whatsappNumber && pageId) {
+      // E só quando o número mudou: a Meta recusa (code 1, HTTP 500) qualquer
+      // promoted_object num conjunto já existente, até um idêntico ao atual —
+      // reenviar o mesmo número fazia todo salvamento do conjunto falhar.
+      const digits = (s?: string) => (s ?? "").replace(/\D/g, "");
+      if (whatsappNumber && pageId && digits(whatsappNumber) !== digits(originalWhatsapp.current)) {
         fields.promoted_object = JSON.stringify({ page_id: pageId, whatsapp_phone_number: whatsappNumber });
       }
       await withSaveToast("save-adset", "Salvando conjunto...", async (progress) => {
