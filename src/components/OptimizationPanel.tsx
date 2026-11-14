@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
-import { fetchOptimizationInsights, getMetaToken, type OptimizationInsights, type OptimizationRow } from "@/lib/meta";
+import { fetchCampaigns, fetchOptimizationInsights, getMetaToken, type OptimizationInsights, type OptimizationRow } from "@/lib/meta";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { buildOptimizationReport, brl, MIN_TOTAL_LEADS, type Suggestion } from "@/lib/optimization";
 import { daysAgoInBrasilia, isoDateInBrasilia } from "@/lib/brasilia-date";
 import { cn } from "@/lib/utils";
@@ -12,6 +13,7 @@ const PERIODS = [
   { days: 30, label: "30 dias" },
   { days: 90, label: "90 dias" },
 ];
+const ALL = "__conta__";
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const HOUR_BLOCKS = ["0h", "2h", "4h", "6h", "8h", "10h", "12h", "14h", "16h", "18h", "20h", "22h"];
 
@@ -22,14 +24,30 @@ const num = (v: number, digits = 0) =>
 // conta de anúncio, com sugestões por regras (ver src/lib/optimization.ts).
 export function OptimizationPanel({ clientId, adAccountId }: { clientId: string; adAccountId: string }) {
   const [days, setDays] = useState(30);
+  const [campaignId, setCampaignId] = useState(ALL);
   const since = daysAgoInBrasilia(days);
   const until = isoDateInBrasilia();
+
+  // Só campanhas que gastaram no período — as outras não têm o que analisar.
+  const { data: campaigns = [] } = useQuery({
+    queryKey: ["optimization-campaigns", adAccountId, since, until],
+    queryFn: async () => {
+      const token = await getMetaToken(clientId);
+      if (!token) return [];
+      const list = await fetchCampaigns(adAccountId, token, "today", { since, until });
+      return list.filter((c) => c.spend > 0).sort((a, b) => b.spend - a.spend);
+    },
+    enabled: !!adAccountId,
+  });
+  const selected = campaigns.find((c) => c.id === campaignId);
+  const objectId = selected ? selected.id : adAccountId;
+
   const { data, isLoading, error } = useQuery({
-    queryKey: ["optimization", adAccountId, since, until],
+    queryKey: ["optimization", objectId, since, until],
     queryFn: async () => {
       const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token da Meta não encontrado pra esse cliente.");
-      return fetchOptimizationInsights(adAccountId, token, since, until);
+      return fetchOptimizationInsights(objectId, token, since, until);
     },
     enabled: !!adAccountId,
   });
@@ -37,7 +55,19 @@ export function OptimizationPanel({ clientId, adAccountId }: { clientId: string;
   return (
     <div className="space-y-8">
       <div className="flex items-center justify-between gap-4 flex-wrap">
-        <p className="text-sm text-muted-foreground">Onde o dinheiro rende e onde ele vaza nessa conta de anúncio.</p>
+        <Select value={selected ? campaignId : ALL} onValueChange={(v) => v && setCampaignId(v)}>
+          <SelectTrigger className="w-full sm:w-96">
+            <SelectValue placeholder="Conta inteira" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL}>Conta inteira (todas as campanhas)</SelectItem>
+            {campaigns.map((c) => (
+              <SelectItem key={c.id} value={c.id}>
+                {c.name} · {brl(c.spend)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
         <div className="flex gap-1 rounded-lg border border-border p-1">
           {PERIODS.map((p) => (
             <button
@@ -291,7 +321,7 @@ function Breakdown({
       </div>
       {avg && (
         <p className="text-xs text-muted-foreground">
-          Média da conta: <strong className="text-foreground font-medium">{brl(avg)}</strong> por conversa. Barra cinza maior que a azul = gasta mais do que rende.
+          Média do período: <strong className="text-foreground font-medium">{brl(avg)}</strong> por conversa. Barra cinza maior que a azul = gasta mais do que rende.
         </p>
       )}
     </section>

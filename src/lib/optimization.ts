@@ -66,7 +66,7 @@ function costlyItems(
     } else {
       const ratio = cplOf(row) / avg;
       if (ratio < CPL_RATIO_ALERT || expected < 3) continue;
-      finding = `${row.label}: ${brl(cplOf(row))} por conversa, ${times(ratio)} a média da conta.`;
+      finding = `${row.label}: ${brl(cplOf(row))} por conversa, ${times(ratio)} a média.`;
       waste = row.spend - row.leads * avg;
       confidence = expected >= 6 ? "alta" : "media";
     }
@@ -164,7 +164,7 @@ function cheapPositions(positions: OptimizationRow[], avg: number): Suggestion |
     id: "posicionamento:baratos",
     kind: "oportunidade",
     dimension: "Posicionamento",
-    finding: `${winners.length > 1 ? "Os mais baratos da conta" : "O mais barato da conta"}: ${list}. Média: ${brl(avg)}.`,
+    finding: `${winners.length > 1 ? "Os mais baratos" : "O mais barato"}: ${list}. Média: ${brl(avg)}.`,
     action: `Testar um conjunto só com ${winners.length > 1 ? "esses posicionamentos" : "esse posicionamento"} e dar mais orçamento a ele`,
     impactText: `Economizaram ~${brl(gain)} em relação à média, no período`,
     weight: gain,
