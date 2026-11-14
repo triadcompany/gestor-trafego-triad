@@ -54,6 +54,49 @@ const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", curren
 
 // ── Blocos visuais compartilhados ────────────────────────────────────────────
 
+// html2canvas 1.4 não entende cores modernas (oklch, color-mix...) que o Tailwind
+// gera. No clone usado na captura, troca cada uma pelo rgb equivalente.
+const MODERN_COLOR = /oklch|oklab|color-mix|lab\(|lch\(|color\(/;
+const COLOR_PROPS = [
+  "color",
+  "background-color",
+  "border-top-color",
+  "border-right-color",
+  "border-bottom-color",
+  "border-left-color",
+  "outline-color",
+  "text-decoration-color",
+  "fill",
+  "stroke",
+  "caret-color",
+];
+function sanitizeModernColors(clonedDoc: Document) {
+  const canvas = clonedDoc.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const view = clonedDoc.defaultView;
+  if (!ctx || !view) return;
+  const toRgb = (value: string) => {
+    ctx.clearRect(0, 0, 1, 1);
+    ctx.fillStyle = "#000";
+    ctx.fillStyle = value;
+    ctx.fillRect(0, 0, 1, 1);
+    const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+    return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
+  };
+  clonedDoc.querySelectorAll<HTMLElement>("*").forEach((el) => {
+    const cs = view.getComputedStyle(el);
+    for (const prop of COLOR_PROPS) {
+      const v = cs.getPropertyValue(prop);
+      if (v && MODERN_COLOR.test(v)) el.style.setProperty(prop, toRgb(v), "important");
+    }
+    for (const prop of ["box-shadow", "text-shadow", "background-image", "filter"]) {
+      const v = cs.getPropertyValue(prop);
+      if (v && MODERN_COLOR.test(v)) el.style.setProperty(prop, "none", "important");
+    }
+  });
+}
+
 // Tela de edição em 960x540 (16:9) — metade do tamanho final. Export usa
 // scale:2 no html2canvas, resultando em exatamente 1920x1080 no PDF.
 const PAGE_W = 960;
@@ -591,7 +634,7 @@ function ReportDeckPage() {
       for (let i = 0; i < ids.length; i++) {
         const el = slideRefs.current[ids[i]];
         if (!el) continue;
-        const canvas = await html2canvas(el, { scale: EXPORT_SCALE, backgroundColor: "#0a0a0c" });
+        const canvas = await html2canvas(el, { scale: EXPORT_SCALE, backgroundColor: "#0a0a0c", onclone: (d) => sanitizeModernColors(d) });
         const img = canvas.toDataURL("image/jpeg", 0.92);
         if (i > 0) doc.addPage([outW, outH], "landscape");
         doc.addImage(img, "JPEG", 0, 0, outW, outH);
