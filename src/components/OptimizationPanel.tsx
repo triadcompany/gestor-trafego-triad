@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { buildOptimizationReport, brl, MIN_TOTAL_LEADS, type Suggestion } from "@/lib/optimization";
 import { daysAgoInBrasilia, isoDateInBrasilia } from "@/lib/brasilia-date";
 import { cn } from "@/lib/utils";
+import { ApplySuggestionDialog } from "@/components/ApplySuggestionDialog";
 
 const PERIODS = [
   { days: 7, label: "7 dias" },
@@ -96,14 +97,15 @@ export function OptimizationPanel({ clientId, adAccountId }: { clientId: string;
           {error instanceof Error ? error.message : "Erro ao buscar dados da Meta."}
         </div>
       ) : data ? (
-        <Report data={data} />
+        <Report data={data} clientId={clientId} objectId={objectId} />
       ) : null}
     </div>
   );
 }
 
-function Report({ data }: { data: OptimizationInsights }) {
+function Report({ data, clientId, objectId }: { data: OptimizationInsights; clientId: string; objectId: string }) {
   const report = useMemo(() => buildOptimizationReport(data), [data]);
+  const [applying, setApplying] = useState<Suggestion | null>(null);
   const { spend, leads, impressions, clicks } = data.totals;
   const avg = report.avgCpl;
 
@@ -145,7 +147,7 @@ function Report({ data }: { data: OptimizationInsights }) {
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {report.suggestions.map((s) => (
-              <SuggestionCard key={s.id} s={s} />
+              <SuggestionCard key={s.id} s={s} onApply={() => setApplying(s)} />
             ))}
           </div>
         )}
@@ -157,6 +159,9 @@ function Report({ data }: { data: OptimizationInsights }) {
       <Breakdown title="Posicionamento" rows={data.byPosition} total={data.totals} avg={avg} />
       <Breakdown title="Faixa etária" rows={data.byAge} total={data.totals} avg={avg} />
       <Breakdown title="Gênero" rows={data.byGender} total={data.totals} avg={avg} />
+      {applying && (
+        <ApplySuggestionDialog suggestion={applying} clientId={clientId} objectId={objectId} onClose={() => setApplying(null)} />
+      )}
     </div>
   );
 }
@@ -176,7 +181,7 @@ const KIND_STYLE: Record<Suggestion["kind"], { label: string; cls: string }> = {
   atencao: { label: "Atenção", cls: "bg-muted text-muted-foreground" },
 };
 
-function SuggestionCard({ s }: { s: Suggestion }) {
+function SuggestionCard({ s, onApply }: { s: Suggestion; onApply: () => void }) {
   const kind = KIND_STYLE[s.kind];
   return (
     <article className="rounded-xl border border-border bg-card p-4 flex flex-col gap-3">
@@ -192,7 +197,18 @@ function SuggestionCard({ s }: { s: Suggestion }) {
         <ArrowRight className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
         <span className="text-sm font-medium leading-snug">{s.action}</span>
       </div>
-      <p className="mt-auto text-xs text-muted-foreground">{s.impactText}</p>
+      <div className="mt-auto flex items-end justify-between gap-3">
+        <p className="text-xs text-muted-foreground">{s.impactText}</p>
+        {s.apply && (
+          <button
+            type="button"
+            onClick={onApply}
+            className="shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:bg-primary/90"
+          >
+            Aplicar
+          </button>
+        )}
+      </div>
     </article>
   );
 }

@@ -1,4 +1,5 @@
 import type { OptimizationInsights, OptimizationRow } from "./meta";
+import { placementsOnly, placementsWithout, type TargetingChange } from "./optimization-apply";
 
 // Sugestões por regras (sem IA). Três tipos:
 // - economia: algo gasta bem acima da média (ou sem conversa) com volume suficiente;
@@ -20,6 +21,7 @@ export interface Suggestion {
   impactText: string;
   weight: number; // R$ envolvidos — ordena os cartões
   confidence: Confidence;
+  apply?: TargetingChange; // sem isso, a sugestão não tem botão "Aplicar"
 }
 
 export interface OptimizationReport {
@@ -48,7 +50,7 @@ function costlyItems(
   totalSpend: number,
   avg: number,
   dimension: string,
-  actionFor: (row: OptimizationRow) => string | null
+  actionFor: (row: OptimizationRow) => { text: string; apply?: TargetingChange } | null
 ): Suggestion[] {
   const minSpend = Math.max(MIN_SPEND_BRL, totalSpend * MIN_SPEND_SHARE);
   const out: Suggestion[] = [];
@@ -77,7 +79,8 @@ function costlyItems(
       kind: "economia",
       dimension,
       finding,
-      action,
+      action: action.text,
+      apply: action.apply,
       impactText: `~${brl(waste)} acima do que custaria na média, no período`,
       weight: waste,
       confidence,
@@ -116,6 +119,7 @@ function ageCutoff(ages: OptimizationRow[], totalSpend: number): Suggestion | nu
           ? `Abaixo de ${actionAge} anos: ${brl(cplCut)} por conversa. De ${actionAge} pra cima: ${brl(cplKeep)} (${pct(cheaper)} mais barato).`
           : `Acima de ${edgeLabel} anos: ${brl(cplCut)} por conversa. Até ${edgeLabel}: ${brl(cplKeep)} (${pct(cheaper)} mais barato).`,
       action: side === "min" ? `Subir a idade mínima para ${actionAge} anos` : `Baixar a idade máxima para ${actionAge} anos`,
+      apply: side === "min" ? { kind: "age", ageMin: actionAge, ageMax: null } : { kind: "age", ageMin: null, ageMax: actionAge },
       impactText: `~${brl(saving)} no período se esse gasto rendesse como o resto do público`,
       weight: saving,
       confidence: c.leads >= 20 && k.leads >= 20 ? "alta" : "media",
@@ -148,6 +152,7 @@ function platformGap(platforms: OptimizationRow[], totalSpend: number): Suggesti
     dimension: "Plataforma",
     finding: `${cheap.label}: ${brl(cplOf(cheap))} por conversa. ${pricey.label}: ${brl(cplOf(pricey))} (${pct(cplOf(pricey) / cplOf(cheap) - 1)} mais caro).`,
     action: `Testar uma campanha só no ${cheap.label} com parte do orçamento do ${pricey.label}`,
+    apply: placementsWithout([], [pricey.key]),
     impactText: `~${Math.round(extra)} conversas a mais se metade do gasto do ${pricey.label} rendesse como no ${cheap.label}`,
     weight: extra * cplOf(cheap),
     confidence: cheap.leads >= 20 && pricey.leads >= 20 ? "alta" : "media",
@@ -166,6 +171,7 @@ function cheapPositions(positions: OptimizationRow[], avg: number): Suggestion |
     dimension: "Posicionamento",
     finding: `${winners.length > 1 ? "Os mais baratos" : "O mais barato"}: ${list}. Média: ${brl(avg)}.`,
     action: `Testar um conjunto só com ${winners.length > 1 ? "esses posicionamentos" : "esse posicionamento"} e dar mais orçamento a ele`,
+    apply: placementsOnly(winners.map((w) => w.key)),
     impactText: `Economizaram ~${brl(gain)} em relação à média, no período`,
     weight: gain,
     confidence: winners.every((w) => w.leads >= 20) ? "alta" : "media",
@@ -184,6 +190,7 @@ function genderGap(genders: OptimizationRow[]): Suggestion | null {
     dimension: "Gênero",
     finding: `${a.label}: ${brl(cplOf(a))} por conversa. ${b.label}: ${brl(cplOf(b))} (${pct(cplOf(b) / cplOf(a) - 1)} mais caro).`,
     action: `Testar um conjunto só com o público ${a.label.toLowerCase()}`,
+    apply: { kind: "gender", gender: a.key === "female" ? "female" : "male" },
     impactText: `${b.label} gastou ${brl(b.spend)} no período`,
     weight: b.spend - b.leads * cplOf(a),
     confidence: "media",
@@ -269,15 +276,26 @@ export function buildOptimizationReport(data: OptimizationInsights): Optimizatio
   const singleAges = costlyItems(data.byAge.filter((a) => /^\d/.test(a.key)), spend, avg, "Faixa etária", (r) => {
     const bands = data.byAge.filter((a) => /^\d/.test(a.key)).map((a) => a.key);
     const idx = bands.indexOf(r.key);
-    if (idx === 0 && bands[1]) return `Subir a idade mínima para ${parseInt(bands[1], 10)} anos`;
-    if (idx === bands.length - 1 && idx > 0) return `Baixar a idade máxima para ${bands[idx - 1].split("-")[1]} anos`;
+    if (idx === 0 && bands[1]) {
+      const min = parseInt(bands[1], 10);
+      return { text: `Subir a idade mínima para ${min} anos`, apply: { kind: "age", ageMin: min, ageMax: null } };
+    }
+    if (idx === bands.length - 1 && idx > 0) {
+      const max = parseInt(bands[idx - 1].split("-")[1] ?? "65", 10);
+      return { text: `Baixar a idade máxima para ${max} anos`, apply: { kind: "age", ageMin: null, ageMax: max } };
+    }
     return null;
   }).filter(() => !cutoff);
 
   const candidates: Array<Suggestion | null> = [
-    ...costlyItems(data.byPosition, spend, avg, "Posicionamento", (r) => `Tirar ${r.label} dos posicionamentos`),
+    ...costlyItems(data.byPosition, spend, avg, "Posicionamento", (r) => ({
+      text: `Tirar ${r.label} dos posicionamentos`,
+      apply: placementsWithout([r.key]),
+    })),
     ...costlyItems(data.byPlatform, spend, avg, "Plataforma", (r) =>
-      data.byPlatform.length > 1 ? `Tirar o ${r.label} e concentrar nas outras plataformas` : null
+      data.byPlatform.length > 1
+        ? { text: `Tirar o ${r.label} e concentrar nas outras plataformas`, apply: placementsWithout([], [r.key]) }
+        : null
     ),
     cutoff,
     ...singleAges,

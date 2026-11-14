@@ -1410,6 +1410,27 @@ export async function fetchOptimizationInsights(objectId: string, token: string,
   };
 }
 
+export interface OptimizableAdSet {
+  id: string;
+  name: string;
+  status: string;
+  campaignName: string;
+}
+
+// Conjuntos de uma campanha ou de uma conta inteira (o edge /adsets funciona
+// nos dois) — usados pra escolher onde aplicar uma sugestão da Otimização.
+export async function fetchAdSetsForOptimization(objectId: string, token: string): Promise<OptimizableAdSet[]> {
+  const url = `${BASE_URL}/${objectId}/adsets?${new URLSearchParams({
+    fields: "id,name,status,effective_status,campaign{name}",
+    limit: "200",
+    access_token: token,
+  })}`;
+  const rows = await fetchAllInsightPages<{ id: string; name: string; status: string; effective_status?: string; campaign?: { name?: string } }>(url);
+  return rows
+    .filter((r) => r.effective_status !== "ARCHIVED" && r.effective_status !== "DELETED")
+    .map((r) => ({ id: r.id, name: r.name, status: r.status, campaignName: r.campaign?.name ?? "" }));
+}
+
 // ── Ad sets & Ads ──────────────────────────────────────────────
 
 export interface MetaTargeting {
