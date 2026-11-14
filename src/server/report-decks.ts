@@ -17,6 +17,10 @@ const creativeSchema = z.object({
   mimetype: z.string(),
   filename: z.string(),
   caption: z.string().optional(),
+  // posição (px, a partir do centro) e tamanho (altura em px) no slide
+  x: z.number().optional(),
+  y: z.number().optional(),
+  height: z.number().optional(),
 });
 
 export interface ReportDeckFunilItem {
@@ -28,6 +32,9 @@ export interface ReportDeckCreative {
   mimetype: string;
   filename: string;
   caption?: string;
+  x?: number;
+  y?: number;
+  height?: number;
 }
 
 export interface ReportDeckRow {

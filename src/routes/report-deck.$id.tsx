@@ -161,6 +161,82 @@ function MetricCard({ label, value, color = "border-orange-500/60" }: { label: s
   );
 }
 
+// Imagem do criativo: arrasta pra mudar a posição, controle de tamanho embaixo.
+// Os controles ficam fora da captura do PDF (data-html2canvas-ignore).
+function CreativeBox({
+  creative,
+  onChange,
+  onRemove,
+}: {
+  creative: ReportDeckCreative;
+  onChange: (c: ReportDeckCreative) => void;
+  onRemove: () => void;
+}) {
+  const x = creative.x ?? 0;
+  const y = creative.y ?? 0;
+  const height = creative.height ?? 320;
+  const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
+
+  return (
+    <div
+      className="relative cursor-grab active:cursor-grabbing touch-none select-none"
+      style={{ transform: `translate(${x}px, ${y}px)` }}
+      onPointerDown={(e) => {
+        if ((e.target as HTMLElement).closest("[data-no-drag]")) return;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        drag.current = { px: e.clientX, py: e.clientY, x, y };
+      }}
+      onPointerMove={(e) => {
+        const d = drag.current;
+        if (!d) return;
+        onChange({ ...creative, x: Math.round(d.x + e.clientX - d.px), y: Math.round(d.y + e.clientY - d.py), height });
+      }}
+      onPointerUp={() => (drag.current = null)}
+      onPointerCancel={() => (drag.current = null)}
+    >
+      <img
+        src={`data:${creative.mimetype};base64,${creative.base64}`}
+        alt=""
+        draggable={false}
+        style={{ height }}
+        className="max-w-none rounded-lg border border-white/10 object-contain"
+      />
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        <span className="h-10 w-10 rounded-full bg-black/50 flex items-center justify-center">
+          <Play className="h-4 w-4 text-white fill-white" />
+        </span>
+      </div>
+      <div data-html2canvas-ignore data-no-drag className="absolute -top-2 -right-2 flex items-center gap-1">
+        <button
+          type="button"
+          onClick={onRemove}
+          className="h-6 w-6 rounded-full bg-black/70 flex items-center justify-center text-white/80 hover:text-white"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+      <div
+        data-html2canvas-ignore
+        data-no-drag
+        className="absolute -bottom-9 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-black/70 px-3 py-1.5 text-[10px] text-white/70 cursor-default"
+      >
+        Tamanho
+        <input
+          type="range"
+          min={120}
+          max={520}
+          value={height}
+          onChange={(e) => onChange({ ...creative, x, y, height: Number(e.target.value) })}
+          className="w-28"
+        />
+        <button type="button" className="underline hover:text-white" onClick={() => onChange({ ...creative, x: 0, y: 0, height: 320 })}>
+          Centralizar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Página ────────────────────────────────────────────────────────────────
 
 function ReportDeckPage() {
@@ -431,25 +507,11 @@ function ReportDeckPage() {
               <SlideTitle>Melhores Criativos</SlideTitle>
               <div className="flex-1 flex flex-col items-center justify-center">
                 {deck.creatives[0] ? (
-                  <div className="relative">
-                    <img
-                      src={`data:${deck.creatives[0].mimetype};base64,${deck.creatives[0].base64}`}
-                      alt=""
-                      className="max-h-[420px] rounded-lg border border-white/10 object-contain"
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <span className="h-10 w-10 rounded-full bg-black/50 flex items-center justify-center">
-                        <Play className="h-4 w-4 text-white fill-white" />
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => patch({ creatives: [] })}
-                      className="absolute -top-2 -right-2 h-6 w-6 rounded-full bg-black/70 flex items-center justify-center text-white/80 hover:text-white print:hidden"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
+                  <CreativeBox
+                    creative={deck.creatives[0]}
+                    onChange={(c) => patch({ creatives: [c] })}
+                    onRemove={() => patch({ creatives: [] })}
+                  />
                 ) : (
                   <label className="flex flex-col items-center gap-2 text-sm text-white/40 border border-dashed border-white/20 rounded-lg px-8 py-10 cursor-pointer">
                     <ImagePlus className="h-6 w-6" />
