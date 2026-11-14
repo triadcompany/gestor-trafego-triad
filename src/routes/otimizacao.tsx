@@ -152,7 +152,7 @@ function Report({ data }: { data: OptimizationInsights }) {
       <section className="space-y-4">
         <div className="flex items-baseline justify-between gap-4 flex-wrap">
           <h2 className="text-lg font-semibold">Onde otimizar</h2>
-          <span className="text-xs text-muted-foreground">Ordenado pelo dinheiro envolvido</span>
+          <span className="text-xs text-muted-foreground">Economizar primeiro, depois oportunidades e pontos de atenção</span>
         </div>
         {!report.enoughData ? (
           <Notice>
@@ -189,28 +189,29 @@ function Notice({ children }: { children: React.ReactNode }) {
   );
 }
 
+const KIND_STYLE: Record<Suggestion["kind"], { label: string; cls: string }> = {
+  economia: { label: "Economizar", cls: "bg-status-attention/15 text-status-attention" },
+  oportunidade: { label: "Oportunidade", cls: "bg-primary/15 text-primary" },
+  atencao: { label: "Atenção", cls: "bg-muted text-muted-foreground" },
+};
+
 function SuggestionCard({ s }: { s: Suggestion }) {
+  const kind = KIND_STYLE[s.kind];
   return (
     <article className="rounded-xl border border-border bg-card p-4 flex flex-col gap-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs uppercase tracking-wide text-muted-foreground">{s.dimension}</span>
-        <span
-          className={cn(
-            "rounded-full px-2.5 py-0.5 text-xs font-medium",
-            s.confidence === "alta" ? "bg-primary/15 text-primary" : "bg-status-attention/15 text-status-attention"
-          )}
-        >
-          Confiança {s.confidence === "alta" ? "alta" : "média"}
-        </span>
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
+          <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", kind.cls)}>{kind.label}</span>
+          <span className="text-xs uppercase tracking-wide text-muted-foreground">{s.dimension}</span>
+        </div>
+        <span className="text-xs text-muted-foreground">Confiança {s.confidence === "alta" ? "alta" : "média"}</span>
       </div>
       <p className="text-sm leading-relaxed">{s.finding}</p>
       <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3">
         <ArrowRight className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
         <span className="text-sm font-medium leading-snug">{s.action}</span>
       </div>
-      <p className="mt-auto text-xs text-muted-foreground">
-        ~{brl(s.impact)} acima do que custaria na média, no período
-      </p>
+      <p className="mt-auto text-xs text-muted-foreground">{s.impactText}</p>
     </article>
   );
 }

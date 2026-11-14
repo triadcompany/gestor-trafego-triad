@@ -1368,7 +1368,7 @@ export async function fetchOptimizationInsights(objectId: string, token: string,
   const ageMap = new Map<string, OptimizationRow>();
   const genderMap = new Map<string, OptimizationRow>();
   for (const row of ageGenderRows) {
-    if (row.age) add(ageMap, row.age, row.age.replace("-", "–"), row);
+    if (row.age) add(ageMap, row.age, row.age === "Unknown" ? "Não informado" : row.age.replace("-", "–"), row);
     if (row.gender) add(genderMap, row.gender, GENDER_LABELS[row.gender] ?? row.gender, row);
   }
 
