@@ -3,11 +3,21 @@ import { useQuery } from "@tanstack/react-query";
 import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
 import { fetchCampaigns, fetchOptimizationInsights, getMetaToken, type OptimizationInsights, type OptimizationRow } from "@/lib/meta";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { buildOptimizationReport, brl, MIN_TOTAL_LEADS, type Suggestion } from "@/lib/optimization";
+import { buildOptimizationReport, brl, cciStatus, MIN_TOTAL_LEADS, type CciStatus, type CciTarget, type Suggestion } from "@/lib/optimization";
 import { cn } from "@/lib/utils";
 import { ApplySuggestionDialog } from "@/components/ApplySuggestionDialog";
 
 const ALL = "__conta__";
+const STATUS_TEXT: Record<CciStatus, string> = {
+  "on-target": "text-status-on-target",
+  attention: "text-status-attention",
+  critical: "text-status-critical",
+};
+const STATUS_LABEL: Record<CciStatus, string> = {
+  "on-target": "na meta",
+  attention: "acima da meta",
+  critical: "muito acima",
+};
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const HOUR_BLOCKS = ["0h", "2h", "4h", "6h", "8h", "10h", "12h", "14h", "16h", "18h", "20h", "22h"];
 
@@ -22,11 +32,13 @@ export function OptimizationPanel({
   adAccountId,
   since,
   until,
+  target,
 }: {
   clientId: string;
   adAccountId: string;
   since: string;
   until: string;
+  target: CciTarget | null; // meta de CCI do cliente — régua das cores e dos pontos fora da meta
 }) {
   const [campaignId, setCampaignId] = useState(ALL);
 
@@ -83,14 +95,24 @@ export function OptimizationPanel({
           {error instanceof Error ? error.message : "Erro ao buscar dados da Meta."}
         </div>
       ) : data ? (
-        <Report data={data} clientId={clientId} objectId={objectId} />
+        <Report data={data} clientId={clientId} objectId={objectId} target={target} />
       ) : null}
     </div>
   );
 }
 
-function Report({ data, clientId, objectId }: { data: OptimizationInsights; clientId: string; objectId: string }) {
-  const report = useMemo(() => buildOptimizationReport(data), [data]);
+function Report({
+  data,
+  clientId,
+  objectId,
+  target,
+}: {
+  data: OptimizationInsights;
+  clientId: string;
+  objectId: string;
+  target: CciTarget | null;
+}) {
+  const report = useMemo(() => buildOptimizationReport(data, target), [data, target]);
   const [applying, setApplying] = useState<Suggestion | null>(null);
   const { spend, leads, impressions, clicks } = data.totals;
   const avg = report.avgCpl;
@@ -98,7 +120,7 @@ function Report({ data, clientId, objectId }: { data: OptimizationInsights; clie
   const kpis = [
     { label: "Gasto", value: brl(spend) },
     { label: "Conversas iniciadas", value: num(leads) },
-    { label: "Custo por conversa", value: avg ? brl(avg) : "—" },
+    { label: "Custo por conversa", value: avg ? brl(avg) : "—", status: target ? cciStatus(spend, leads, target) : null },
     { label: "CTR", value: impressions > 0 ? `${num((clicks / impressions) * 100, 1)}%` : "—" },
     { label: "CPM", value: impressions > 0 ? brl((spend / impressions) * 1000) : "—" },
   ];
@@ -113,7 +135,10 @@ function Report({ data, clientId, objectId }: { data: OptimizationInsights; clie
         {kpis.map((k) => (
           <div key={k.label} className="rounded-xl bg-muted/50 px-4 py-3 space-y-1">
             <p className="text-xs text-muted-foreground">{k.label}</p>
-            <p className="text-xl font-semibold tabular-nums">{k.value}</p>
+            <p className={cn("text-xl font-semibold tabular-nums", "status" in k && k.status && STATUS_TEXT[k.status])}>{k.value}</p>
+            {"status" in k && k.status && target && (
+              <p className={cn("text-xs", STATUS_TEXT[k.status])}>{STATUS_LABEL[k.status]} · meta {brl(target.min)}–{brl(target.max)}</p>
+            )}
           </div>
         ))}
       </div>
@@ -123,13 +148,17 @@ function Report({ data, clientId, objectId }: { data: OptimizationInsights; clie
           <h2 className="text-lg font-semibold">Onde otimizar</h2>
           <span className="text-xs text-muted-foreground">Economizar primeiro, depois oportunidades e pontos de atenção</span>
         </div>
-        {!report.enoughData ? (
+        {!report.enoughData && (
           <Notice>
-            Só {num(leads)} conversa{leads === 1 ? "" : "s"} no período. Com menos de {MIN_TOTAL_LEADS} não dá pra separar padrão de acaso,
-            então nenhuma sugestão é feita. Escolha um período maior no seletor do topo da página (ex.: Últimos 30 dias).
+            Só {num(leads)} conversa{leads === 1 ? "" : "s"} no período: as sugestões de padrão (Economizar, Oportunidade) precisam de pelo menos{" "}
+            {MIN_TOTAL_LEADS}. {target ? "Abaixo, só o que já está fora da meta de CCI." : "Cadastre a meta de CCI do cliente pra ver o que está fora dela."} Pra
+            mais sugestões, escolha um período maior no seletor do topo (ex.: Últimos 30 dias).
           </Notice>
-        ) : report.suggestions.length === 0 ? (
-          <Notice>Nada fora do padrão: nenhum posicionamento, plataforma, idade, gênero ou horário custa bem acima da média com volume suficiente.</Notice>
+        )}
+        {report.suggestions.length === 0 ? (
+          report.enoughData && (
+            <Notice>Nada fora do padrão nem da meta: nenhum posicionamento, plataforma, idade, gênero ou horário custa bem acima do esperado.</Notice>
+          )
         ) : (
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {report.suggestions.map((s) => (
@@ -141,10 +170,10 @@ function Report({ data, clientId, objectId }: { data: OptimizationInsights; clie
 
       <Heatmap data={data} />
 
-      <Breakdown title="Plataforma" rows={data.byPlatform} total={data.totals} avg={avg} />
-      <Breakdown title="Posicionamento" rows={data.byPosition} total={data.totals} avg={avg} />
-      <Breakdown title="Faixa etária" rows={data.byAge} total={data.totals} avg={avg} />
-      <Breakdown title="Gênero" rows={data.byGender} total={data.totals} avg={avg} />
+      <Breakdown target={target} title="Plataforma" rows={data.byPlatform} total={data.totals} avg={avg} />
+      <Breakdown target={target} title="Posicionamento" rows={data.byPosition} total={data.totals} avg={avg} />
+      <Breakdown target={target} title="Faixa etária" rows={data.byAge} total={data.totals} avg={avg} />
+      <Breakdown target={target} title="Gênero" rows={data.byGender} total={data.totals} avg={avg} />
       {applying && (
         <ApplySuggestionDialog suggestion={applying} clientId={clientId} objectId={objectId} onClose={() => setApplying(null)} />
       )}
@@ -163,6 +192,7 @@ function Notice({ children }: { children: React.ReactNode }) {
 
 const KIND_STYLE: Record<Suggestion["kind"], { label: string; cls: string }> = {
   economia: { label: "Economizar", cls: "bg-status-attention/15 text-status-attention" },
+  fora_meta: { label: "Fora da meta", cls: "bg-status-critical/15 text-status-critical" },
   oportunidade: { label: "Oportunidade", cls: "bg-primary/15 text-primary" },
   atencao: { label: "Atenção", cls: "bg-muted text-muted-foreground" },
 };
@@ -176,7 +206,7 @@ function SuggestionCard({ s, onApply }: { s: Suggestion; onApply: () => void }) 
           <span className={cn("rounded-full px-2.5 py-0.5 text-xs font-medium", kind.cls)}>{kind.label}</span>
           <span className="text-xs uppercase tracking-wide text-muted-foreground">{s.dimension}</span>
         </div>
-        <span className="text-xs text-muted-foreground">Confiança {s.confidence === "alta" ? "alta" : "média"}</span>
+        <span className="text-xs text-muted-foreground">Confiança {{ alta: "alta", media: "média", baixa: "baixa" }[s.confidence]}</span>
       </div>
       <p className="text-sm leading-relaxed">{s.finding}</p>
       <div className="flex items-start gap-2 rounded-lg bg-muted/50 p-3">
@@ -266,11 +296,13 @@ function Breakdown({
   rows,
   total,
   avg,
+  target,
 }: {
   title: string;
   rows: OptimizationRow[];
   total: OptimizationInsights["totals"];
   avg: number | null;
+  target: CciTarget | null;
 }) {
   if (rows.length === 0) return null;
   return (
@@ -295,8 +327,10 @@ function Breakdown({
             const sp = total.spend > 0 ? (r.spend / total.spend) * 100 : 0;
             const cv = total.leads > 0 ? (r.leads / total.leads) * 100 : 0;
             const cpl = r.leads > 0 ? r.spend / r.leads : null;
-            const flag =
-              cpl === null
+            const status = target ? cciStatus(r.spend, r.leads, target) : null;
+            const flag = target
+              ? status && { text: cpl === null ? "sem conversa" : STATUS_LABEL[status], cls: STATUS_TEXT[status] }
+              : cpl === null
                 ? r.spend > 0 ? { text: "sem conversa", cls: "text-status-attention" } : null
                 : avg && cpl > avg * 1.3
                   ? { text: `${num(cpl / avg, 1)}× a média`, cls: "text-status-attention" }
@@ -313,7 +347,7 @@ function Breakdown({
                 <span className="text-right text-sm tabular-nums text-muted-foreground">{brl(r.spend)}</span>
                 <span className="text-right text-sm tabular-nums text-muted-foreground">{num(r.leads)}</span>
                 <span className="flex items-baseline justify-end gap-1.5 tabular-nums">
-                  <span className="text-sm font-medium">{cpl === null ? "—" : brl(cpl)}</span>
+                  <span className={cn("text-sm font-medium", status && STATUS_TEXT[status])}>{cpl === null ? "—" : brl(cpl)}</span>
                   {flag && <span className={cn("text-[11px] font-medium", flag.cls)}>{flag.text}</span>}
                 </span>
               </div>
@@ -321,11 +355,14 @@ function Breakdown({
           })}
         </div>
       </div>
-      {avg && (
-        <p className="text-xs text-muted-foreground">
-          Média do período: <strong className="text-foreground font-medium">{brl(avg)}</strong> por conversa. Barra cinza maior que a azul = gasta mais do que rende.
-        </p>
-      )}
+      <p className="text-xs text-muted-foreground">
+        {target ? (
+          <>Meta de CCI: <strong className="text-foreground font-medium">{brl(target.min)} – {brl(target.max)}</strong>. Verde = na meta, amarelo = até 30% acima, vermelho = muito acima ou sem conversa. </>
+        ) : avg ? (
+          <>Média do período: <strong className="text-foreground font-medium">{brl(avg)}</strong> por conversa. </>
+        ) : null}
+        Barra cinza maior que a azul = gasta mais do que rende.
+      </p>
     </section>
   );
 }

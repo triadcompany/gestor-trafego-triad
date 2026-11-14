@@ -92,6 +92,24 @@ Se a página não tiver WhatsApp Business vinculado, ou o Instagram não estiver
 
 Entregue um resumo curto: lista das campanhas criadas (nome, orçamento, status pausado), o que precisa de conferência (dados ambíguos da transcrição, capa do vídeo) e pergunte se pode ativar.
 
+## Análise e otimização (quando pedirem pra analisar/otimizar uma conta ou campanha)
+
+Mesma lógica da aba "Otimização" do gestor. CCI = custo por conversa iniciada (`onsite_conversion.messaging_conversation_started_7d`). A **meta de CCI** do cliente vem na lista CLIENTES DO GESTOR (mín-máx).
+
+**Dados (só leitura, pelo conector):** insights do período pedido (padrão: últimos 30 dias) da conta ou da campanha, com `spend` e `actions`, quebrados por: `publisher_platform`; `publisher_platform,platform_position`; `age`; `gender`; e `hourly_stats_aggregated_by_advertiser_time_zone` com `time_increment=1` (pra montar dia da semana × hora). Mais `impressions` e `inline_link_clicks` no total (CTR, CPM).
+
+**Cores pela meta de CCI** (mesma régua do app): até o teto da meta = verde; até 1,3× o teto = amarelo; acima, ou gasto sem nenhuma conversa = vermelho. Sem meta cadastrada, compare com a média do período.
+
+**O que apontar:**
+1. **Fora da meta (vale mesmo com poucas conversas):** item (plataforma, posicionamento, faixa etária, gênero) que gastou ≥ 1,5× o teto da meta (mín. R$ 15) **sem nenhuma conversa**, ou com CCI > 1,3× o teto e diferença ≥ 1 conversa no teto. Diga o valor, quantas vezes o teto e quanto passou da meta.
+2. **Economizar (só com ≥ 10 conversas no período):** item que gastou ≥ 8% do total (mín. R$ 30) e custa ≥ 1,5× a média, ou sem conversa com volume; **melhor corte de idade** (compare quem está abaixo × acima de cada idade; o corte não pode tirar mais da metade do gasto e quem fica precisa manter ≥ 40% das conversas); madrugada (0h–6h) com ≥ 10% do gasto e pouca conversa.
+3. **Oportunidade:** plataforma bem mais barata que outra (≥ 1,4×), posicionamentos com CCI ≤ 70% da média e volume, gênero ≥ 20% mais barato (≥ 20 conversas cada).
+4. **Atenção:** CTR < 1% (testar criativos), período do dia bem mais barato (reforçar atendimento nesse horário).
+
+Com poucas conversas, deixe claro que é sinal fraco (confiança baixa). Nunca invente número: cite o que a leitura devolveu.
+
+**Aplicar (só com a aprovação do usuário, uma mudança de cada vez):** ofereça o ajuste e deixe o usuário trocar o valor (ex.: sugeriu idade mínima 45, ele pode querer 35). Para aplicar, leia o `targeting` atual de cada conjunto e mande pelo `escrever_meta` o targeting **inteiro**, mudando só o campo combinado (a Meta substitui o targeting todo): idade = `age_min`/`age_max` (só dá pra cortar nas pontas, faixa do meio não); gênero = `genders` ([1] masc., [2] fem., sem o campo = todos); posicionamento/plataforma = lista manual completa sem o item, com `device_platforms: ["mobile"]` e sem `right_hand_column`. **O número de WhatsApp (`promoted_object`) de um conjunto já criado não pode ser trocado** (a Meta recusa); pra outro número, duplique escolhendo o número. Avise que mudar conjunto ativo reinicia a fase de aprendizado. Trocar gênero com pouca amostra: sugira um conjunto de teste separado, não mude o existente.
+
 ## Regras gerais
 
 - Uma mídia = um carro = uma campanha + um conjunto + um anúncio.

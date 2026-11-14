@@ -256,7 +256,7 @@ http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/chat') {
       const { text, clients, conversationId, tokens } = JSON.parse((await readBody(req)).toString());
       const ctx = Array.isArray(clients) && clients.length
-        ? `CLIENTES DO GESTOR (nome | conta de anúncio | página | WhatsApp | orçamento mensal):\n` + clients.map((c) => `- ${c.name} | ${c.account} | ${c.page || '?'} | ${c.whatsapp || '?'} | ${c.budget ?? '?'}`).join('\n') + '\n\n'
+        ? `CLIENTES DO GESTOR (nome | conta de anúncio | página | WhatsApp | orçamento mensal | meta de CCI em R$ mín-máx):\n` + clients.map((c) => `- ${c.name} | ${c.account} | ${c.page || '?'} | ${c.whatsapp || '?'} | ${c.budget ?? '?'} | ${c.cci || '?'}`).join('\n') + '\n\n'
         : '';
       return runChat(ctx + text, res, origin, conversationId, tokens && typeof tokens === 'object' ? tokens : {});
     }

@@ -9,8 +9,8 @@ import { placementsOnly, placementsWithout, type TargetingChange } from "./optim
 // item com poucas conversas esperadas nunca vira sugestão, pra não confundir
 // acaso com padrão.
 
-export type Confidence = "alta" | "media";
-export type SuggestionKind = "economia" | "oportunidade" | "atencao";
+export type Confidence = "alta" | "media" | "baixa";
+export type SuggestionKind = "economia" | "fora_meta" | "oportunidade" | "atencao";
 
 export interface Suggestion {
   id: string;
@@ -34,7 +34,7 @@ export const MIN_TOTAL_LEADS = 10;
 const MIN_SPEND_SHARE = 0.08;
 const MIN_SPEND_BRL = 30;
 const CPL_RATIO_ALERT = 1.5;
-const MAX_SUGGESTIONS = 9;
+const MAX_SUGGESTIONS = 12;
 
 export const brl = (v: number) =>
   v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -266,49 +266,156 @@ function lowCtr(data: OptimizationInsights): Suggestion | null {
   };
 }
 
-export function buildOptimizationReport(data: OptimizationInsights): OptimizationReport {
+// ── Ações por dimensão (texto + mudança aplicável) ───────────────────────────
+type Action = { text: string; apply?: TargetingChange } | null;
+
+const FB_IG = new Set(["facebook", "instagram"]);
+function positionAction(r: OptimizationRow): Action {
+  return { text: `Tirar ${r.label} dos posicionamentos`, apply: placementsWithout([r.key]) };
+}
+function platformAction(r: OptimizationRow): Action {
+  return FB_IG.has(r.key)
+    ? { text: `Tirar o ${r.label} e concentrar na outra plataforma`, apply: placementsWithout([], [r.key]) }
+    : { text: `Tirar ${r.label} (deixar só Facebook e Instagram)`, apply: placementsWithout([]) };
+}
+function ageAction(r: OptimizationRow, ages: OptimizationRow[]): Action {
+  const bands = ages.filter((a) => /^\d/.test(a.key)).map((a) => a.key);
+  const idx = bands.indexOf(r.key);
+  if (idx === 0 && bands[1]) {
+    const min = parseInt(bands[1], 10);
+    return { text: `Subir a idade mínima para ${min} anos`, apply: { kind: "age", ageMin: min, ageMax: null } };
+  }
+  if (idx === bands.length - 1 && idx > 0) {
+    const max = parseInt(bands[idx - 1].split("-")[1] ?? "65", 10);
+    return { text: `Baixar a idade máxima para ${max} anos`, apply: { kind: "age", ageMin: null, ageMax: max } };
+  }
+  return { text: "Faixa do meio: separar em outro conjunto pra testar (a Meta só corta idade nas pontas)" };
+}
+function genderAction(r: OptimizationRow): Action {
+  if (r.key === "male") return { text: "Testar deixar só o público feminino", apply: { kind: "gender", gender: "female" } };
+  if (r.key === "female") return { text: "Testar deixar só o público masculino", apply: { kind: "gender", gender: "male" } };
+  return null;
+}
+
+// ── Fora da meta de CCI (vale mesmo com pouco volume) ────────────────────────
+// Gastou sem conversa, ou custa bem acima do teto da meta do cliente: com
+// pouca amostra não prova padrão, mas já é dinheiro saindo fora da meta.
+export interface CciTarget {
+  min: number;
+  max: number;
+}
+
+function offTarget(
+  rows: OptimizationRow[],
+  dimension: string,
+  target: CciTarget,
+  actionFor: (r: OptimizationRow) => Action
+): Suggestion[] {
+  const out: Suggestion[] = [];
+  for (const r of rows) {
+    if (r.key === "unknown" || r.key === "Unknown") continue;
+    const expected = r.spend / target.max; // conversas que esse gasto pagaria no teto da meta
+    let finding: string;
+    let waste: number;
+    if (r.leads === 0) {
+      if (r.spend < Math.max(target.max * 1.5, 15)) continue;
+      finding = `${r.label} gastou ${brl(r.spend)} sem nenhuma conversa (meta: até ${brl(target.max)} por conversa).`;
+      waste = r.spend;
+    } else {
+      const cpl = cplOf(r);
+      if (cpl <= target.max * 1.3 || r.spend < target.max) continue;
+      finding = `${r.label}: ${brl(cpl)} por conversa, ${times(cpl / target.max)} o teto da meta (${brl(target.max)}).`;
+      waste = r.spend - r.leads * target.max;
+      // Menos de uma conversa de diferença ainda é ruído.
+      if (waste < target.max) continue;
+    }
+    const action = actionFor(r);
+    if (!action) continue;
+    out.push({
+      id: `${dimension}:${r.key}`,
+      kind: "fora_meta",
+      dimension,
+      finding,
+      action: action.text,
+      apply: action.apply,
+      impactText: `~${brl(waste)} acima da meta no período`,
+      weight: waste,
+      confidence: expected >= 6 ? "alta" : expected >= 3 ? "media" : "baixa",
+    });
+  }
+  return out;
+}
+
+export function buildOptimizationReport(data: OptimizationInsights, target?: CciTarget | null): OptimizationReport {
   const { spend, leads } = data.totals;
   const avg = leads > 0 ? spend / leads : null;
-  if (!avg || leads < MIN_TOTAL_LEADS) return { avgCpl: avg, enoughData: false, suggestions: [] };
+  const enoughData = !!avg && leads >= MIN_TOTAL_LEADS;
+  const candidates: Array<Suggestion | null> = [];
 
-  const cutoff = ageCutoff(data.byAge, spend);
-  // O corte de idade já cobre as faixas isoladas caras daquele lado.
-  const singleAges = costlyItems(data.byAge.filter((a) => /^\d/.test(a.key)), spend, avg, "Faixa etária", (r) => {
-    const bands = data.byAge.filter((a) => /^\d/.test(a.key)).map((a) => a.key);
-    const idx = bands.indexOf(r.key);
-    if (idx === 0 && bands[1]) {
-      const min = parseInt(bands[1], 10);
-      return { text: `Subir a idade mínima para ${min} anos`, apply: { kind: "age", ageMin: min, ageMax: null } };
-    }
-    if (idx === bands.length - 1 && idx > 0) {
-      const max = parseInt(bands[idx - 1].split("-")[1] ?? "65", 10);
-      return { text: `Baixar a idade máxima para ${max} anos`, apply: { kind: "age", ageMin: null, ageMax: max } };
-    }
-    return null;
-  }).filter(() => !cutoff);
+  if (enoughData && avg) {
+    const cutoff = ageCutoff(data.byAge, spend);
+    candidates.push(
+      ...costlyItems(data.byPosition, spend, avg, "Posicionamento", positionAction),
+      ...costlyItems(data.byPlatform, spend, avg, "Plataforma", (r) => (data.byPlatform.length > 1 ? platformAction(r) : null)),
+      cutoff,
+      // O corte de idade já cobre as faixas isoladas caras daquele lado.
+      ...(cutoff
+        ? []
+        : costlyItems(data.byAge.filter((a) => /^\d/.test(a.key)), spend, avg, "Faixa etária", (r) => {
+            const a = ageAction(r, data.byAge);
+            return a?.apply ? a : null;
+          })),
+      nightWaste(data, avg),
+      platformGap(data.byPlatform, spend),
+      cheapPositions(data.byPosition, avg),
+      genderGap(data.byGender),
+      bestPeriod(data, avg),
+      lowCtr(data)
+    );
+  }
 
-  const candidates: Array<Suggestion | null> = [
-    ...costlyItems(data.byPosition, spend, avg, "Posicionamento", (r) => ({
-      text: `Tirar ${r.label} dos posicionamentos`,
-      apply: placementsWithout([r.key]),
-    })),
-    ...costlyItems(data.byPlatform, spend, avg, "Plataforma", (r) =>
-      data.byPlatform.length > 1
-        ? { text: `Tirar o ${r.label} e concentrar nas outras plataformas`, apply: placementsWithout([], [r.key]) }
-        : null
-    ),
-    cutoff,
-    ...singleAges,
-    nightWaste(data, avg),
-    platformGap(data.byPlatform, spend),
-    cheapPositions(data.byPosition, avg),
-    genderGap(data.byGender),
-    bestPeriod(data, avg),
-    lowCtr(data),
-  ];
+  if (target && target.max > 0) {
+    const taken = new Set(candidates.filter(Boolean).map((s) => s!.id));
+    const off = [
+      ...offTarget(data.byPlatform, "Plataforma", target, platformAction),
+      ...offTarget(data.byPosition, "Posicionamento", target, positionAction),
+      ...offTarget(data.byAge, "Faixa etária", target, (r) => ageAction(r, data.byAge)),
+      ...offTarget(data.byGender, "Gênero", target, (r) => {
+        // Com pouca amostra, trocar o gênero do conjunto é arriscado: vira só
+        // um teste sugerido, sem aplicar direto.
+        const other = data.byGender.find((g) => g.key !== r.key && g.key !== "unknown" && g.leads > 0);
+        if (!other) return { text: "Os dois gêneros estão acima da meta: rever o criativo e a oferta" };
+        const otherCpl = cplOf(other);
+        return otherCpl <= target.max
+          ? { text: `Testar um conjunto separado só com o público ${other.label.toLowerCase()} (${brl(otherCpl)} por conversa, na meta)` }
+          : { text: "Os dois gêneros estão acima da meta: rever o criativo e a oferta" };
+      }),
+    ]
+      .filter((s) => !taken.has(s.id))
+      // Posicionamento que é o único da plataforma (ex.: Status do WhatsApp) já
+      // aparece como a própria plataforma.
+      .filter((s) => {
+        if (s.dimension !== "Posicionamento") return true;
+        const platform = s.id.split(":")[1];
+        return data.byPosition.filter((p) => p.key.startsWith(`${platform}:`) && p.spend > 0.5).length > 1;
+      });
+    candidates.push(...off);
+  }
 
   const suggestions = candidates.filter((s): s is Suggestion => !!s);
-  const order: Record<SuggestionKind, number> = { economia: 0, oportunidade: 1, atencao: 2 };
+  const order: Record<SuggestionKind, number> = { economia: 0, fora_meta: 1, oportunidade: 2, atencao: 3 };
   suggestions.sort((a, b) => order[a.kind] - order[b.kind] || b.weight - a.weight);
-  return { avgCpl: avg, enoughData: true, suggestions: suggestions.slice(0, MAX_SUGGESTIONS) };
+  return { avgCpl: avg, enoughData, suggestions: suggestions.slice(0, MAX_SUGGESTIONS) };
+}
+
+// Mesma régua do resto do app (computeStatus em queries.ts): até o teto da
+// meta = verde, até 1,3× = amarelo, acima (ou gasto sem conversa) = vermelho.
+export type CciStatus = "on-target" | "attention" | "critical";
+export function cciStatus(spend: number, leads: number, target: CciTarget): CciStatus | null {
+  if (spend <= 0) return null;
+  if (leads === 0) return "critical";
+  const cpl = spend / leads;
+  if (cpl <= target.max) return "on-target";
+  if (cpl <= target.max * 1.3) return "attention";
+  return "critical";
 }

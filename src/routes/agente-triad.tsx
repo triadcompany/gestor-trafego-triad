@@ -128,6 +128,7 @@ function AgenteTriadPage() {
           page: c.meta_page_id,
           whatsapp: c.meta_whatsapp_number,
           budget: c.monthly_budget,
+          cci: c.cpl_max > 0 ? `${c.cpl_min}-${c.cpl_max}` : null,
         })),
     [clients],
   );
