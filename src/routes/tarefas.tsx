@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
@@ -26,7 +26,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Search, MoreHorizontal, Pencil, Trash2, ChevronsUpDown, Check as CheckIcon } from "lucide-react";
+import { FileText, Plus, Search, MoreHorizontal, Pencil, Trash2, ChevronsUpDown, Check as CheckIcon } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command";
 import { toast } from "sonner";
@@ -49,6 +49,7 @@ import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { DayOfMonthPicker } from "@/components/ClientFormDialog";
 import type { TaskStatus } from "@/lib/database.types";
+import { daysAgoInBrasilia, isoDateInBrasilia } from "@/lib/brasilia-date";
 
 export const Route = createFileRoute("/tarefas")({
   head: () => ({
@@ -471,9 +472,10 @@ function ReportDatesSection({ clients }: { clients: ClientRow[] }) {
         <div className="divide-y divide-border">
           {rows.map((c) =>
             isTriad ? (
-              <Popover key={c.id}>
+              <div key={c.id} className="flex items-center pr-4 hover:bg-muted/40 transition-colors">
+              <Popover>
                 <PopoverTrigger asChild>
-                  <button type="button" className="flex items-center gap-3 px-4 py-2.5 w-full text-left hover:bg-muted/40 transition-colors">
+                  <button type="button" className="flex items-center gap-3 px-4 py-2.5 flex-1 min-w-0 text-left">
                     {c.monthly_report_day !== null ? (
                       <span className="shrink-0 w-9 h-9 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">
                         {c.monthly_report_day}
@@ -495,6 +497,8 @@ function ReportDatesSection({ clients }: { clients: ClientRow[] }) {
                   />
                 </PopoverContent>
               </Popover>
+              <GenerateReportButton clientId={c.id} clientName={c.name} />
+              </div>
             ) : (
               <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
                 <span className="shrink-0 w-9 h-9 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">
@@ -507,6 +511,63 @@ function ReportDatesSection({ clients }: { clients: ClientRow[] }) {
         </div>
       )}
     </div>
+  );
+}
+
+// ── Gerar relatório (PDF) ────────────────────────────────────────────────────
+// Escolhe o período e abre o relatório visual do cliente, de onde sai o PDF.
+
+function GenerateReportButton({ clientId, clientName }: { clientId: string; clientName: string }) {
+  const navigate = useNavigate();
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<"30" | "custom">("30");
+  const today = isoDateInBrasilia();
+  const [since, setSince] = useState(daysAgoInBrasilia(30));
+  const [until, setUntil] = useState(today);
+  const invalid = mode === "custom" && (!since || !until || since > until);
+
+  const go = () => {
+    const range = mode === "30" ? { since: daysAgoInBrasilia(30), until: today } : { since, until };
+    setOpen(false);
+    navigate({ to: "/report-deck/$id", params: { id: clientId }, search: range });
+  };
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <Button type="button" size="sm" variant="outline" className="gap-1.5 shrink-0">
+          <FileText className="h-3.5 w-3.5" />
+          Gerar relatório
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-72 space-y-3" align="end">
+        <p className="text-xs font-medium text-muted-foreground">Relatório em PDF — {clientName}</p>
+        <div className="grid grid-cols-2 gap-2">
+          {([["30", "Últimos 30 dias"], ["custom", "Personalizado"]] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setMode(value)}
+              className={`rounded-md border px-2 py-1.5 text-xs transition-colors ${
+                mode === value ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:bg-muted/40"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        {mode === "custom" && (
+          <div className="flex items-center gap-2">
+            <Input type="date" value={since} max={until} onChange={(e) => setSince(e.target.value)} className="h-8 text-xs" />
+            <span className="text-xs text-muted-foreground">até</span>
+            <Input type="date" value={until} min={since} max={today} onChange={(e) => setUntil(e.target.value)} className="h-8 text-xs" />
+          </div>
+        )}
+        <Button type="button" size="sm" className="w-full" disabled={invalid} onClick={go}>
+          Abrir relatório
+        </Button>
+      </PopoverContent>
+    </Popover>
   );
 }
 

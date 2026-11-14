@@ -1,8 +1,9 @@
-import { createFileRoute, redirect, useParams, Link } from "@tanstack/react-router";
+import { createFileRoute, redirect, useParams, useSearch, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -29,12 +30,16 @@ export const Route = createFileRoute("/report-deck/$id")({
     const orgId = user?.actingOrganizationId ?? user?.organizationId;
     if (!isTriadCompanyOrg(orgId)) throw redirect({ to: "/dashboard" });
   },
+  validateSearch: (s: Record<string, unknown>): { since?: string; until?: string } => {
+    const ok = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
+    return { since: ok(s.since), until: ok(s.until) };
+  },
   component: ReportDeckPage,
 });
 
 // ── Período dos números automáticos (Meta) ──────────────────────────────────
 
-type Preset = "30" | "mes" | "mes_passado";
+type Preset = "30" | "mes" | "mes_passado" | "custom";
 function rangeForPreset(preset: Preset): { since: string; until: string } {
   const today = isoDateInBrasilia();
   if (preset === "mes") return { since: monthRangeInBrasilia(0).start, until: today };
@@ -160,7 +165,11 @@ function MetricCard({ label, value, color = "border-orange-500/60" }: { label: s
 
 function ReportDeckPage() {
   const { id } = useParams({ from: "/report-deck/$id" });
-  const [preset, setPreset] = useState<Preset>("mes");
+  const search = useSearch({ from: "/report-deck/$id" });
+  // Vindo da tela de Tarefas, o período já chega na URL: datas = personalizado
+  const [preset, setPreset] = useState<Preset>(search.since && search.until ? "custom" : "30");
+  const [customSince, setCustomSince] = useState(search.since ?? daysAgoInBrasilia(30));
+  const [customUntil, setCustomUntil] = useState(search.until ?? isoDateInBrasilia());
   const [deck, setDeck] = useState<ReportDeckRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -168,7 +177,10 @@ function ReportDeckPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: client } = useQuery({ queryKey: ["client", id], queryFn: () => fetchClientDetail(id) });
-  const range = useMemo(() => rangeForPreset(preset), [preset]);
+  const range = useMemo(
+    () => (preset === "custom" ? { since: customSince, until: customUntil } : rangeForPreset(preset)),
+    [preset, customSince, customUntil]
+  );
 
   const { data: campaigns = [] } = useQuery({
     queryKey: ["report-deck-campaigns", id, range.since, range.until],
@@ -231,19 +243,27 @@ function ReportDeckPage() {
     return { spend, impressions, leads, cpl };
   }, [campaigns]);
 
-  // Pré-preenche os 4 campos "automáticos" com o valor ao vivo da Meta, só na
-  // primeira vez que ainda estão vazios — depois disso o gestor já pode ter
-  // editado, então não sobrescreve mais (edição manual sempre vence).
+  // Os 4 números automáticos seguem o período escolhido: ao abrir o relatório e
+  // a cada troca de período eles são recalculados com o valor ao vivo da Meta.
+  // Depois disso, edição manual vence até o período mudar de novo.
+  const filledFor = useRef<string | null>(null);
   useEffect(() => {
-    if (!deck || campaigns.length === 0) return;
-    const fills: Partial<ReportDeckRow> = {};
-    if (deck.meta_valor_investido === null) fills.meta_valor_investido = brl(totals.spend);
-    if (deck.meta_impressoes === null) fills.meta_impressoes = totals.impressions.toLocaleString("pt-BR");
-    if (deck.meta_leads_count === null) fills.meta_leads_count = totals.leads.toLocaleString("pt-BR");
-    if (deck.meta_custo_por_lead === null) fills.meta_custo_por_lead = totals.cpl !== null ? brl(totals.cpl) : "—";
-    if (Object.keys(fills).length > 0) setDeck((d) => (d ? { ...d, ...fills } : d));
+    const key = `${range.since}|${range.until}`;
+    if (!deck || campaigns.length === 0 || filledFor.current === key) return;
+    filledFor.current = key;
+    setDeck((d) =>
+      d
+        ? {
+            ...d,
+            meta_valor_investido: brl(totals.spend),
+            meta_impressoes: totals.impressions.toLocaleString("pt-BR"),
+            meta_leads_count: totals.leads.toLocaleString("pt-BR"),
+            meta_custo_por_lead: totals.cpl !== null ? brl(totals.cpl) : "—",
+          }
+        : d
+    );
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [campaigns, deck?.meta_valor_investido, deck?.meta_impressoes, deck?.meta_leads_count, deck?.meta_custo_por_lead]);
+  }, [campaigns, deck === null, range.since, range.until]);
 
   const handleLogoUpload = (file: File) => {
     const reader = new FileReader();
@@ -305,7 +325,8 @@ function ReportDeckPage() {
     );
   }
 
-  const dataStr = new Date().toLocaleDateString("pt-BR");
+  const fmt = (iso: string) => iso.split("-").reverse().join("/");
+  const dataStr = `${fmt(range.since)} a ${fmt(range.until)}`;
 
   return (
     <AppShell>
@@ -329,8 +350,16 @@ function ReportDeckPage() {
                 <SelectItem value="30">Últimos 30 dias</SelectItem>
                 <SelectItem value="mes">Mês atual</SelectItem>
                 <SelectItem value="mes_passado">Mês passado</SelectItem>
+                <SelectItem value="custom">Personalizado</SelectItem>
               </SelectContent>
             </Select>
+            {preset === "custom" && (
+              <>
+                <Input type="date" value={customSince} max={customUntil} onChange={(e) => e.target.value && setCustomSince(e.target.value)} className="h-9 w-36" />
+                <span className="text-xs text-muted-foreground">até</span>
+                <Input type="date" value={customUntil} min={customSince} max={isoDateInBrasilia()} onChange={(e) => e.target.value && setCustomUntil(e.target.value)} className="h-9 w-36" />
+              </>
+            )}
             <Button onClick={exportPdf} disabled={exporting} className="gap-2">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               Exportar PDF
