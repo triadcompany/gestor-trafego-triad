@@ -40,7 +40,6 @@ import {
   getMetaToken,
   updateMetaObject,
   fetchCampaignWhatsappNumber,
-  bulkUpdateCampaignWhatsappNumber,
   type MetaCampaign,
   type MetaAdSet,
   type MetaAd,
@@ -215,8 +214,6 @@ function CampaignSection({
   const queryClient = useQueryClient();
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(campaign.name);
-  const [editingWa, setEditingWa] = useState(false);
-  const [waInput, setWaInput] = useState("");
   const isActive = campaign.status === "ACTIVE";
 
   const { data: campaignWhatsapp, isLoading: campaignWaLoading } = useQuery({
@@ -246,25 +243,6 @@ function CampaignSection({
     },
     onSuccess: () => { toast.success("Nome atualizado."); setEditingName(false); onNameChange(); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
-  });
-
-  const waMutation = useMutation({
-    mutationFn: async () => {
-      const token = await getMetaToken(clientId);
-      if (!token) throw new Error("Token não encontrado");
-      return bulkUpdateCampaignWhatsappNumber(campaign.id, waInput, token);
-    },
-    onSuccess: (result) => {
-      if (result.failed.length === 0) {
-        toast.success(`Número atualizado em ${result.succeeded} conjunto${result.succeeded === 1 ? "" : "s"}.`);
-      } else {
-        toast.error(`${result.succeeded} conjunto(s) atualizado(s), ${result.failed.length} falharam: ${result.failed.map((f) => f.name).join(", ")}`);
-      }
-      setEditingWa(false);
-      queryClient.invalidateQueries({ queryKey: ["adset-whatsapp"] });
-      queryClient.invalidateQueries({ queryKey: ["campaign-whatsapp", campaign.id] });
-    },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar"),
   });
 
   const cplColor =
@@ -313,24 +291,7 @@ function CampaignSection({
 
       <div className="space-y-1">
         <p className="text-xs text-muted-foreground">WhatsApp que recebe os leads (todos os conjuntos)</p>
-        {editingWa ? (
-          <div className="flex items-center gap-2">
-            <Input
-              value={waInput}
-              onChange={(e) => setWaInput(e.target.value)}
-              placeholder="+55 11 91234-5678"
-              className="h-8 text-sm flex-1"
-              autoFocus
-              onKeyDown={(e) => { if (e.key === "Enter") waMutation.mutate(); if (e.key === "Escape") setEditingWa(false); }}
-            />
-            <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => waMutation.mutate()} disabled={waMutation.isPending || !waInput.trim()}>
-              <Check className="h-3.5 w-3.5" />
-            </Button>
-            <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0" onClick={() => setEditingWa(false)}>
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        ) : (
+        {(
           <div className="flex items-center gap-2">
             <MessageCircle className="h-4 w-4 text-muted-foreground shrink-0" />
             {campaignWaLoading ? (
@@ -340,10 +301,6 @@ function CampaignSection({
             ) : (
               <span className="text-sm text-muted-foreground">Não configurado</span>
             )}
-            <Button variant="outline" size="sm" className="h-7 gap-1.5 text-xs" onClick={() => { setWaInput(campaignWhatsapp ?? ""); setEditingWa(true); }}>
-              <Pencil className="h-3 w-3" />
-              Trocar
-            </Button>
           </div>
         )}
       </div>
