@@ -37,6 +37,14 @@ export interface ReportDeckCreative {
   height?: number;
 }
 
+// Página livre criada pelo gestor (título + texto).
+export interface ReportDeckCustomPage {
+  id: string;
+  eyebrow: string;
+  title: string;
+  body: string;
+}
+
 export interface ReportDeckRow {
   client_id: string;
   cover_logo_base64: string | null;
@@ -52,6 +60,10 @@ export interface ReportDeckRow {
   meta_custo_por_lead: string | null;
   diagnostico_items: string[];
   creatives: ReportDeckCreative[];
+  // ids dos slides ocultos (olho) e páginas livres — guardados junto da coluna
+  // jsonb de criativos, numa entrada {kind:"layout"}, sem coluna nova.
+  hidden_slides: string[];
+  custom_pages: ReportDeckCustomPage[];
   funil_items: ReportDeckFunilItem[];
   plano_acao_items: string[];
   consideracoes_items: string[];
@@ -73,6 +85,8 @@ function emptyDeck(clientId: string): ReportDeckRow {
     meta_custo_por_lead: null,
     diagnostico_items: [],
     creatives: [],
+    hidden_slides: [],
+    custom_pages: [],
     funil_items: [
       { label: "Contatos", value: "" },
       { label: "Qualificados", value: "" },
@@ -115,7 +129,7 @@ const _fetchReportDeck = createServerFn({ method: "GET" })
       meta_leads_count: row.metaLeadsCount,
       meta_custo_por_lead: row.metaCustoPorLead,
       diagnostico_items: row.diagnosticoItems,
-      creatives: row.creatives as ReportDeckCreative[],
+      ...splitCreatives(row.creatives),
       funil_items: row.funilItems as ReportDeckFunilItem[],
       plano_acao_items: row.planoAcaoItems,
       consideracoes_items: row.consideracoesItems,
@@ -124,6 +138,18 @@ const _fetchReportDeck = createServerFn({ method: "GET" })
 
 export async function fetchReportDeck(clientId: string): Promise<ReportDeckRow> {
   return _fetchReportDeck({ data: { clientId } });
+}
+
+type LayoutEntry = { kind: "layout"; hidden: string[]; pages: ReportDeckCustomPage[] };
+
+function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages"> {
+  const list = Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [];
+  const layout = list.find((e) => e.kind === "layout") as LayoutEntry | undefined;
+  return {
+    creatives: list.filter((e) => e.kind !== "layout") as unknown as ReportDeckCreative[],
+    hidden_slides: layout?.hidden ?? [],
+    custom_pages: layout?.pages ?? [],
+  };
 }
 
 const upsertSchema = z.object({
@@ -141,6 +167,10 @@ const upsertSchema = z.object({
   metaCustoPorLead: z.string().nullable().optional(),
   diagnosticoItems: z.array(z.string()).optional(),
   creatives: z.array(creativeSchema).optional(),
+  hiddenSlides: z.array(z.string()).optional(),
+  customPages: z
+    .array(z.object({ id: z.string(), eyebrow: z.string(), title: z.string(), body: z.string() }))
+    .optional(),
   funilItems: z.array(funilItemSchema).optional(),
   planoAcaoItems: z.array(z.string()).optional(),
   consideracoesItems: z.array(z.string()).optional(),
@@ -166,7 +196,14 @@ const _upsertReportDeck = createServerFn({ method: "POST" })
       ...(data.metaLeadsCount !== undefined ? { metaLeadsCount: data.metaLeadsCount } : {}),
       ...(data.metaCustoPorLead !== undefined ? { metaCustoPorLead: data.metaCustoPorLead } : {}),
       ...(data.diagnosticoItems !== undefined ? { diagnosticoItems: data.diagnosticoItems } : {}),
-      ...(data.creatives !== undefined ? { creatives: data.creatives } : {}),
+      ...(data.creatives !== undefined
+        ? {
+            creatives: [
+              ...data.creatives,
+              { kind: "layout", hidden: data.hiddenSlides ?? [], pages: data.customPages ?? [] },
+            ],
+          }
+        : {}),
       ...(data.funilItems !== undefined ? { funilItems: data.funilItems } : {}),
       ...(data.planoAcaoItems !== undefined ? { planoAcaoItems: data.planoAcaoItems } : {}),
       ...(data.consideracoesItems !== undefined ? { consideracoesItems: data.consideracoesItems } : {}),

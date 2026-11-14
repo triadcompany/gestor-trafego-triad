@@ -11,13 +11,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Download, Loader2, Plus, X, Play, ImagePlus, Save } from "lucide-react";
+import { ArrowLeft, Download, Loader2, Plus, X, Play, ImagePlus, Save, Eye, EyeOff, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { fetchClientDetail } from "@/lib/queries";
 import { getMetaToken, fetchCampaigns } from "@/lib/meta";
-import { fetchReportDeck, upsertReportDeck, type ReportDeckRow, type ReportDeckFunilItem, type ReportDeckCreative } from "@/server/report-decks";
+import { fetchReportDeck, upsertReportDeck, type ReportDeckRow, type ReportDeckFunilItem, type ReportDeckCreative, type ReportDeckCustomPage } from "@/server/report-decks";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
 export const Route = createFileRoute("/report-deck/$id")({
@@ -237,7 +237,62 @@ function CreativeBox({
   );
 }
 
+// Moldura de cada slide: barra com o olho (ocultar no PDF) fora da área
+// capturada. Slide oculto aparece apagado aqui e não entra no PDF.
+function SlideFrame({
+  id,
+  label,
+  hidden,
+  onToggle,
+  onRemove,
+  refs,
+  children,
+}: {
+  id: string;
+  label: string;
+  hidden: boolean;
+  onToggle: () => void;
+  onRemove?: () => void;
+  refs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-1.5" style={{ width: PAGE_W }}>
+        <span className="text-xs text-muted-foreground">
+          {label}
+          {hidden && " — oculto no relatório"}
+        </span>
+        <div className="flex items-center gap-1">
+          {onRemove && (
+            <Button type="button" size="sm" variant="ghost" className="h-7 gap-1.5 text-xs text-muted-foreground" onClick={onRemove}>
+              <Trash2 className="h-3.5 w-3.5" /> Excluir página
+            </Button>
+          )}
+          <Button type="button" size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={onToggle} title={hidden ? "Mostrar no relatório" : "Ocultar do relatório"}>
+            {hidden ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            {hidden ? "Mostrar" : "Ocultar"}
+          </Button>
+        </div>
+      </div>
+      <div ref={(el) => { refs.current[id] = el; }} className={hidden ? "opacity-30 transition-opacity" : "transition-opacity"}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ── Página ────────────────────────────────────────────────────────────────
+
+const STANDARD_SLIDES = [
+  { id: "capa" },
+  { id: "resultado" },
+  { id: "diagnostico" },
+  { id: "criativos" },
+  { id: "funil" },
+  { id: "plano" },
+  { id: "consideracoes" },
+];
 
 function ReportDeckPage() {
   const { id } = useParams({ from: "/report-deck/$id" });
@@ -249,7 +304,7 @@ function ReportDeckPage() {
   const [deck, setDeck] = useState<ReportDeckRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
-  const slideRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const slideRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: client } = useQuery({ queryKey: ["client", id], queryFn: () => fetchClientDetail(id) });
@@ -296,6 +351,8 @@ function ReportDeckPage() {
           metaCustoPorLead: deck.meta_custo_por_lead,
           diagnosticoItems: deck.diagnostico_items,
           creatives: deck.creatives,
+          hiddenSlides: deck.hidden_slides,
+          customPages: deck.custom_pages,
           funilItems: deck.funil_items,
           planoAcaoItems: deck.plano_acao_items,
           consideracoesItems: deck.consideracoes_items,
@@ -365,17 +422,30 @@ function ReportDeckPage() {
     reader.readAsDataURL(file);
   };
 
+  const isHidden = (sid: string) => !!deck?.hidden_slides.includes(sid);
+  const toggleHidden = (sid: string) =>
+    setDeck((d) => (d ? { ...d, hidden_slides: d.hidden_slides.includes(sid) ? d.hidden_slides.filter((x) => x !== sid) : [...d.hidden_slides, sid] } : d));
+  const addPage = () =>
+    patch({ custom_pages: [...(deck?.custom_pages ?? []), { id: `pg-${Date.now().toString(36)}`, eyebrow: "", title: "", body: "" }] });
+  const patchPage = (pid: string, fields: Partial<ReportDeckCustomPage>) =>
+    setDeck((d) => (d ? { ...d, custom_pages: d.custom_pages.map((pg) => (pg.id === pid ? { ...pg, ...fields } : pg)) } : d));
+  const removePage = (pid: string) =>
+    setDeck((d) => (d ? { ...d, custom_pages: d.custom_pages.filter((pg) => pg.id !== pid), hidden_slides: d.hidden_slides.filter((x) => x !== pid) } : d));
+
   const setFunilItems = (items: ReportDeckFunilItem[]) => patch({ funil_items: items });
 
   const exportPdf = async () => {
+    if (!deck) return;
     setExporting(true);
     try {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
       const outW = PAGE_W * EXPORT_SCALE;
       const outH = PAGE_H * EXPORT_SCALE;
       const doc = new jsPDF({ orientation: "landscape", unit: "px", format: [outW, outH] });
-      for (let i = 0; i < slideRefs.current.length; i++) {
-        const el = slideRefs.current[i];
+      const ids = [...STANDARD_SLIDES.map((x) => x.id), ...deck.custom_pages.map((pg) => pg.id)].filter((sid) => !deck.hidden_slides.includes(sid));
+      if (ids.length === 0) throw new Error("Todos os slides estão ocultos.");
+      for (let i = 0; i < ids.length; i++) {
+        const el = slideRefs.current[ids[i]];
         if (!el) continue;
         const canvas = await html2canvas(el, { scale: EXPORT_SCALE, backgroundColor: "#0a0a0c" });
         const img = canvas.toDataURL("image/jpeg", 0.92);
@@ -445,7 +515,7 @@ function ReportDeckPage() {
 
         <div className="flex flex-col items-center gap-8 pb-10">
           {/* Página 1 — Capa */}
-          <div ref={(el) => { slideRefs.current[0] = el; }}>
+          <SlideFrame id="capa" label="Capa" hidden={isHidden("capa")} onToggle={() => toggleHidden("capa")} refs={slideRefs}>
             <Slide>
               <div className="flex-1 flex items-center justify-between gap-8">
                 <div>
@@ -468,10 +538,10 @@ function ReportDeckPage() {
                 </label>
               </div>
             </Slide>
-          </div>
+          </SlideFrame>
 
           {/* Página 2 — Resultado Meta Ads */}
-          <div ref={(el) => { slideRefs.current[1] = el; }}>
+          <SlideFrame id="resultado" label="Resultado Meta Ads" hidden={isHidden("resultado")} onToggle={() => toggleHidden("resultado")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Desempenho</SlideEyebrow>
               <SlideTitle>Resultado Meta Ads</SlideTitle>
@@ -489,19 +559,19 @@ function ReportDeckPage() {
                 <MetricCard label="Seguidores" value={<Field value={deck.meta_seguidores ?? ""} onChange={(v) => patch({ meta_seguidores: v })} placeholder="-" />} />
               </div>
             </Slide>
-          </div>
+          </SlideFrame>
 
           {/* Página 3 — Diagnóstico */}
-          <div ref={(el) => { slideRefs.current[2] = el; }}>
+          <SlideFrame id="diagnostico" label="Diagnóstico" hidden={isHidden("diagnostico")} onToggle={() => toggleHidden("diagnostico")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Análise</SlideEyebrow>
               <SlideTitle>Diagnóstico do Tráfego e Plano de Ação do Tráfego</SlideTitle>
               <BulletList items={deck.diagnostico_items} onChange={(items) => patch({ diagnostico_items: items })} />
             </Slide>
-          </div>
+          </SlideFrame>
 
           {/* Página 4 — Melhores Criativos */}
-          <div ref={(el) => { slideRefs.current[3] = el; }}>
+          <SlideFrame id="criativos" label="Melhores criativos" hidden={isHidden("criativos")} onToggle={() => toggleHidden("criativos")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Destaque</SlideEyebrow>
               <SlideTitle>Melhores Criativos</SlideTitle>
@@ -529,10 +599,10 @@ function ReportDeckPage() {
                 </div>
               </div>
             </Slide>
-          </div>
+          </SlideFrame>
 
           {/* Página 5 — Funil de Vendas */}
-          <div ref={(el) => { slideRefs.current[4] = el; }}>
+          <SlideFrame id="funil" label="Funil de vendas" hidden={isHidden("funil")} onToggle={() => toggleHidden("funil")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Conversão</SlideEyebrow>
               <SlideTitle>Funil de Vendas</SlideTitle>
@@ -577,25 +647,52 @@ function ReportDeckPage() {
                 </button>
               </div>
             </Slide>
-          </div>
+          </SlideFrame>
 
           {/* Página 6 — Plano de Ação do Comercial */}
-          <div ref={(el) => { slideRefs.current[5] = el; }}>
+          <SlideFrame id="plano" label="Plano de ação do comercial" hidden={isHidden("plano")} onToggle={() => toggleHidden("plano")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Comercial</SlideEyebrow>
               <SlideTitle>Plano de Ação do Comercial</SlideTitle>
               <BulletList items={deck.plano_acao_items} onChange={(items) => patch({ plano_acao_items: items })} />
             </Slide>
-          </div>
+          </SlideFrame>
 
           {/* Página 7 — Considerações finais */}
-          <div ref={(el) => { slideRefs.current[6] = el; }}>
+          <SlideFrame id="consideracoes" label="Considerações finais" hidden={isHidden("consideracoes")} onToggle={() => toggleHidden("consideracoes")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Fechamento</SlideEyebrow>
               <SlideTitle>Considerações Finais</SlideTitle>
               <BulletList items={deck.consideracoes_items} onChange={(items) => patch({ consideracoes_items: items })} />
             </Slide>
-          </div>
+          </SlideFrame>
+
+          {deck.custom_pages.map((pg, i) => (
+            <SlideFrame
+              key={pg.id}
+              id={pg.id}
+              label={`Página extra ${i + 1}`}
+              hidden={isHidden(pg.id)}
+              onToggle={() => toggleHidden(pg.id)}
+              onRemove={() => removePage(pg.id)}
+              refs={slideRefs}
+            >
+              <Slide>
+                <Field value={pg.eyebrow} onChange={(v) => patchPage(pg.id, { eyebrow: v })} placeholder="TEMA" className="text-[11px] font-semibold tracking-[0.12em] text-orange-400 uppercase mb-2" />
+                <Field value={pg.title} onChange={(v) => patchPage(pg.id, { title: v })} placeholder="Título da página" className="text-[30px] font-bold leading-snug mb-4" />
+                <textarea
+                  value={pg.body}
+                  onChange={(e) => patchPage(pg.id, { body: e.target.value })}
+                  placeholder="Escreva o que quiser aqui..."
+                  className="flex-1 w-full max-w-[760px] mb-8 resize-none bg-transparent outline-none text-[15px] leading-relaxed placeholder:text-white/30 hover:bg-white/5 focus:bg-white/10 rounded px-1 -mx-1 transition-colors"
+                />
+              </Slide>
+            </SlideFrame>
+          ))}
+
+          <Button type="button" variant="outline" className="gap-2" onClick={addPage}>
+            <Plus className="h-4 w-4" /> Adicionar página
+          </Button>
         </div>
       </div>
     </AppShell>
