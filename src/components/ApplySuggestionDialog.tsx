@@ -261,8 +261,16 @@ function PlacementsEditor({
   onChange: (c: TargetingChange) => void;
   invalid: boolean;
 }) {
-  const togglePos = (field: "fbPositions" | "igPositions", value: string, on: boolean) =>
-    onChange({ ...change, [field]: on ? [...change[field], value] : change[field].filter((v) => v !== value) });
+  const togglePos = (field: "fbPositions" | "igPositions", value: string, on: boolean) => {
+    let next = on ? [...change[field], value] : change[field].filter((v) => v !== value);
+    // Meta: Explorar só junto com o Feed do Instagram (e a página inicial dele junto com o Explorar).
+    if (field === "igPositions") {
+      if (value === "stream" && !on) next = next.filter((v) => v !== "explore" && v !== "explore_home" && v !== "profile_feed");
+      if (value === "explore" && !on) next = next.filter((v) => v !== "explore_home");
+      if (value === "explore_home" && on && !next.includes("explore")) next.push("explore");
+    }
+    onChange({ ...change, [field]: next });
+  };
   const group = (platform: "facebook" | "instagram", label: string, field: "fbPositions" | "igPositions", options: typeof FB_POSITION_OPTIONS) => (
     <div className="space-y-2">
       <label className="flex items-center gap-2 cursor-pointer">
@@ -273,7 +281,11 @@ function PlacementsEditor({
         <div className="grid grid-cols-2 gap-1.5 pl-6">
           {options.map((o) => (
             <label key={o.value} className="flex items-center gap-2 cursor-pointer">
-              <Checkbox checked={change[field].includes(o.value)} onCheckedChange={(v) => togglePos(field, o.value, !!v)} />
+              <Checkbox
+                checked={change[field].includes(o.value)}
+                onCheckedChange={(v) => togglePos(field, o.value, !!v)}
+                disabled={field === "igPositions" && o.value !== "stream" && !change.igPositions.includes("stream") && ["explore", "explore_home", "profile_feed"].includes(o.value)}
+              />
               <span className="text-sm">{o.label}</span>
             </label>
           ))}
@@ -286,7 +298,7 @@ function PlacementsEditor({
       {group("facebook", "Facebook", "fbPositions", FB_POSITION_OPTIONS)}
       {group("instagram", "Instagram", "igPositions", IG_POSITION_OPTIONS)}
       <p className={cn("text-xs", invalid ? "text-destructive" : "text-muted-foreground")}>
-        {invalid ? "Deixe pelo menos um posicionamento marcado." : "Os conjuntos passam a ter posicionamento manual com exatamente o que estiver marcado aqui."}
+        {invalid ? "Deixe pelo menos um posicionamento marcado." : "Os conjuntos passam a ter posicionamento manual com exatamente o que estiver marcado aqui. (Explorar e Feed do perfil do Instagram só funcionam junto com o Feed do Instagram.)"}
       </p>
     </div>
   );

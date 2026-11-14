@@ -41,7 +41,10 @@ export function normalizeFbPositions(positions: string[]): string[] {
 }
 
 export function normalizeIgPositions(positions: string[]): string[] {
-  const list = positions.filter((p) => p !== "ig_search");
+  let list = positions.filter((p) => p !== "ig_search");
+  // regra da Meta (confirmada com validate_only): Explorar, a página inicial dele e o
+  // Feed do perfil só existem junto com o Feed do Instagram
+  if (!list.includes("stream")) list = list.filter((p) => p !== "explore" && p !== "explore_home" && p !== "profile_feed");
   // regra da Meta: página inicial do Explorar exige o Explorar junto
   if (list.includes("explore_home") && !list.includes("explore")) list.push("explore");
   return unique(list);
