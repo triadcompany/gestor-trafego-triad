@@ -337,6 +337,7 @@ export function CampaignsExplorer({
     onSuccess: ({ newId, campaignId }) => {
       toast.success("Conjunto duplicado.");
       queryClient.invalidateQueries({ queryKey: ["explorer-adsets"] });
+      queryClient.invalidateQueries({ queryKey: ["adsets", campaignId] });
       const c = campaigns.find((c) => c.id === campaignId);
       if (c) onOpenCampaign(c, newId);
     },
@@ -354,6 +355,7 @@ export function CampaignsExplorer({
     onSuccess: ({ newId, campaignId, adSetId }) => {
       toast.success("Anúncio duplicado.");
       queryClient.invalidateQueries({ queryKey: ["explorer-ads"] });
+      queryClient.invalidateQueries({ queryKey: ["ads", adSetId] });
       const c = campaigns.find((c) => c.id === campaignId);
       if (c) onOpenCampaign(c, adSetId, newId);
     },

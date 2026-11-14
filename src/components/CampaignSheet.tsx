@@ -357,6 +357,10 @@ function AdSetsSection({
       if (!token) throw new Error("Token não encontrado");
       return fetchAdSets(campaignId, token);
     },
+    // Anúncios/conjuntos criados pelo Gerenciador, pelo agente ou pelo n8n não
+    // passam pelo cache daqui — sempre busca de novo ao abrir a campanha.
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   return (
@@ -450,6 +454,8 @@ function AdSetRow({
       return fetchAds(adSet.id, t);
     },
     enabled: expanded && tab === "ads",
+    staleTime: 0,
+    refetchOnMount: "always",
   });
 
   const statusMutation = useMutation({
