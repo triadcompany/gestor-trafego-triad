@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { formatWhatsappNumber } from "@/components/TargetingEditor";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -212,6 +213,7 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
         ? { whatsappGreeting, whatsappMessage: whatsappPreMessage }
         : undefined;
       const { isWhatsApp: creativeIsWhatsApp } = extractFields(creative);
+      // O número é só leitura (a Meta não permite trocar): mantém o do criativo atual.
       const waToUse = creativeIsWhatsApp ? (ctaWhatsappNumber || whatsappNumber) : undefined;
       if (newMediaFile) {
         const pid = "swap-progress";
@@ -233,8 +235,7 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
           { body: primaryText, title: headline, description },
           token,
           whatsappNumber,
-          conversationOverrides,
-          waToUse
+          conversationOverrides
         );
       }
     },
@@ -451,12 +452,9 @@ export function AdCreativeEditor({ adId, adSetId, clientId, token, whatsappNumbe
           <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Modelo de mensagem WhatsApp</p>
           <div className="space-y-1">
             <Label className="text-xs text-muted-foreground">Número que recebe os leads</Label>
-            <Input
-              value={ctaWhatsappNumber}
-              onChange={(e) => { setCtaWhatsappNumber(e.target.value); mark(); }}
-              placeholder="+55 11 91234-5678"
-              className="h-8 text-sm"
-            />
+            <p className="text-sm font-medium tabular-nums rounded-md border border-border bg-background px-3 py-1.5">
+              {ctaWhatsappNumber ? formatWhatsappNumber(ctaWhatsappNumber) : "Não configurado"}
+            </p>
           </div>
           {whatsappMessage ? (
             <div className="space-y-1">
