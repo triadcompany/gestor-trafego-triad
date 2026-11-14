@@ -68,7 +68,7 @@ import {
   DEFAULT_IG_POSITIONS,
   buildManualPlacementTargeting,
 } from "@/lib/placements";
-import { fetchWhatsappNumbersForPage, resolveCampaignAccountId } from "@/server/facebook-directory";
+import { resolveCampaignAccountId } from "@/server/facebook-directory";
 
 async function withSaveToast<T>(
   id: string,
@@ -100,54 +100,6 @@ export const Route = createFileRoute("/campaigns/edit/$id")({
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return <h3 className="text-sm font-semibold text-foreground">{children}</h3>;
-}
-
-// Números de WhatsApp da Business Manager da Página já vinculada ao conjunto
-// (precisa da permissão whatsapp_business_management — se não tiver, ou se a
-// BM não tiver número cadastrado, ou se a campanha ainda não tiver uma
-// Página vinculada, cai pro campo de texto livre de sempre).
-function WhatsappNumberPicker({
-  accountId,
-  pageId,
-  value,
-  onChange,
-}: {
-  accountId: string | undefined;
-  pageId: string | undefined;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const { data: numbers = [], isLoading, isFetched } = useQuery({
-    queryKey: ["fb-whatsapp-numbers-page", accountId, pageId],
-    queryFn: () => fetchWhatsappNumbersForPage(accountId!, pageId!),
-    enabled: !!pageId && !!accountId,
-  });
-
-  if (pageId && (isLoading || numbers.length > 0)) {
-    const knownValue = numbers.some((n) => n.number === value) ? value : undefined;
-    return (
-      <Select value={knownValue} onValueChange={onChange} disabled={isLoading}>
-        <SelectTrigger className="font-mono">
-          <SelectValue placeholder={isLoading ? "Carregando números..." : "Selecionar número"} />
-        </SelectTrigger>
-        <SelectContent>
-          {numbers.map((n) => (
-            <SelectItem key={n.id} value={n.number}>{n.label}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    );
-  }
-
-  return (
-    <Input
-      type="tel"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={pageId && isFetched ? "Nenhum número encontrado — digite manualmente" : "5511999999999"}
-      className="font-mono"
-    />
-  );
 }
 
 function StepIndicator({ step }: { step: 1 | 2 | 3 }) {
@@ -231,8 +183,7 @@ function EditCampaign() {
   const [adsetId, setAdsetId] = useState<string | undefined>();
   const [adId, setAdId] = useState<string | undefined>();
   const [whatsappNumber, setWhatsappNumber] = useState<string | undefined>();
-  const originalWhatsapp = useRef<string | undefined>(undefined);
-  const [pageId, setPageId] = useState<string | undefined>();
+    const [pageId, setPageId] = useState<string | undefined>();
   const [prefillLoaded, setPrefillLoaded] = useState(false);
 
   const { data: prefill, isLoading: prefillLoading } = useQuery({
@@ -269,7 +220,6 @@ function EditCampaign() {
     setAdsetId(prefill.adsetId);
     setAdId(prefill.adId);
     setWhatsappNumber(prefill.whatsappNumber || undefined);
-    originalWhatsapp.current = prefill.whatsappNumber || undefined;
     setPageId(prefill.pageId || undefined);
     setPrefillLoaded(true);
   }, [prefill, prefillLoaded, campaignId]);
@@ -412,16 +362,6 @@ function EditCampaign() {
       }
 
       const fields: Record<string, string> = { targeting: JSON.stringify(targeting) };
-      // Só page_id + whatsapp_phone_number — nunca whats_app_business_phone_number_id
-      // (a Meta devolve esse campo ao ler o conjunto, mas reenviá-lo derruba a
-      // atualização com "(#200) Permissions error", mesmo bug já visto na duplicação).
-      // E só quando o número mudou: a Meta recusa (code 1, HTTP 500) qualquer
-      // promoted_object num conjunto já existente, até um idêntico ao atual —
-      // reenviar o mesmo número fazia todo salvamento do conjunto falhar.
-      const digits = (s?: string) => (s ?? "").replace(/\D/g, "");
-      if (whatsappNumber && pageId && digits(whatsappNumber) !== digits(originalWhatsapp.current)) {
-        fields.promoted_object = JSON.stringify({ page_id: pageId, whatsapp_phone_number: whatsappNumber });
-      }
       await withSaveToast("save-adset", "Salvando conjunto...", async (progress) => {
         const writer = await getN8nMetaWriter(token, "editar-conjunto", progress);
         if (writer) return writer([{ path: adsetId, params: fields, label: "conjunto" }]);
@@ -469,7 +409,8 @@ function EditCampaign() {
             token,
             whatsappNumber,
             conversationOverrides,
-            undefined,
+            // mantém o número do botão do anúncio igual ao do conjunto
+            whatsappNumber || undefined,
             writer
           );
         }
@@ -631,14 +572,9 @@ function EditCampaign() {
               <SectionTitle>WhatsApp</SectionTitle>
               <div className="space-y-2">
                 <Label>Número que recebe os cliques</Label>
-                <WhatsappNumberPicker
-                  accountId={campaignAccountId ?? undefined}
-                  pageId={pageId}
-                  value={whatsappNumber ?? ""}
-                  onChange={setWhatsappNumber}
-                />
+                <p className="font-mono text-sm">{whatsappNumber || "—"}</p>
                 <p className="text-xs text-muted-foreground">
-                  Com DDI e DDD, só números (ex: 5511999999999). É pra esse número que a Meta manda quem clicar no anúncio.
+                  A Meta não permite trocar o número de um conjunto que já foi criado. Pra usar outro número, duplique de novo escolhendo o número na tela de duplicar.
                 </p>
               </div>
             </Card>

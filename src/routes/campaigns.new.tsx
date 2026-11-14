@@ -69,6 +69,7 @@ import {
   type SelectedLocation,
   type MetaInterest,
 } from "@/lib/meta";
+import { WhatsappNumberPicker } from "@/components/WhatsappNumberPicker";
 import { isN8nConfigured, triggerN8nCampaign, pollN8nJob, isN8nDuplicateConfigured, triggerN8nDuplicateCampaign } from "@/lib/n8n";
 
 import {
@@ -681,6 +682,7 @@ function NewCampaign() {
             whatsappNumber: selectedClient.meta_whatsapp_number ?? undefined,
             adSetName: adSetName || undefined,
             adName: adName || undefined,
+            whatsappNumberOverride: whatsappNumber.replace(/\D/g, "") || undefined,
           });
           toast.dismiss(pid);
           toast.loading("Duplicando campanha via n8n...", { id: "n8n-progress", duration: Infinity });
@@ -695,7 +697,9 @@ function NewCampaign() {
           (msg) => toast.loading(msg, { id: pid }),
           selectedClient.meta_whatsapp_number ?? undefined,
           adSetName || undefined,
-          adName || undefined
+          adName || undefined,
+          undefined,
+          whatsappNumber.replace(/\D/g, "") || undefined
         );
         toast.dismiss(pid);
         return id;
@@ -1092,6 +1096,21 @@ function NewCampaign() {
                 <p className="text-xs text-muted-foreground -mt-2">
                   Se a campanha base tiver mais de um conjunto, esses nomes são ignorados e os nomes originais são mantidos.
                 </p>
+              )}
+
+              {mode === "duplicate" && baseCampaignId && (
+                <div className="space-y-2">
+                  <Label>Número do WhatsApp que recebe os cliques</Label>
+                  <WhatsappNumberPicker
+                    accountId={selectedClient?.meta_ad_account_id}
+                    pageId={pageId || undefined}
+                    value={whatsappNumber}
+                    onChange={setWhatsappNumber}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Escolha aqui: depois que a campanha é criada a Meta não permite trocar o número.
+                  </p>
+                </div>
               )}
 
               {(mode === "scratch" || mode === "bulk") && (

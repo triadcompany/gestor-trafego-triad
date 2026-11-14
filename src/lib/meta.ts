@@ -2743,7 +2743,8 @@ export async function duplicateCampaign(
   whatsappNumber?: string, // número WhatsApp Business do cliente, injeta no promoted_object se estiver faltando
   adSetName?: string, // só aplicado quando a campanha original tem exatamente 1 conjunto
   adName?: string, // só aplicado quando esse único conjunto tem exatamente 1 anúncio
-  flipObjective?: boolean // troca Engajamento↔Vendas na campanha nova, mantendo o resto idêntico
+  flipObjective?: boolean, // troca Engajamento↔Vendas na campanha nova, mantendo o resto idêntico
+  whatsappNumberOverride?: string // número escolhido na hora de duplicar — a Meta não deixa trocar depois
 ): Promise<string> {
   onProgress?.("Buscando estrutura da campanha...");
 
@@ -2925,6 +2926,10 @@ export async function duplicateCampaign(
         const waFromCreative = ctaNum ? `+${ctaNum.replace(/\D/g, "")}` : waMatch ? `+${waMatch[1]}` : null;
         const resolved = whatsappNumber ?? waFromCreative;
         if (resolved) po.whatsapp_phone_number = resolved;
+      }
+
+      if (whatsappNumberOverride && effectiveDestinationType === "WHATSAPP") {
+        po.whatsapp_phone_number = whatsappNumberOverride.replace(/\D/g, "");
       }
 
       if (Object.keys(po).length > 0) adSetParams.promoted_object = JSON.stringify(po);

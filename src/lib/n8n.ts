@@ -120,6 +120,7 @@ export interface N8nDuplicatePayload {
   adSetName?: string;
   adName?: string;
   flipObjective?: boolean;
+  whatsappNumberOverride?: string; // número escolhido ao duplicar (não dá pra trocar depois)
 }
 
 const _isN8nDuplicateConfigured = createServerFn({ method: "GET" }).handler(async (): Promise<boolean> => {
@@ -142,6 +143,7 @@ const _triggerN8nDuplicateCampaign = createServerFn({ method: "POST" })
       adSetName: z.string().optional(),
       adName: z.string().optional(),
       flipObjective: z.boolean().optional(),
+      whatsappNumberOverride: z.string().optional(),
     })
   )
   .handler(async ({ data }): Promise<{ jobId: string }> => {
