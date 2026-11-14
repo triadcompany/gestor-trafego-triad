@@ -1,5 +1,5 @@
 import { createFileRoute, redirect, useParams, useSearch, Link } from "@tanstack/react-router";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -11,13 +11,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { ArrowLeft, Download, Loader2, Plus, X, Play, ImagePlus, Save, Eye, EyeOff, Trash2 } from "lucide-react";
+import { ArrowLeft, Download, Loader2, Plus, X, Play, ImagePlus, Save, Eye, EyeOff, Trash2, GripVertical, Bold, Type } from "lucide-react";
 import { toast } from "sonner";
 import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { fetchClientDetail } from "@/lib/queries";
 import { getMetaToken, fetchCampaigns } from "@/lib/meta";
-import { fetchReportDeck, upsertReportDeck, type ReportDeckRow, type ReportDeckFunilItem, type ReportDeckCreative, type ReportDeckCustomPage } from "@/server/report-decks";
+import { fetchReportDeck, upsertReportDeck, type ReportDeckRow, type ReportDeckFunilItem, type ReportDeckCreative, type ReportDeckCustomPage, type ReportDeckTextBox } from "@/server/report-decks";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
 export const Route = createFileRoute("/report-deck/$id")({
@@ -80,12 +80,109 @@ function Slide({ children, className = "" }: { children: React.ReactNode; classN
   );
 }
 
+// Contexto de edição livre: o slide atual e os deslocamentos dos textos fixos.
+const EditCtx = createContext<{
+  slideId: string;
+  offsets: Record<string, { x: number; y: number }>;
+  setOffset: (key: string, x: number, y: number) => void;
+}>({ slideId: "", offsets: {}, setOffset: () => {} });
+
+// Alça de arrastar (fora da captura do PDF). Mexe só em posição, não no texto.
+function useDragger(x: number, y: number, set: (x: number, y: number) => void) {
+  const start = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
+  return {
+    onPointerDown: (e: React.PointerEvent) => {
+      e.preventDefault();
+      e.currentTarget.setPointerCapture(e.pointerId);
+      start.current = { px: e.clientX, py: e.clientY, x, y };
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      const d = start.current;
+      if (d) set(Math.round(d.x + e.clientX - d.px), Math.round(d.y + e.clientY - d.py));
+    },
+    onPointerUp: () => (start.current = null),
+    onPointerCancel: () => (start.current = null),
+  };
+}
+
+// Envolve um texto fixo do slide pra poder arrastar pela alça à esquerda.
+function Movable({ name, children }: { name: string; children: React.ReactNode }) {
+  const { slideId, offsets, setOffset } = useContext(EditCtx);
+  const key = `${slideId}:${name}`;
+  const o = offsets[key] ?? { x: 0, y: 0 };
+  const drag = useDragger(o.x, o.y, (x, y) => setOffset(key, x, y));
+  return (
+    <div className="relative group/mv" style={{ transform: `translate(${o.x}px, ${o.y}px)` }}>
+      <div
+        data-html2canvas-ignore
+        {...drag}
+        title="Arrastar"
+        className="absolute -left-6 top-1 h-5 w-5 flex items-center justify-center rounded bg-white/10 text-white/70 cursor-grab active:cursor-grabbing opacity-0 group-hover/mv:opacity-100 touch-none"
+      >
+        <GripVertical className="h-3.5 w-3.5" />
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function SlideEyebrow({ children }: { children: React.ReactNode }) {
-  return <p className="text-[11px] font-semibold tracking-[0.12em] text-orange-400 uppercase mb-2">{children}</p>;
+  return (
+    <Movable name="eyebrow">
+      <p className="text-[11px] font-semibold tracking-[0.12em] text-orange-400 uppercase mb-2">{children}</p>
+    </Movable>
+  );
 }
 
 function SlideTitle({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-[30px] font-bold leading-snug mb-6 max-w-[620px]">{children}</h2>;
+  return (
+    <Movable name="title">
+      <h2 className="text-[30px] font-bold leading-snug mb-6 max-w-[620px]">{children}</h2>
+    </Movable>
+  );
+}
+
+// Caixa de texto livre: arrasta pela alça, ajusta tamanho/negrito, exclui.
+function TextBoxView({
+  box,
+  onChange,
+  onRemove,
+}: {
+  box: ReportDeckTextBox;
+  onChange: (fields: Partial<ReportDeckTextBox>) => void;
+  onRemove: () => void;
+}) {
+  const drag = useDragger(box.x, box.y, (x, y) => onChange({ x, y }));
+  return (
+    <div className="absolute group/tb pointer-events-auto" style={{ left: box.x, top: box.y, width: box.w }}>
+      <div
+        data-html2canvas-ignore
+        className="absolute -top-7 left-0 flex items-center gap-1 rounded-md bg-black/80 px-1 py-0.5 text-white/80 opacity-0 group-hover/tb:opacity-100 group-focus-within/tb:opacity-100"
+      >
+        <span {...drag} title="Arrastar" className="h-5 w-5 flex items-center justify-center cursor-grab active:cursor-grabbing touch-none">
+          <GripVertical className="h-3.5 w-3.5" />
+        </span>
+        <button type="button" title="Diminuir" className="h-5 w-5 text-[10px] hover:text-white" onClick={() => onChange({ size: Math.max(10, box.size - 2) })}>A-</button>
+        <button type="button" title="Aumentar" className="h-5 w-5 text-xs hover:text-white" onClick={() => onChange({ size: Math.min(72, box.size + 2) })}>A+</button>
+        <button type="button" title="Negrito" className={`h-5 w-5 flex items-center justify-center ${box.bold ? "text-orange-400" : "hover:text-white"}`} onClick={() => onChange({ bold: !box.bold })}>
+          <Bold className="h-3 w-3" />
+        </button>
+        <button type="button" title="Mais estreita (largura)" className="h-5 px-1 text-[10px] hover:text-white" onClick={() => onChange({ w: Math.max(80, box.w - 40) })}>L-</button>
+        <button type="button" title="Mais larga (largura)" className="h-5 px-1 text-[10px] hover:text-white" onClick={() => onChange({ w: Math.min(PAGE_W - box.x, box.w + 40) })}>L+</button>
+        <button type="button" title="Excluir caixa" className="h-5 w-5 flex items-center justify-center hover:text-red-400" onClick={onRemove}>
+          <Trash2 className="h-3 w-3" />
+        </button>
+      </div>
+      <textarea
+        value={box.text}
+        onChange={(e) => onChange({ text: e.target.value })}
+        placeholder="Digite aqui..."
+        rows={1}
+        style={{ fieldSizing: "content", fontSize: box.size, fontWeight: box.bold ? 700 : 400 } as React.CSSProperties}
+        className="w-full resize-none bg-transparent outline-none leading-snug placeholder:text-white/30 hover:bg-white/5 focus:bg-white/10 rounded px-1 -mx-1 transition-colors text-white"
+      />
+    </div>
+  );
 }
 
 // Input "invisível" — sem borda/fundo em repouso, só mostra que é editável no
@@ -132,6 +229,7 @@ function BulletList({ items, onChange }: { items: string[]; onChange: (items: st
   const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i));
   const add = () => onChange([...items, ""]);
   return (
+    <Movable name="list">
     <div className="space-y-2.5 flex-1 max-w-[680px]">
       {items.map((item, i) => (
         <div key={i} className="flex items-start gap-2 group">
@@ -150,6 +248,7 @@ function BulletList({ items, onChange }: { items: string[]; onChange: (items: st
         <Plus className="h-3 w-3" /> adicionar item
       </button>
     </div>
+    </Movable>
   );
 }
 
@@ -246,6 +345,12 @@ function SlideFrame({
   hidden,
   onToggle,
   onRemove,
+  onAddBox,
+  boxes,
+  onBoxChange,
+  onBoxRemove,
+  offsets,
+  setOffset,
   refs,
   children,
 }: {
@@ -254,10 +359,17 @@ function SlideFrame({
   hidden: boolean;
   onToggle: () => void;
   onRemove?: () => void;
+  onAddBox: () => void;
+  boxes: ReportDeckTextBox[];
+  onBoxChange: (boxId: string, fields: Partial<ReportDeckTextBox>) => void;
+  onBoxRemove: (boxId: string) => void;
+  offsets: Record<string, { x: number; y: number }>;
+  setOffset: (key: string, x: number, y: number) => void;
   refs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
   children: React.ReactNode;
 }) {
   return (
+    <EditCtx.Provider value={{ slideId: id, offsets, setOffset }}>
     <div>
       <div className="flex items-center justify-between mb-1.5" style={{ width: PAGE_W }}>
         <span className="text-xs text-muted-foreground">
@@ -265,6 +377,9 @@ function SlideFrame({
           {hidden && " — oculto no relatório"}
         </span>
         <div className="flex items-center gap-1">
+          <Button type="button" size="sm" variant="ghost" className="h-7 gap-1.5 text-xs" onClick={onAddBox}>
+            <Type className="h-3.5 w-3.5" /> Adicionar texto
+          </Button>
           {onRemove && (
             <Button type="button" size="sm" variant="ghost" className="h-7 gap-1.5 text-xs text-muted-foreground" onClick={onRemove}>
               <Trash2 className="h-3.5 w-3.5" /> Excluir página
@@ -276,10 +391,14 @@ function SlideFrame({
           </Button>
         </div>
       </div>
-      <div ref={(el) => { refs.current[id] = el; }} className={hidden ? "opacity-30 transition-opacity" : "transition-opacity"}>
+      <div ref={(el) => { refs.current[id] = el; }} className={`relative ${hidden ? "opacity-30 transition-opacity" : "transition-opacity"}`} style={{ width: PAGE_W, height: PAGE_H }}>
         {children}
+        {boxes.map((b) => (
+          <TextBoxView key={b.id} box={b} onChange={(f) => onBoxChange(b.id, f)} onRemove={() => onBoxRemove(b.id)} />
+        ))}
       </div>
     </div>
+    </EditCtx.Provider>
   );
 }
 
@@ -354,6 +473,8 @@ function ReportDeckPage() {
           creatives: deck.creatives,
           hiddenSlides: deck.hidden_slides,
           customPages: deck.custom_pages,
+          textBoxes: deck.text_boxes,
+          offsets: deck.offsets,
           funilItems: deck.funil_items,
           planoAcaoItems: deck.plano_acao_items,
           consideracoesItems: deck.consideracoes_items,
@@ -431,7 +552,29 @@ function ReportDeckPage() {
   const patchPage = (pid: string, fields: Partial<ReportDeckCustomPage>) =>
     setDeck((d) => (d ? { ...d, custom_pages: d.custom_pages.map((pg) => (pg.id === pid ? { ...pg, ...fields } : pg)) } : d));
   const removePage = (pid: string) =>
-    setDeck((d) => (d ? { ...d, custom_pages: d.custom_pages.filter((pg) => pg.id !== pid), hidden_slides: d.hidden_slides.filter((x) => x !== pid) } : d));
+    setDeck((d) => (d ? { ...d, custom_pages: d.custom_pages.filter((pg) => pg.id !== pid), text_boxes: d.text_boxes.filter((b) => b.slide !== pid), hidden_slides: d.hidden_slides.filter((x) => x !== pid) } : d));
+
+  const setOffset = (key: string, x: number, y: number) => setDeck((d) => (d ? { ...d, offsets: { ...d.offsets, [key]: { x, y } } } : d));
+  const addBox = (slide: string) =>
+    setDeck((d) =>
+      d
+        ? {
+            ...d,
+            text_boxes: [...d.text_boxes, { id: `tb-${Date.now().toString(36)}`, slide, text: "", x: 300, y: 220, w: 320, size: 18, bold: false }],
+          }
+        : d
+    );
+  const patchBox = (bid: string, fields: Partial<ReportDeckTextBox>) =>
+    setDeck((d) => (d ? { ...d, text_boxes: d.text_boxes.map((b) => (b.id === bid ? { ...b, ...fields } : b)) } : d));
+  const removeBox = (bid: string) => setDeck((d) => (d ? { ...d, text_boxes: d.text_boxes.filter((b) => b.id !== bid) } : d));
+  const frameProps = (sid: string) => ({
+    onAddBox: () => addBox(sid),
+    boxes: deck?.text_boxes.filter((b) => b.slide === sid) ?? [],
+    onBoxChange: patchBox,
+    onBoxRemove: removeBox,
+    offsets: deck?.offsets ?? {},
+    setOffset,
+  });
 
   const setFunilItems = (items: ReportDeckFunilItem[]) => patch({ funil_items: items });
 
@@ -516,7 +659,7 @@ function ReportDeckPage() {
 
         <div className="flex flex-col items-center gap-8 pb-10">
           {/* Página 1 — Capa */}
-          <SlideFrame id="capa" label="Capa" hidden={isHidden("capa")} onToggle={() => toggleHidden("capa")} refs={slideRefs}>
+          <SlideFrame id="capa" label="Capa" hidden={isHidden("capa")} onToggle={() => toggleHidden("capa")} {...frameProps("capa")} refs={slideRefs}>
             <Slide>
               <div className="flex-1 flex items-center justify-between gap-8">
                 <div>
@@ -542,7 +685,7 @@ function ReportDeckPage() {
           </SlideFrame>
 
           {/* Página 2 — Resultado Meta Ads */}
-          <SlideFrame id="resultado" label="Resultado Meta Ads" hidden={isHidden("resultado")} onToggle={() => toggleHidden("resultado")} refs={slideRefs}>
+          <SlideFrame id="resultado" label="Resultado Meta Ads" hidden={isHidden("resultado")} onToggle={() => toggleHidden("resultado")} {...frameProps("resultado")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Desempenho</SlideEyebrow>
               <SlideTitle>Resultado Meta Ads</SlideTitle>
@@ -563,7 +706,7 @@ function ReportDeckPage() {
           </SlideFrame>
 
           {/* Página 3 — Diagnóstico */}
-          <SlideFrame id="diagnostico" label="Diagnóstico" hidden={isHidden("diagnostico")} onToggle={() => toggleHidden("diagnostico")} refs={slideRefs}>
+          <SlideFrame id="diagnostico" label="Diagnóstico" hidden={isHidden("diagnostico")} onToggle={() => toggleHidden("diagnostico")} {...frameProps("diagnostico")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Análise</SlideEyebrow>
               <SlideTitle>Diagnóstico do Tráfego e Plano de Ação do Tráfego</SlideTitle>
@@ -572,7 +715,7 @@ function ReportDeckPage() {
           </SlideFrame>
 
           {/* Página 4 — Melhores Criativos */}
-          <SlideFrame id="criativos" label="Melhores criativos" hidden={isHidden("criativos")} onToggle={() => toggleHidden("criativos")} refs={slideRefs}>
+          <SlideFrame id="criativos" label="Melhores criativos" hidden={isHidden("criativos")} onToggle={() => toggleHidden("criativos")} {...frameProps("criativos")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Destaque</SlideEyebrow>
               <SlideTitle>Melhores Criativos</SlideTitle>
@@ -590,6 +733,7 @@ function ReportDeckPage() {
                     <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleCreativeUpload(e.target.files[0])} />
                   </label>
                 )}
+                <Movable name="caption">
                 <div className="mt-4 w-full max-w-sm">
                   <Field
                     value={deck.creatives[0]?.caption ?? ""}
@@ -598,12 +742,13 @@ function ReportDeckPage() {
                     className="text-center text-xs text-white/60"
                   />
                 </div>
+                </Movable>
               </div>
             </Slide>
           </SlideFrame>
 
           {/* Página 5 — Funil de Vendas */}
-          <SlideFrame id="funil" label="Funil de vendas" hidden={isHidden("funil")} onToggle={() => toggleHidden("funil")} refs={slideRefs}>
+          <SlideFrame id="funil" label="Funil de vendas" hidden={isHidden("funil")} onToggle={() => toggleHidden("funil")} {...frameProps("funil")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Conversão</SlideEyebrow>
               <SlideTitle>Funil de Vendas</SlideTitle>
@@ -651,7 +796,7 @@ function ReportDeckPage() {
           </SlideFrame>
 
           {/* Página 6 — Plano de Ação do Comercial */}
-          <SlideFrame id="plano" label="Plano de ação do comercial" hidden={isHidden("plano")} onToggle={() => toggleHidden("plano")} refs={slideRefs}>
+          <SlideFrame id="plano" label="Plano de ação do comercial" hidden={isHidden("plano")} onToggle={() => toggleHidden("plano")} {...frameProps("plano")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Comercial</SlideEyebrow>
               <SlideTitle>Plano de Ação do Comercial</SlideTitle>
@@ -660,7 +805,7 @@ function ReportDeckPage() {
           </SlideFrame>
 
           {/* Página 7 — Considerações finais */}
-          <SlideFrame id="consideracoes" label="Considerações finais" hidden={isHidden("consideracoes")} onToggle={() => toggleHidden("consideracoes")} refs={slideRefs}>
+          <SlideFrame id="consideracoes" label="Considerações finais" hidden={isHidden("consideracoes")} onToggle={() => toggleHidden("consideracoes")} {...frameProps("consideracoes")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Fechamento</SlideEyebrow>
               <SlideTitle>Considerações Finais</SlideTitle>
@@ -676,6 +821,7 @@ function ReportDeckPage() {
               hidden={isHidden(pg.id)}
               onToggle={() => toggleHidden(pg.id)}
               onRemove={() => removePage(pg.id)}
+              {...frameProps(pg.id)}
               refs={slideRefs}
             >
               <Slide>

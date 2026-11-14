@@ -45,6 +45,18 @@ export interface ReportDeckCustomPage {
   body: string;
 }
 
+// Caixa de texto solta num slide (posição em px a partir do canto superior esquerdo).
+export interface ReportDeckTextBox {
+  id: string;
+  slide: string;
+  text: string;
+  x: number;
+  y: number;
+  w: number;
+  size: number;
+  bold: boolean;
+}
+
 export interface ReportDeckRow {
   client_id: string;
   cover_logo_base64: string | null;
@@ -64,6 +76,9 @@ export interface ReportDeckRow {
   // jsonb de criativos, numa entrada {kind:"layout"}, sem coluna nova.
   hidden_slides: string[];
   custom_pages: ReportDeckCustomPage[];
+  text_boxes: ReportDeckTextBox[];
+  // deslocamento (px) dos textos fixos de cada slide arrastados pelo gestor
+  offsets: Record<string, { x: number; y: number }>;
   funil_items: ReportDeckFunilItem[];
   plano_acao_items: string[];
   consideracoes_items: string[];
@@ -98,6 +113,8 @@ function emptyDeck(clientId: string): ReportDeckRow {
     creatives: [],
     hidden_slides: [],
     custom_pages: [],
+    text_boxes: [],
+    offsets: {},
     funil_items: [
       { label: "Contatos", value: "" },
       { label: "Qualificados", value: "" },
@@ -151,15 +168,23 @@ export async function fetchReportDeck(clientId: string): Promise<ReportDeckRow> 
   return _fetchReportDeck({ data: { clientId } });
 }
 
-type LayoutEntry = { kind: "layout"; hidden: string[]; pages: ReportDeckCustomPage[] };
+type LayoutEntry = {
+  kind: "layout";
+  hidden: string[];
+  pages: ReportDeckCustomPage[];
+  boxes?: ReportDeckTextBox[];
+  offsets?: Record<string, { x: number; y: number }>;
+};
 
-function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages"> {
+function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages" | "text_boxes" | "offsets"> {
   const list = Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [];
   const layout = list.find((e) => e.kind === "layout") as LayoutEntry | undefined;
   return {
     creatives: list.filter((e) => e.kind !== "layout") as unknown as ReportDeckCreative[],
     hidden_slides: layout?.hidden ?? [],
     custom_pages: layout?.pages ?? [],
+    text_boxes: layout?.boxes ?? [],
+    offsets: layout?.offsets ?? {},
   };
 }
 
@@ -182,6 +207,21 @@ const upsertSchema = z.object({
   customPages: z
     .array(z.object({ id: z.string(), eyebrow: z.string(), title: z.string(), body: z.string() }))
     .optional(),
+  textBoxes: z
+    .array(
+      z.object({
+        id: z.string(),
+        slide: z.string(),
+        text: z.string(),
+        x: z.number(),
+        y: z.number(),
+        w: z.number(),
+        size: z.number(),
+        bold: z.boolean(),
+      })
+    )
+    .optional(),
+  offsets: z.record(z.string(), z.object({ x: z.number(), y: z.number() })).optional(),
   funilItems: z.array(funilItemSchema).optional(),
   planoAcaoItems: z.array(z.string()).optional(),
   consideracoesItems: z.array(z.string()).optional(),
@@ -211,7 +251,7 @@ const _upsertReportDeck = createServerFn({ method: "POST" })
         ? {
             creatives: [
               ...data.creatives,
-              { kind: "layout", hidden: data.hiddenSlides ?? [], pages: data.customPages ?? [] },
+              { kind: "layout", hidden: data.hiddenSlides ?? [], pages: data.customPages ?? [], boxes: data.textBoxes ?? [], offsets: data.offsets ?? {} },
             ],
           }
         : {}),
