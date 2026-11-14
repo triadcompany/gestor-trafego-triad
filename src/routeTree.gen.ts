@@ -17,7 +17,6 @@ import { Route as SaldosRouteImport } from './routes/saldos'
 import { Route as RastreamentoRouteImport } from './routes/rastreamento'
 import { Route as PrivacidadeRouteImport } from './routes/privacidade'
 import { Route as PixRouteImport } from './routes/pix'
-import { Route as OtimizacaoRouteImport } from './routes/otimizacao'
 import { Route as MensagensRouteImport } from './routes/mensagens'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as DiagnosticoMetaRouteImport } from './routes/diagnostico-meta'
@@ -75,11 +74,6 @@ const PrivacidadeRoute = PrivacidadeRouteImport.update({
 const PixRoute = PixRouteImport.update({
   id: '/pix',
   path: '/pix',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const OtimizacaoRoute = OtimizacaoRouteImport.update({
-  id: '/otimizacao',
-  path: '/otimizacao',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MensagensRoute = MensagensRouteImport.update({
@@ -182,7 +176,6 @@ export interface FileRoutesByFullPath {
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
-  '/otimizacao': typeof OtimizacaoRoute
   '/pix': typeof PixRoute
   '/privacidade': typeof PrivacidadeRoute
   '/rastreamento': typeof RastreamentoRoute
@@ -211,7 +204,6 @@ export interface FileRoutesByTo {
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
-  '/otimizacao': typeof OtimizacaoRoute
   '/pix': typeof PixRoute
   '/privacidade': typeof PrivacidadeRoute
   '/rastreamento': typeof RastreamentoRoute
@@ -241,7 +233,6 @@ export interface FileRoutesById {
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
-  '/otimizacao': typeof OtimizacaoRoute
   '/pix': typeof PixRoute
   '/privacidade': typeof PrivacidadeRoute
   '/rastreamento': typeof RastreamentoRoute
@@ -272,7 +263,6 @@ export interface FileRouteTypes {
     | '/diagnostico-meta'
     | '/login'
     | '/mensagens'
-    | '/otimizacao'
     | '/pix'
     | '/privacidade'
     | '/rastreamento'
@@ -301,7 +291,6 @@ export interface FileRouteTypes {
     | '/diagnostico-meta'
     | '/login'
     | '/mensagens'
-    | '/otimizacao'
     | '/pix'
     | '/privacidade'
     | '/rastreamento'
@@ -330,7 +319,6 @@ export interface FileRouteTypes {
     | '/diagnostico-meta'
     | '/login'
     | '/mensagens'
-    | '/otimizacao'
     | '/pix'
     | '/privacidade'
     | '/rastreamento'
@@ -360,7 +348,6 @@ export interface RootRouteChildren {
   DiagnosticoMetaRoute: typeof DiagnosticoMetaRoute
   LoginRoute: typeof LoginRoute
   MensagensRoute: typeof MensagensRoute
-  OtimizacaoRoute: typeof OtimizacaoRoute
   PixRoute: typeof PixRoute
   PrivacidadeRoute: typeof PrivacidadeRoute
   RastreamentoRoute: typeof RastreamentoRoute
@@ -437,13 +424,6 @@ declare module '@tanstack/react-router' {
       path: '/pix'
       fullPath: '/pix'
       preLoaderRoute: typeof PixRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/otimizacao': {
-      id: '/otimizacao'
-      path: '/otimizacao'
-      fullPath: '/otimizacao'
-      preLoaderRoute: typeof OtimizacaoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/mensagens': {
@@ -584,7 +564,6 @@ const rootRouteChildren: RootRouteChildren = {
   DiagnosticoMetaRoute: DiagnosticoMetaRoute,
   LoginRoute: LoginRoute,
   MensagensRoute: MensagensRoute,
-  OtimizacaoRoute: OtimizacaoRoute,
   PixRoute: PixRoute,
   PrivacidadeRoute: PrivacidadeRoute,
   RastreamentoRoute: RastreamentoRoute,

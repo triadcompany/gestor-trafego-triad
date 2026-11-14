@@ -62,6 +62,7 @@ import {
 import { brl } from "@/lib/mock-data";
 import { PublicTrackingLinkControl } from "@/components/PublicTrackingLinkControl";
 import { LeadsDashboard } from "@/components/LeadsDashboard";
+import { OptimizationPanel } from "@/components/OptimizationPanel";
 import { fetchDailyLeadCounts, fetchEntityLeadStats } from "@/server/lead-attribution";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
@@ -284,7 +285,7 @@ function ClientDetail() {
   const navigate = useNavigate();
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [switcherSearch, setSwitcherSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<"campanhas" | "rastreamento">("campanhas");
+  const [activeTab, setActiveTab] = useState<"campanhas" | "rastreamento" | "otimizacao">("campanhas");
 
   const { data: client, isLoading } = useQuery({
     queryKey: ["client", id],
@@ -670,10 +671,11 @@ function ClientDetail() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "campanhas" | "rastreamento")} className="mb-6">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "campanhas" | "rastreamento" | "otimizacao")} className="mb-6">
           <TabsList>
             <TabsTrigger value="campanhas">Campanhas</TabsTrigger>
             <TabsTrigger value="rastreamento">Rastreamento</TabsTrigger>
+            {isTriad && <TabsTrigger value="otimizacao">Otimização</TabsTrigger>}
           </TabsList>
 
           <TabsContent value="campanhas" className="space-y-6 mt-4">
@@ -1127,6 +1129,12 @@ function ClientDetail() {
 
             <LeadsDashboard clientId={id} controlledRange={{ since: leadStatsSinceA, until: leadStatsUntilA }} />
           </TabsContent>
+
+          {isTriad && (
+            <TabsContent value="otimizacao" className="mt-4">
+              <OptimizationPanel clientId={id} adAccountId={client.meta_ad_account_id ?? ""} />
+            </TabsContent>
+          )}
         </Tabs>
 
         {activeTab === "campanhas" && (

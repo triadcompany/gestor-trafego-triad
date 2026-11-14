@@ -1,27 +1,10 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { AlertCircle, ArrowRight, Lightbulb, Loader2 } from "lucide-react";
-import { AppShell } from "@/components/AppShell";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { fetchAllClients } from "@/lib/queries";
+import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
 import { fetchOptimizationInsights, getMetaToken, type OptimizationInsights, type OptimizationRow } from "@/lib/meta";
 import { buildOptimizationReport, brl, MIN_TOTAL_LEADS, type Suggestion } from "@/lib/optimization";
 import { daysAgoInBrasilia, isoDateInBrasilia } from "@/lib/brasilia-date";
-import { getCurrentUser } from "@/server/session";
-import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { cn } from "@/lib/utils";
-
-export const Route = createFileRoute("/otimizacao")({
-  head: () => ({ meta: [{ title: "Otimização — Gestor de Tráfego" }] }),
-  ssr: false,
-  beforeLoad: async () => {
-    const user = await getCurrentUser();
-    const orgId = user?.actingOrganizationId ?? user?.organizationId;
-    if (!isTriadCompanyOrg(orgId)) throw redirect({ to: "/dashboard" });
-  },
-  component: OtimizacaoPage,
-});
 
 const PERIODS = [
   { days: 7, label: "7 dias" },
@@ -35,89 +18,57 @@ const HOUR_BLOCKS = ["0h", "2h", "4h", "6h", "8h", "10h", "12h", "14h", "16h", "
 const num = (v: number, digits = 0) =>
   v.toLocaleString("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits });
 
-function OtimizacaoPage() {
-  const [clientId, setClientId] = useState("");
+// Aba "Otimização" da página do cliente: onde o dinheiro rende e onde vaza na
+// conta de anúncio, com sugestões por regras (ver src/lib/optimization.ts).
+export function OptimizationPanel({ clientId, adAccountId }: { clientId: string; adAccountId: string }) {
   const [days, setDays] = useState(30);
-  const { data: clients = [], isLoading: clientsLoading } = useQuery({ queryKey: ["all-clients"], queryFn: fetchAllClients });
-  const activeClients = clients.filter((c) => c.active && c.meta_ad_account_id);
-  const client = activeClients.find((c) => c.id === clientId);
-
-  useEffect(() => {
-    if (!clientId && activeClients.length > 0) setClientId(activeClients[0].id);
-  }, [activeClients, clientId]);
-
   const since = daysAgoInBrasilia(days);
   const until = isoDateInBrasilia();
   const { data, isLoading, error } = useQuery({
-    queryKey: ["optimization", client?.meta_ad_account_id, since, until],
+    queryKey: ["optimization", adAccountId, since, until],
     queryFn: async () => {
-      const token = await getMetaToken(client!.id);
+      const token = await getMetaToken(clientId);
       if (!token) throw new Error("Token da Meta não encontrado pra esse cliente.");
-      return fetchOptimizationInsights(client!.meta_ad_account_id, token, since, until);
+      return fetchOptimizationInsights(adAccountId, token, since, until);
     },
-    enabled: !!client,
+    enabled: !!adAccountId,
   });
 
   return (
-    <AppShell>
-      <div className="max-w-6xl mx-auto px-4 py-6 space-y-8">
-        <div className="flex items-start justify-between flex-wrap gap-4">
-          <div className="space-y-1">
-            <h1 className="text-xl font-semibold flex items-center gap-2">
-              <Lightbulb className="h-5 w-5 text-muted-foreground" />
-              Otimização
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Onde o dinheiro rende e onde ele vaza, por conta de anúncio.
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <div className="flex gap-1 rounded-lg border border-border p-1">
-              {PERIODS.map((p) => (
-                <button
-                  key={p.days}
-                  type="button"
-                  onClick={() => setDays(p.days)}
-                  className={cn(
-                    "rounded-md px-3 py-1.5 text-sm transition-colors",
-                    days === p.days ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  {p.label}
-                </button>
-              ))}
-            </div>
-            <Select value={clientId} onValueChange={(v) => v && setClientId(v)}>
-              <SelectTrigger className="w-64">
-                <SelectValue placeholder="Selecionar cliente" />
-              </SelectTrigger>
-              <SelectContent>
-                {activeClients.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+    <div className="space-y-8">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <p className="text-sm text-muted-foreground">Onde o dinheiro rende e onde ele vaza nessa conta de anúncio.</p>
+        <div className="flex gap-1 rounded-lg border border-border p-1">
+          {PERIODS.map((p) => (
+            <button
+              key={p.days}
+              type="button"
+              onClick={() => setDays(p.days)}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-sm transition-colors",
+                days === p.days ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {p.label}
+            </button>
+          ))}
         </div>
-
-        {clientsLoading ? (
-          <p className="text-sm text-muted-foreground">Carregando clientes...</p>
-        ) : !client ? (
-          <p className="text-sm text-muted-foreground">Nenhum cliente ativo com conta de anúncio.</p>
-        ) : isLoading ? (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 className="h-4 w-4 animate-spin" /> Buscando dados na Meta...
-          </div>
-        ) : error ? (
-          <div className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
-            <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-            {error instanceof Error ? error.message : "Erro ao buscar dados da Meta."}
-          </div>
-        ) : data ? (
-          <Report data={data} />
-        ) : null}
       </div>
-    </AppShell>
+      {!adAccountId ? (
+        <p className="text-sm text-muted-foreground">Esse cliente não tem conta de anúncio cadastrada.</p>
+      ) : isLoading ? (
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" /> Buscando dados na Meta...
+        </div>
+      ) : error ? (
+        <div className="flex items-start gap-2 rounded-lg bg-destructive/10 p-3 text-sm text-destructive">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          {error instanceof Error ? error.message : "Erro ao buscar dados da Meta."}
+        </div>
+      ) : data ? (
+        <Report data={data} />
+      ) : null}
+    </div>
   );
 }
 
