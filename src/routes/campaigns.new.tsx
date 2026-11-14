@@ -570,11 +570,19 @@ function NewCampaign() {
       setSelectedTemplateId(tpl.id);
       setWhatsappMessage(tpl.pre_message ?? "");
       setWhatsappGreeting(tpl.greeting ?? "");
+      if (mode === "bulk") applyTemplateToAllCars(tpl);
       setTemplateMode("select");
       toast.success("Modelo salvo.");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar modelo"),
   });
+
+  // Criar em massa: o modelo escolhido na "Configuração da conversa" vale pra
+  // todos os carros (cada carro ainda pode ser ajustado ou trocar de modelo).
+  const applyTemplateToAllCars = (t: { greeting: string | null; pre_message: string | null }) =>
+    setCars((prev) =>
+      prev.map((c) => ({ ...c, whatsappGreeting: t.greeting ?? "", whatsappMessage: t.pre_message ?? "" }))
+    );
 
   const handleTemplateSelect = (id: string) => {
     setSelectedTemplateId(id);
@@ -582,6 +590,7 @@ function NewCampaign() {
     if (t) {
       setWhatsappMessage(t.pre_message ?? "");
       setWhatsappGreeting(t.greeting ?? "");
+      if (mode === "bulk") applyTemplateToAllCars(t);
     }
   };
 
@@ -919,6 +928,109 @@ function NewCampaign() {
       </AppShell>
     );
   }
+
+  // Configuração da conversa (modelos salvos do cliente) — usada no passo 3 de
+  // criar do zero e no de criar em massa.
+  const conversationCard = (
+      <Card className="p-5 space-y-4">
+        <div className="flex items-center justify-between">
+          <SectionTitle>Configuração da conversa</SectionTitle>
+          {templateMode === "select" && (
+            <button
+              type="button"
+              onClick={openNewTemplate}
+              className="text-xs text-primary hover:underline"
+            >
+              + Nova
+            </button>
+          )}
+        </div>
+
+        {templateMode === "select" ? (
+          <>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <Select value={selectedTemplateId} onValueChange={handleTemplateSelect}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecionar modelo salvo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {templates.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              {selectedTemplate && (
+                <div className="flex gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={openEditTemplate}
+                    className="text-xs px-2.5 py-1.5 border border-border rounded-md text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                  >
+                    Editar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openDuplicateTemplate}
+                    className="text-xs px-2.5 py-1.5 border border-border rounded-md text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
+                  >
+                    Duplicar
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {templatesError ? (
+              <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/10 rounded-md p-2.5">
+                <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                <span>Não foi possível carregar os templates de conversa. Tente novamente em instantes.</span>
+              </div>
+            ) : selectedTemplate ? (
+              <div className="bg-muted/40 rounded-lg p-3 space-y-2.5">
+                {selectedTemplate.greeting && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Saudação</p>
+                    <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">{selectedTemplate.greeting}</p>
+                  </div>
+                )}
+                {selectedTemplate.pre_message && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground mb-1">Mensagem pronta</p>
+                    <p className="text-xs text-foreground/90">{selectedTemplate.pre_message}</p>
+                  </div>
+                )}
+                {!selectedTemplate.greeting && !selectedTemplate.pre_message && (
+                  <p className="text-xs text-muted-foreground">Modelo sem conteúdo.</p>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">Sem modelo — nenhuma mensagem pré-preenchida.</p>
+            )}
+          </>
+        ) : (
+          <TemplateForm
+            name={tplName}
+            greeting={tplGreeting}
+            preMessage={tplPreMessage}
+            onNameChange={setTplName}
+            onGreetingChange={setTplGreeting}
+            onPreMessageChange={setTplPreMessage}
+            onSave={handleSaveTemplate}
+            onCancel={() => setTemplateMode("select")}
+            saving={saveTemplateMutation.isPending}
+          />
+        )}
+
+        <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/40 rounded-lg p-3">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+          <span>
+            Abrirá o WhatsApp:{" "}
+            <strong className="text-foreground">{whatsappNumber || "não configurado"}</strong>
+          </span>
+        </div>
+      </Card>
+  );
 
   return (
     <AppShell>
@@ -1474,104 +1586,7 @@ function NewCampaign() {
               </div>
             </Card>
 
-            <Card className="p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <SectionTitle>Configuração da conversa</SectionTitle>
-                {templateMode === "select" && (
-                  <button
-                    type="button"
-                    onClick={openNewTemplate}
-                    className="text-xs text-primary hover:underline"
-                  >
-                    + Nova
-                  </button>
-                )}
-              </div>
-
-              {templateMode === "select" ? (
-                <>
-                  <div className="flex gap-2">
-                    <div className="flex-1">
-                      <Select value={selectedTemplateId} onValueChange={handleTemplateSelect}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Selecionar modelo salvo..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {templates.map((t) => (
-                            <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {selectedTemplate && (
-                      <div className="flex gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={openEditTemplate}
-                          className="text-xs px-2.5 py-1.5 border border-border rounded-md text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-                        >
-                          Editar
-                        </button>
-                        <button
-                          type="button"
-                          onClick={openDuplicateTemplate}
-                          className="text-xs px-2.5 py-1.5 border border-border rounded-md text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-colors"
-                        >
-                          Duplicar
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {templatesError ? (
-                    <div className="flex items-start gap-2 text-xs text-destructive bg-destructive/10 rounded-md p-2.5">
-                      <AlertCircle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                      <span>Não foi possível carregar os templates de conversa. Tente novamente em instantes.</span>
-                    </div>
-                  ) : selectedTemplate ? (
-                    <div className="bg-muted/40 rounded-lg p-3 space-y-2.5">
-                      {selectedTemplate.greeting && (
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Saudação</p>
-                          <p className="text-xs text-foreground/90 whitespace-pre-wrap leading-relaxed">{selectedTemplate.greeting}</p>
-                        </div>
-                      )}
-                      {selectedTemplate.pre_message && (
-                        <div>
-                          <p className="text-xs font-medium text-muted-foreground mb-1">Mensagem pronta</p>
-                          <p className="text-xs text-foreground/90">{selectedTemplate.pre_message}</p>
-                        </div>
-                      )}
-                      {!selectedTemplate.greeting && !selectedTemplate.pre_message && (
-                        <p className="text-xs text-muted-foreground">Modelo sem conteúdo.</p>
-                      )}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">Sem modelo — nenhuma mensagem pré-preenchida.</p>
-                  )}
-                </>
-              ) : (
-                <TemplateForm
-                  name={tplName}
-                  greeting={tplGreeting}
-                  preMessage={tplPreMessage}
-                  onNameChange={setTplName}
-                  onGreetingChange={setTplGreeting}
-                  onPreMessageChange={setTplPreMessage}
-                  onSave={handleSaveTemplate}
-                  onCancel={() => setTemplateMode("select")}
-                  saving={saveTemplateMutation.isPending}
-                />
-              )}
-
-              <div className="flex items-start gap-2 text-sm text-muted-foreground bg-muted/40 rounded-lg p-3">
-                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
-                <span>
-                  Abrirá o WhatsApp:{" "}
-                  <strong className="text-foreground">{whatsappNumber || "não configurado"}</strong>
-                </span>
-              </div>
-            </Card>
+            {conversationCard}
 
             <div className="flex justify-between gap-3">
               <Button variant="outline" onClick={() => setStep(2)}>← Voltar</Button>
@@ -1596,9 +1611,11 @@ function NewCampaign() {
               <span>
                 Todos os carros abrirão o WhatsApp:{" "}
                 <strong className="text-foreground">{whatsappNumber || "não configurado"}</strong>
-                {" "}— a mensagem de saudação é configurada individualmente em cada carro abaixo.
+                {" "}— escolha um modelo salvo abaixo (vale pra todos) e ajuste cada carro se precisar.
               </span>
             </div>
+
+            {conversationCard}
 
             <div className="space-y-3">
               {cars.map((car, i) => {
@@ -1719,6 +1736,29 @@ function NewCampaign() {
                     </div>
 
                     <Separator />
+
+                    {templates.length > 0 && (
+                      <div className="space-y-2">
+                        <Label>Modelo de conversa <span className="text-muted-foreground font-normal text-xs ml-1">só este carro</span></Label>
+                        <Select
+                          value=""
+                          onValueChange={(id) => {
+                            const t = templates.find((x) => x.id === id);
+                            if (t) updateCar(car.id, { whatsappGreeting: t.greeting ?? "", whatsappMessage: t.pre_message ?? "" });
+                          }}
+                          disabled={bulkRunning}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Selecionar modelo salvo..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {templates.map((t) => (
+                              <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    )}
 
                     <div className="space-y-2">
                       <Label>Mensagem de saudação <span className="text-muted-foreground font-normal text-xs ml-1">opcional</span></Label>
