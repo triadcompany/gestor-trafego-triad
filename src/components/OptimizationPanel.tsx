@@ -4,16 +4,9 @@ import { AlertCircle, ArrowRight, Loader2 } from "lucide-react";
 import { fetchCampaigns, fetchOptimizationInsights, getMetaToken, type OptimizationInsights, type OptimizationRow } from "@/lib/meta";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { buildOptimizationReport, brl, MIN_TOTAL_LEADS, type Suggestion } from "@/lib/optimization";
-import { daysAgoInBrasilia, isoDateInBrasilia } from "@/lib/brasilia-date";
 import { cn } from "@/lib/utils";
 import { ApplySuggestionDialog } from "@/components/ApplySuggestionDialog";
 
-const PERIODS = [
-  { days: 7, label: "7 dias" },
-  { days: 14, label: "14 dias" },
-  { days: 30, label: "30 dias" },
-  { days: 90, label: "90 dias" },
-];
 const ALL = "__conta__";
 const WEEKDAYS = ["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"];
 const HOUR_BLOCKS = ["0h", "2h", "4h", "6h", "8h", "10h", "12h", "14h", "16h", "18h", "20h", "22h"];
@@ -23,11 +16,19 @@ const num = (v: number, digits = 0) =>
 
 // Aba "Otimização" da página do cliente: onde o dinheiro rende e onde vaza na
 // conta de anúncio, com sugestões por regras (ver src/lib/optimization.ts).
-export function OptimizationPanel({ clientId, adAccountId }: { clientId: string; adAccountId: string }) {
-  const [days, setDays] = useState(30);
+// O período vem do seletor do topo da página do cliente.
+export function OptimizationPanel({
+  clientId,
+  adAccountId,
+  since,
+  until,
+}: {
+  clientId: string;
+  adAccountId: string;
+  since: string;
+  until: string;
+}) {
   const [campaignId, setCampaignId] = useState(ALL);
-  const since = daysAgoInBrasilia(days);
-  const until = isoDateInBrasilia();
 
   // Só campanhas que gastaram no período — as outras não têm o que analisar.
   const { data: campaigns = [] } = useQuery({
@@ -69,21 +70,6 @@ export function OptimizationPanel({ clientId, adAccountId }: { clientId: string;
             ))}
           </SelectContent>
         </Select>
-        <div className="flex gap-1 rounded-lg border border-border p-1">
-          {PERIODS.map((p) => (
-            <button
-              key={p.days}
-              type="button"
-              onClick={() => setDays(p.days)}
-              className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
-                days === p.days ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
-              )}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
       </div>
       {!adAccountId ? (
         <p className="text-sm text-muted-foreground">Esse cliente não tem conta de anúncio cadastrada.</p>
@@ -140,7 +126,7 @@ function Report({ data, clientId, objectId }: { data: OptimizationInsights; clie
         {!report.enoughData ? (
           <Notice>
             Só {num(leads)} conversa{leads === 1 ? "" : "s"} no período. Com menos de {MIN_TOTAL_LEADS} não dá pra separar padrão de acaso,
-            então nenhuma sugestão é feita. Aumente o período.
+            então nenhuma sugestão é feita. Escolha um período maior no seletor do topo da página (ex.: Últimos 30 dias).
           </Notice>
         ) : report.suggestions.length === 0 ? (
           <Notice>Nada fora do padrão: nenhum posicionamento, plataforma, idade, gênero ou horário custa bem acima da média com volume suficiente.</Notice>

@@ -1132,7 +1132,7 @@ function ClientDetail() {
 
           {isTriad && (
             <TabsContent value="otimizacao" className="mt-4">
-              <OptimizationPanel clientId={id} adAccountId={client.meta_ad_account_id ?? ""} />
+              <OptimizationPanel clientId={id} adAccountId={client.meta_ad_account_id ?? ""} since={leadStatsSinceA} until={leadStatsUntilA} />
             </TabsContent>
           )}
         </Tabs>
