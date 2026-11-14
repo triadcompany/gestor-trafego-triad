@@ -289,7 +289,26 @@ function ageAction(r: OptimizationRow, ages: OptimizationRow[]): Action {
     const max = parseInt(bands[idx - 1].split("-")[1] ?? "65", 10);
     return { text: `Baixar a idade máxima para ${max} anos`, apply: { kind: "age", ageMin: null, ageMax: max } };
   }
-  return { text: "Faixa do meio: separar em outro conjunto pra testar (a Meta só corta idade nas pontas)" };
+  if (idx > 0 && idx < bands.length - 1) {
+    // A Meta só corta idade nas pontas: pra tirar uma faixa do meio, sai ela e
+    // todo o lado mais caro. Escolhe o lado que fica com o melhor custo.
+    const side = (list: string[]) => {
+      const rows = ages.filter((a) => list.includes(a.key));
+      const spend = rows.reduce((t, a) => t + a.spend, 0);
+      const leads = rows.reduce((t, a) => t + a.leads, 0);
+      return leads > 0 ? spend / leads : Infinity;
+    };
+    const younger = bands.slice(0, idx);
+    const older = bands.slice(idx + 1);
+    const start = parseInt(r.key, 10);
+    if (side(younger) <= side(older)) {
+      const max = start - 1;
+      return { text: `Baixar a idade máxima para ${max} anos (a Meta só corta nas pontas: ${r.label} e as faixas acima saem juntas)`, apply: { kind: "age", ageMin: null, ageMax: max } };
+    }
+    const min = parseInt(bands[idx + 1], 10);
+    return { text: `Subir a idade mínima para ${min} anos (a Meta só corta nas pontas: ${r.label} e as faixas abaixo saem juntas)`, apply: { kind: "age", ageMin: min, ageMax: null } };
+  }
+  return { text: "Faixa única: não há o que cortar" };
 }
 function genderAction(r: OptimizationRow): Action {
   if (r.key === "male") return { text: "Testar deixar só o público feminino", apply: { kind: "gender", gender: "female" } };
@@ -381,13 +400,15 @@ export function buildOptimizationReport(data: OptimizationInsights, target?: Cci
       ...offTarget(data.byPosition, "Posicionamento", target, positionAction),
       ...offTarget(data.byAge, "Faixa etária", target, (r) => ageAction(r, data.byAge)),
       ...offTarget(data.byGender, "Gênero", target, (r) => {
-        // Com pouca amostra, trocar o gênero do conjunto é arriscado: vira só
-        // um teste sugerido, sem aplicar direto.
+        // Com pouca amostra o valor é editável na confirmação antes de aplicar.
         const other = data.byGender.find((g) => g.key !== r.key && g.key !== "unknown" && g.leads > 0);
         if (!other) return { text: "Os dois gêneros estão acima da meta: rever o criativo e a oferta" };
         const otherCpl = cplOf(other);
         return otherCpl <= target.max
-          ? { text: `Testar um conjunto separado só com o público ${other.label.toLowerCase()} (${brl(otherCpl)} por conversa, na meta)` }
+          ? {
+              text: `Deixar só o público ${other.label.toLowerCase()} (${brl(otherCpl)} por conversa, na meta)`,
+              apply: { kind: "gender", gender: other.key === "female" ? "female" : "male" },
+            }
           : { text: "Os dois gêneros estão acima da meta: rever o criativo e a oferta" };
       }),
     ]
