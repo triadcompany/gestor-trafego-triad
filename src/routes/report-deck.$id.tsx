@@ -17,7 +17,7 @@ import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { fetchClientDetail } from "@/lib/queries";
 import { getMetaToken, fetchCampaigns } from "@/lib/meta";
-import { fetchReportDeck, upsertReportDeck, type ReportDeckRow, type ReportDeckFunilItem, type ReportDeckCreative, type ReportDeckCustomPage, type ReportDeckTextBox } from "@/server/report-decks";
+import { fetchReportDeck, upsertReportDeck, sendReportPdfToOperationalGroup, type ReportDeckRow, type ReportDeckFunilItem, type ReportDeckCreative, type ReportDeckCustomPage, type ReportDeckTextBox } from "@/server/report-decks";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
 export const Route = createFileRoute("/report-deck/$id")({
@@ -501,6 +501,7 @@ function ReportDeckPage() {
   const [deck, setDeck] = useState<ReportDeckRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [sendToGroup, setSendToGroup] = useState(true);
   const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
   const slideRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -695,9 +696,27 @@ function ReportDeckPage() {
         toast.loading(`Gerando PDF... ${i + 1} de ${ids.length}`, { id: toastId });
         await new Promise((r) => setTimeout(r, 0));
       }
-      toast.dismiss(toastId);
-      doc.save(`relatorio-visual-${client?.name ?? "cliente"}.pdf`);
-      toast.success("PDF exportado.");
+      const fileName = `relatorio-visual-${client?.name ?? "cliente"}.pdf`;
+      doc.save(fileName);
+      if (sendToGroup) {
+        toast.loading("Enviando pro grupo operacional...", { id: toastId });
+        try {
+          // jsPDF devolve "data:application/pdf;...;base64,XXXX"
+          const pdfBase64 = doc.output("datauristring").split(",")[1] ?? "";
+          const fmt = (iso: string) => iso.split("-").reverse().join("/");
+          await sendReportPdfToOperationalGroup({
+            clientId: id,
+            pdfBase64,
+            fileName,
+            caption: `Relatório — ${client?.name ?? "cliente"} (${fmt(range.since)} a ${fmt(range.until)})`,
+          });
+          toast.success("PDF exportado e enviado pro grupo operacional.", { id: toastId });
+        } catch (e) {
+          toast.error(`PDF exportado, mas não foi enviado ao grupo: ${e instanceof Error ? e.message : "erro desconhecido"}`, { id: toastId });
+        }
+      } else {
+        toast.success("PDF exportado.", { id: toastId });
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Erro ao exportar PDF.", { id: toastId });
     } finally {
@@ -751,6 +770,10 @@ function ReportDeckPage() {
                 <Input type="date" value={customUntil} min={customSince} max={isoDateInBrasilia()} onChange={(e) => e.target.value && setCustomUntil(e.target.value)} className="h-9 w-36" />
               </>
             )}
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
+              <input type="checkbox" checked={sendToGroup} onChange={(e) => setSendToGroup(e.target.checked)} />
+              Enviar ao grupo operacional
+            </label>
             <Button onClick={exportPdf} disabled={exporting} className="gap-2">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               {exporting && exportProgress ? `Gerando ${exportProgress.done}/${exportProgress.total}...` : "Exportar PDF"}

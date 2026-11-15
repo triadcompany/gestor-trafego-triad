@@ -271,3 +271,43 @@ const _upsertReportDeck = createServerFn({ method: "POST" })
 export async function upsertReportDeck(input: UpsertReportDeckInput): Promise<void> {
   await _upsertReportDeck({ data: input });
 }
+
+// Envia o PDF do relatório pro grupo operacional. Sai sempre pela instância do
+// GESTOR (nunca a do cliente), igual às outras automações internas.
+const _sendReportPdfToOperationalGroup = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ clientId: z.string(), pdfBase64: z.string().min(100), fileName: z.string(), caption: z.string() }))
+  .handler(async ({ data }): Promise<void> => {
+    const organizationId = await assertAccess(data.clientId);
+    const { resolveGestorWhatsappInstance, resolveOperationalGroupId } = await import("@/lib/whatsapp-messages");
+    const resolved = await resolveGestorWhatsappInstance();
+    const { url, apiKey, instance } = resolved;
+    const groupId = await resolveOperationalGroupId(resolved, organizationId);
+    if (!groupId) {
+      throw new Error("Grupo operacional não configurado pra essa instância. Configure em Configurações → Instâncias WhatsApp.");
+    }
+    const res = await fetch(`${url}/message/sendMedia/${instance}`, {
+      method: "POST",
+      headers: { apikey: apiKey, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        number: groupId,
+        mediatype: "document",
+        mimetype: "application/pdf",
+        fileName: data.fileName,
+        caption: data.caption,
+        media: data.pdfBase64,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Erro ao enviar o PDF: ${res.status} - ${body.slice(0, 200)}`);
+    }
+  });
+
+export async function sendReportPdfToOperationalGroup(input: {
+  clientId: string;
+  pdfBase64: string;
+  fileName: string;
+  caption: string;
+}): Promise<void> {
+  await _sendReportPdfToOperationalGroup({ data: input });
+}
