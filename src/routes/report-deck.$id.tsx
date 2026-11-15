@@ -54,22 +54,33 @@ const brl = (n: number) => n.toLocaleString("pt-BR", { style: "currency", curren
 
 // ── Blocos visuais compartilhados ────────────────────────────────────────────
 
-// html2canvas 1.4 não entende cores modernas (oklch, color-mix...) que o Tailwind
-// gera. No clone usado na captura, troca cada uma pelo rgb equivalente.
-const MODERN_COLOR = /oklch|oklab|color-mix|lab\(|lch\(|color\(/;
-const COLOR_PROPS = [
-  "color",
-  "background-color",
-  "border-top-color",
-  "border-right-color",
-  "border-bottom-color",
-  "border-left-color",
-  "outline-color",
-  "text-decoration-color",
-  "fill",
-  "stroke",
-  "caret-color",
-];
+// html2canvas 1.4 não entende cores modernas (oklch, oklab, color-mix...) que o
+// Tailwind gera. No clone usado na captura, varre TODAS as propriedades de cada
+// elemento (e de ::before/::after) e troca cada cor moderna pelo rgb equivalente.
+const MODERN_COLOR = /(?:oklch|oklab|color-mix|lab|lch|color)\(/;
+const MODERN_COLOR_G = /(?:oklch|oklab|color-mix|lab|lch|color)\(/g;
+
+function replaceModernColors(value: string, toRgb: (c: string) => string): string {
+  let out = "";
+  let last = 0;
+  MODERN_COLOR_G.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = MODERN_COLOR_G.exec(value))) {
+    // não casa "rgb(" nem nomes que só terminam em lab/lch/color
+    if (m.index > 0 && /[\w-]/.test(value[m.index - 1])) continue;
+    let depth = 0;
+    let end = m.index + m[0].length - 1;
+    for (; end < value.length; end++) {
+      if (value[end] === "(") depth++;
+      else if (value[end] === ")" && --depth === 0) break;
+    }
+    out += value.slice(last, m.index) + toRgb(value.slice(m.index, end + 1));
+    last = end + 1;
+    MODERN_COLOR_G.lastIndex = last;
+  }
+  return out + value.slice(last);
+}
+
 function sanitizeModernColors(clonedDoc: Document) {
   const canvas = clonedDoc.createElement("canvas");
   canvas.width = canvas.height = 1;
@@ -84,17 +95,35 @@ function sanitizeModernColors(clonedDoc: Document) {
     const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
     return `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
   };
+  const pseudoRules: string[] = [];
+  let n = 0;
   clonedDoc.querySelectorAll<HTMLElement>("*").forEach((el) => {
     const cs = view.getComputedStyle(el);
-    for (const prop of COLOR_PROPS) {
+    for (let k = 0; k < cs.length; k++) {
+      const prop = cs[k];
       const v = cs.getPropertyValue(prop);
-      if (v && MODERN_COLOR.test(v)) el.style.setProperty(prop, toRgb(v), "important");
+      if (v && MODERN_COLOR.test(v)) el.style.setProperty(prop, replaceModernColors(v, toRgb), "important");
     }
-    for (const prop of ["box-shadow", "text-shadow", "background-image", "filter"]) {
-      const v = cs.getPropertyValue(prop);
-      if (v && MODERN_COLOR.test(v)) el.style.setProperty(prop, "none", "important");
+    for (const pseudo of ["::before", "::after"]) {
+      const ps = view.getComputedStyle(el, pseudo);
+      const decls: string[] = [];
+      for (let k = 0; k < ps.length; k++) {
+        const prop = ps[k];
+        const v = ps.getPropertyValue(prop);
+        if (v && MODERN_COLOR.test(v)) decls.push(`${prop}: ${replaceModernColors(v, toRgb)} !important`);
+      }
+      if (decls.length) {
+        el.setAttribute("data-h2c", String(n));
+        pseudoRules.push(`[data-h2c="${n}"]${pseudo} { ${decls.join("; ")} }`);
+        n++;
+      }
     }
   });
+  if (pseudoRules.length) {
+    const style = clonedDoc.createElement("style");
+    style.textContent = pseudoRules.join("\n");
+    clonedDoc.head.appendChild(style);
+  }
 }
 
 // Tela de edição em 960x540 (16:9) — metade do tamanho final. Export usa
