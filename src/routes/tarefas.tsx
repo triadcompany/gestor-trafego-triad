@@ -36,20 +36,21 @@ import { ReportTable } from "@/components/ReportTable";
 import { ReportForm } from "@/components/ReportForm";
 import {
   fetchNotes, createNote, updateNote, deleteNote,
-  fetchReports, createReport, markReportSent, markReportPending, updateReport, deleteReport,
+  fetchReports, setMonthlyReportDone, createReport, markReportSent, markReportPending, updateReport, deleteReport,
   fetchAllClients,
   fetchTasks, createTask, updateTask, deleteTask,
   upsertClient,
   type TaskRow,
   type NoteWithClient,
   type ClientRow,
+  type ReportWithClient,
 } from "@/lib/queries";
 import { fetchProfilesAdmin } from "@/server/profiles";
 import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { DayOfMonthPicker } from "@/components/ClientFormDialog";
 import type { TaskStatus } from "@/lib/database.types";
-import { daysAgoInBrasilia, isoDateInBrasilia } from "@/lib/brasilia-date";
+import { daysAgoInBrasilia, isoDateInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
 export const Route = createFileRoute("/tarefas")({
   head: () => ({
@@ -363,7 +364,7 @@ function TarefasPage() {
               onUpdate={(id, fields) => updateReportMutation.mutate({ id, fields })}
               onDelete={(id) => deleteReportMutation.mutate(id)}
             />
-            <ReportDatesSection clients={clients} />
+            <ReportDatesSection clients={clients} reports={reports} />
           </div>
         )}
       </div>
@@ -393,9 +394,33 @@ function TarefasPage() {
 // todo cliente com "Dia do relatório mensal" configurado no cadastro,
 // ordenado por dia — pra ver de relance quem vence quando no mês.
 
-function ReportDatesSection({ clients }: { clients: ClientRow[] }) {
+function ReportDatesSection({ clients, reports }: { clients: ClientRow[]; reports: ReportWithClient[] }) {
   const qc = useQueryClient();
   const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState<"todos" | "faltam" | "feitos">("todos");
+  const month = useMemo(() => monthRangeInBrasilia(0), []);
+  const today = isoDateInBrasilia();
+  const todayDay = Number(today.slice(8, 10));
+  const monthLabel = new Date(`${month.start}T12:00:00`).toLocaleDateString("pt-BR", { month: "long", year: "numeric" });
+
+  // Cliente "feito" no mês = relatório mensal enviado (período ou envio dentro do mês).
+  const doneClientIds = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of reports) {
+      if (r.period_type !== "mensal" || r.status !== "enviado") continue;
+      const startsIn = r.period_start >= month.start && r.period_start <= month.end;
+      const sent = r.sent_at ? r.sent_at.slice(0, 10) : "";
+      if (startsIn || (sent >= month.start && sent <= month.end)) set.add(r.client_id);
+    }
+    return set;
+  }, [reports, month]);
+
+  const doneMutation = useMutation({
+    mutationFn: ({ clientId, done }: { clientId: string; done: boolean }) =>
+      setMonthlyReportDone({ client_id: clientId, month_start: month.start, month_end: month.end, done }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["reports"] }),
+    onError: () => toast.error("Erro ao atualizar o relatório do mês."),
+  });
   const { data: currentUser } = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser, staleTime: 1000 * 60 });
   // Mostrar TODOS os clientes (não só os já configurados), pra dar pra
   // adicionar a data direto daqui, é experimental — só pra organização da
@@ -441,7 +466,42 @@ function ReportDatesSection({ clients }: { clients: ClientRow[] }) {
     : clients
         .filter((c): c is ClientRow & { monthly_report_day: number } => c.monthly_report_day !== null)
         .sort((a, b) => a.monthly_report_day - b.monthly_report_day)
-  ).filter((c) => c.name.toLowerCase().includes(search.trim().toLowerCase()));
+  )
+    .filter((c) => c.name.toLowerCase().includes(search.trim().toLowerCase()))
+    .filter((c) => (filter === "faltam" ? !doneClientIds.has(c.id) : filter === "feitos" ? doneClientIds.has(c.id) : true));
+
+  // Placar só conta quem tem dia de relatório configurado.
+  const tracked = clients.filter((c) => c.monthly_report_day !== null);
+  const doneCount = tracked.filter((c) => doneClientIds.has(c.id)).length;
+  const missingCount = tracked.length - doneCount;
+  const overdueCount = tracked.filter((c) => !doneClientIds.has(c.id) && (c.monthly_report_day as number) < todayDay).length;
+  const statusCell = (c: ClientRow) => {
+    if (c.monthly_report_day === null) return null;
+    const done = doneClientIds.has(c.id);
+    const day = c.monthly_report_day;
+    const late = !done && day < todayDay;
+    const label = done ? "Feito" : late ? `Atrasado ${todayDay - day}d` : day === todayDay ? "Vence hoje" : "Pendente";
+    const tone = done
+      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-400"
+      : late
+        ? "border-red-500/40 bg-red-500/10 text-red-400"
+        : day === todayDay
+          ? "border-amber-500/40 bg-amber-500/10 text-amber-400"
+          : "border-border text-muted-foreground";
+    return (
+      <button
+        type="button"
+        title={done ? "Desmarcar relatório deste mês" : "Marcar relatório deste mês como feito"}
+        disabled={doneMutation.isPending}
+        onClick={() => doneMutation.mutate({ clientId: c.id, done: !done })}
+        className={`shrink-0 inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs transition-colors hover:brightness-125 ${tone}`}
+      >
+        <CheckIcon className={`h-3 w-3 ${done ? "" : "opacity-40"}`} />
+        {label}
+      </button>
+    );
+  };
+  const pct = tracked.length > 0 ? Math.round((doneCount / tracked.length) * 100) : 0;
 
   return (
     <div className="rounded-xl border border-border bg-card mt-2">
@@ -450,6 +510,36 @@ function ReportDatesSection({ clients }: { clients: ClientRow[] }) {
           <h3 className="text-sm font-semibold">Datas de relatório</h3>
           <p className="text-xs text-muted-foreground mt-0.5">Dia do mês configurado no cadastro de cada cliente</p>
         </div>
+        {tracked.length > 0 && (
+          <div className="space-y-2">
+            <div className="flex items-baseline justify-between gap-3 flex-wrap">
+              <p className="text-sm">
+                <span className="font-semibold">{doneCount} de {tracked.length}</span> relatórios feitos em <span className="capitalize">{monthLabel}</span>
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {missingCount === 0 ? "Tudo feito neste mês" : `Faltam ${missingCount}`}
+                {overdueCount > 0 && <span className="text-red-400"> · {overdueCount} atrasado{overdueCount > 1 ? "s" : ""}</span>}
+              </p>
+            </div>
+            <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+              <div className="h-full bg-emerald-500 transition-all" style={{ width: `${pct}%` }} />
+            </div>
+            <div className="flex gap-1.5">
+              {([["todos", "Todos"], ["faltam", `Faltam (${missingCount})`], ["feitos", `Feitos (${doneCount})`]] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setFilter(value)}
+                  className={`rounded-full border px-3 py-1 text-xs transition-colors ${
+                    filter === value ? "border-primary bg-primary/10 text-foreground" : "border-border text-muted-foreground hover:bg-muted/40"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
         {isTriad && (
           <div className="relative">
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
@@ -497,14 +587,18 @@ function ReportDatesSection({ clients }: { clients: ClientRow[] }) {
                   />
                 </PopoverContent>
               </Popover>
-              <GenerateReportButton clientId={c.id} clientName={c.name} />
+              <div className="flex items-center gap-2">
+                {statusCell(c)}
+                <GenerateReportButton clientId={c.id} clientName={c.name} />
+              </div>
               </div>
             ) : (
               <div key={c.id} className="flex items-center gap-3 px-4 py-2.5">
                 <span className="shrink-0 w-9 h-9 rounded-full bg-muted flex items-center justify-center text-sm font-semibold">
                   {c.monthly_report_day}
                 </span>
-                <span className="text-sm">{c.name}</span>
+                <span className="text-sm flex-1">{c.name}</span>
+                {statusCell(c)}
               </div>
             )
           )}

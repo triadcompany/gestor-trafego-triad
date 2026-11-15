@@ -729,6 +729,43 @@ async function assertReportInOrg(reportId: string, ctx: AccessCtx): Promise<void
   if (!canAccessClient(ctx, row?.client)) throw new Error("Relatório não encontrado.");
 }
 
+// Controle mensal da tela de Tarefas: marca/desmarca "relatório do mês feito" de
+// um cliente, reaproveitando a tabela de relatórios (period_type mensal).
+const _setMonthlyReportDone = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ client_id: z.string(), month_start: z.string(), month_end: z.string(), done: z.boolean() }))
+  .handler(async ({ data }) => {
+    const { organizationId, role, userId } = await requireOrgContext();
+    await assertClientAccessible(data.client_id, { organizationId, role, userId });
+    const inMonth = and(
+      eq(reportLog.clientId, data.client_id),
+      eq(reportLog.periodType, "mensal"),
+      or(
+        and(gte(reportLog.periodStart, data.month_start), lte(reportLog.periodStart, data.month_end)),
+        sql`${reportLog.sentAt}::date between ${data.month_start}::date and ${data.month_end}::date`
+      )
+    );
+    if (data.done) {
+      const existing = await db.select({ id: reportLog.id }).from(reportLog).where(inMonth).limit(1);
+      if (existing[0]) {
+        await db.update(reportLog).set({ status: "enviado", sentAt: new Date().toISOString() }).where(eq(reportLog.id, existing[0].id));
+      } else {
+        await db.insert(reportLog).values({
+          clientId: data.client_id,
+          periodType: "mensal",
+          periodStart: data.month_start,
+          status: "enviado",
+          sentAt: new Date().toISOString(),
+        });
+      }
+    } else {
+      await db.update(reportLog).set({ status: "pendente", sentAt: null }).where(inMonth);
+    }
+  });
+
+export async function setMonthlyReportDone(payload: { client_id: string; month_start: string; month_end: string; done: boolean }): Promise<void> {
+  await _setMonthlyReportDone({ data: payload });
+}
+
 const _markReportSent = createServerFn({ method: "POST" })
   .inputValidator(z.object({ id: z.string() }))
   .handler(async ({ data }) => {
