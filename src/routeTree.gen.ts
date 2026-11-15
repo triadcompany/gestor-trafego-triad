@@ -22,6 +22,7 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as DiagnosticoMetaRouteImport } from './routes/diagnostico-meta'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ConversasRouteImport } from './routes/conversas'
+import { Route as AulasRouteImport } from './routes/aulas'
 import { Route as AgenteTriadRouteImport } from './routes/agente-triad'
 import { Route as AgenteRouteImport } from './routes/agente'
 import { Route as IndexRouteImport } from './routes/index'
@@ -101,6 +102,11 @@ const ConversasRoute = ConversasRouteImport.update({
   path: '/conversas',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AulasRoute = AulasRouteImport.update({
+  id: '/aulas',
+  path: '/aulas',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AgenteTriadRoute = AgenteTriadRouteImport.update({
   id: '/agente-triad',
   path: '/agente-triad',
@@ -171,6 +177,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/agente': typeof AgenteRoute
   '/agente-triad': typeof AgenteTriadRoute
+  '/aulas': typeof AulasRoute
   '/conversas': typeof ConversasRoute
   '/dashboard': typeof DashboardRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
@@ -199,6 +206,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/agente': typeof AgenteRoute
   '/agente-triad': typeof AgenteTriadRoute
+  '/aulas': typeof AulasRoute
   '/conversas': typeof ConversasRoute
   '/dashboard': typeof DashboardRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
@@ -228,6 +236,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/agente': typeof AgenteRoute
   '/agente-triad': typeof AgenteTriadRoute
+  '/aulas': typeof AulasRoute
   '/conversas': typeof ConversasRoute
   '/dashboard': typeof DashboardRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
@@ -258,6 +267,7 @@ export interface FileRouteTypes {
     | '/'
     | '/agente'
     | '/agente-triad'
+    | '/aulas'
     | '/conversas'
     | '/dashboard'
     | '/diagnostico-meta'
@@ -286,6 +296,7 @@ export interface FileRouteTypes {
     | '/'
     | '/agente'
     | '/agente-triad'
+    | '/aulas'
     | '/conversas'
     | '/dashboard'
     | '/diagnostico-meta'
@@ -314,6 +325,7 @@ export interface FileRouteTypes {
     | '/'
     | '/agente'
     | '/agente-triad'
+    | '/aulas'
     | '/conversas'
     | '/dashboard'
     | '/diagnostico-meta'
@@ -343,6 +355,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AgenteRoute: typeof AgenteRoute
   AgenteTriadRoute: typeof AgenteTriadRoute
+  AulasRoute: typeof AulasRoute
   ConversasRoute: typeof ConversasRoute
   DashboardRoute: typeof DashboardRoute
   DiagnosticoMetaRoute: typeof DiagnosticoMetaRoute
@@ -461,6 +474,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConversasRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/aulas': {
+      id: '/aulas'
+      path: '/aulas'
+      fullPath: '/aulas'
+      preLoaderRoute: typeof AulasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/agente-triad': {
       id: '/agente-triad'
       path: '/agente-triad'
@@ -559,6 +579,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AgenteRoute: AgenteRoute,
   AgenteTriadRoute: AgenteTriadRoute,
+  AulasRoute: AulasRoute,
   ConversasRoute: ConversasRoute,
   DashboardRoute: DashboardRoute,
   DiagnosticoMetaRoute: DiagnosticoMetaRoute,
