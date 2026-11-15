@@ -97,7 +97,12 @@ function sanitizeModernColors(clonedDoc: Document) {
   };
   const pseudoRules: string[] = [];
   let n = 0;
-  clonedDoc.querySelectorAll<HTMLElement>("*").forEach((el) => {
+  // Só o slide em captura (+ html/body, que a lib também lê): varrer o documento
+  // inteiro a cada slide era o que deixava a exportação lenta.
+  const root = clonedDoc.querySelector<HTMLElement>("[data-h2c-root]");
+  const targets: HTMLElement[] = [clonedDoc.documentElement, clonedDoc.body];
+  if (root) targets.push(root, ...Array.from(root.querySelectorAll<HTMLElement>("*")));
+  targets.forEach((el) => {
     const cs = view.getComputedStyle(el);
     for (let k = 0; k < cs.length; k++) {
       const prop = cs[k];
@@ -496,6 +501,7 @@ function ReportDeckPage() {
   const [deck, setDeck] = useState<ReportDeckRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
   const slideRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -653,6 +659,7 @@ function ReportDeckPage() {
   const exportPdf = async () => {
     if (!deck) return;
     setExporting(true);
+    let toastId: string | number | undefined;
     try {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
       const outW = PAGE_W * EXPORT_SCALE;
@@ -660,20 +667,42 @@ function ReportDeckPage() {
       const doc = new jsPDF({ orientation: "landscape", unit: "px", format: [outW, outH] });
       const ids = [...STANDARD_SLIDES.map((x) => x.id), ...deck.custom_pages.map((pg) => pg.id)].filter((sid) => !deck.hidden_slides.includes(sid));
       if (ids.length === 0) throw new Error("Todos os slides estão ocultos.");
+      toastId = toast.loading(`Gerando PDF... 0 de ${ids.length}`);
+      setExportProgress({ done: 0, total: ids.length });
+      // deixa a tela pintar o "Gerando..." antes de começar o trabalho pesado
+      await new Promise((r) => setTimeout(r, 30));
+      let first = true;
       for (let i = 0; i < ids.length; i++) {
         const el = slideRefs.current[ids[i]];
         if (!el) continue;
-        const canvas = await html2canvas(el, { scale: EXPORT_SCALE, backgroundColor: "#0a0a0c", onclone: (d) => sanitizeModernColors(d) });
+        el.setAttribute("data-h2c-root", "1");
+        let canvas: HTMLCanvasElement;
+        try {
+          canvas = await html2canvas(el, {
+            scale: EXPORT_SCALE,
+            backgroundColor: "#0a0a0c",
+            logging: false,
+            onclone: (d) => sanitizeModernColors(d),
+          });
+        } finally {
+          el.removeAttribute("data-h2c-root");
+        }
         const img = canvas.toDataURL("image/jpeg", 0.92);
-        if (i > 0) doc.addPage([outW, outH], "landscape");
+        if (!first) doc.addPage([outW, outH], "landscape");
+        first = false;
         doc.addImage(img, "JPEG", 0, 0, outW, outH);
+        setExportProgress({ done: i + 1, total: ids.length });
+        toast.loading(`Gerando PDF... ${i + 1} de ${ids.length}`, { id: toastId });
+        await new Promise((r) => setTimeout(r, 0));
       }
+      toast.dismiss(toastId);
       doc.save(`relatorio-visual-${client?.name ?? "cliente"}.pdf`);
       toast.success("PDF exportado.");
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "Erro ao exportar PDF.");
+      toast.error(e instanceof Error ? e.message : "Erro ao exportar PDF.", { id: toastId });
     } finally {
       setExporting(false);
+      setExportProgress(null);
     }
   };
 
@@ -724,7 +753,7 @@ function ReportDeckPage() {
             )}
             <Button onClick={exportPdf} disabled={exporting} className="gap-2">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              Exportar PDF
+              {exporting && exportProgress ? `Gerando ${exportProgress.done}/${exportProgress.total}...` : "Exportar PDF"}
             </Button>
           </div>
         </div>
