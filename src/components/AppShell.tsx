@@ -225,7 +225,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ── Mobile top header ────────────────────────────── */}
-      <header className="md:hidden fixed top-0 inset-x-0 z-40 h-14 bg-sidebar border-b border-sidebar-border flex items-center justify-between px-4">
+      <header className="hidden max-md:flex fixed top-0 inset-x-0 z-40 h-14 bg-sidebar border-b border-sidebar-border items-center justify-between px-4">
         <div className="flex items-center gap-2.5">
           <div className="h-7 w-7 rounded bg-primary flex items-center justify-center text-primary-foreground font-bold text-sm">G</div>
           <span className="font-semibold text-sm">Gestor de Tráfego</span>
@@ -327,7 +327,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </>
       )}
 
-      <main className={cn("pt-14 md:pt-0 transition-[padding] duration-200 motion-reduce:transition-none", effectiveCollapsed ? "md:pl-[68px]" : "md:pl-60")}>
+      <main className={cn("max-md:pt-14 transition-[padding] duration-200 motion-reduce:transition-none", effectiveCollapsed ? "md:pl-[68px]" : "md:pl-60")}>
         <WhatsappDisconnectedBanner />
         {children}
       </main>
