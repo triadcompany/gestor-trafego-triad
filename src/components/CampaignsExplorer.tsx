@@ -214,6 +214,42 @@ export function CampaignsExplorer({
   onMoveColumn,
 }: CampaignsExplorerProps) {
   const [search, setSearch] = useState("");
+  // Largura da coluna do nome: arrastável (borda direita do cabeçalho) e lembrada.
+  const [nameWidth, setNameWidth] = useState(220);
+  useEffect(() => {
+    try {
+      const saved = Number(localStorage.getItem("explorer-name-width"));
+      if (saved >= 120 && saved <= 900) setNameWidth(saved);
+    } catch {
+      /* sem armazenamento: usa o padrão */
+    }
+  }, []);
+  const startResize = (e: React.PointerEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const target = e.currentTarget;
+    target.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const startW = nameWidth;
+    let latest = startW;
+    const move = (ev: PointerEvent) => {
+      latest = Math.min(900, Math.max(120, startW + ev.clientX - startX));
+      setNameWidth(latest);
+    };
+    const up = () => {
+      target.removeEventListener("pointermove", move as EventListener);
+      target.removeEventListener("pointerup", up);
+      target.removeEventListener("pointercancel", up);
+      try {
+        localStorage.setItem("explorer-name-width", String(latest));
+      } catch {
+        /* ignora */
+      }
+    };
+    target.addEventListener("pointermove", move as EventListener);
+    target.addEventListener("pointerup", up);
+    target.addEventListener("pointercancel", up);
+  };
   const [selectedCampaignIds, setSelectedCampaignIds] = useState<Set<string>>(new Set());
   const [sortColumn, setSortColumn] = useState<"name" | ColumnKey | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
@@ -498,7 +534,7 @@ export function CampaignsExplorer({
       </div>
 
       <Card>
-        <div className="overflow-x-auto overflow-y-auto max-h-[480px]">
+        <div className="overflow-x-auto overflow-y-auto max-h-[480px]" style={{ ["--name-w" as string]: `${nameWidth}px` }}>
           <Table>
             <TableHeader className="sticky top-0 bg-card z-10">
               <TableRow>
@@ -513,11 +549,23 @@ export function CampaignsExplorer({
                   )}
                 </TableHead>
                 <TableHead
-                  className="cursor-pointer select-none hover:text-foreground"
+                  className="relative cursor-pointer select-none hover:text-foreground"
+                  style={{ width: "var(--name-w)", minWidth: "var(--name-w)", maxWidth: "var(--name-w)" }}
                   onClick={() => toggleSort("name")}
                 >
                   {level === "campaign" ? "Campanha" : level === "adset" ? "Conjunto" : "Anúncio"}
                   {sortColumn === "name" && (sortDirection === "asc" ? " ↑" : " ↓")}
+                  <span
+                    onPointerDown={startResize}
+                    onClick={(e) => e.stopPropagation()}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setNameWidth(220);
+                      try { localStorage.setItem("explorer-name-width", "220"); } catch { /* ignora */ }
+                    }}
+                    title="Arraste pra ampliar o nome (duplo clique volta ao padrão)"
+                    className="absolute right-0 top-0 h-full w-2 cursor-col-resize touch-none hover:bg-primary/40"
+                  />
                 </TableHead>
                 {orderedColumns.map((col) => (
                   <TableHead
@@ -995,7 +1043,11 @@ function ExplorerRow({
           <Checkbox checked={selected} onCheckedChange={() => onToggleSelected()} onClick={(e) => e.stopPropagation()} />
         )}
       </TableCell>
-      <TableCell className="font-medium max-w-[220px]" onClick={(e) => editingName && e.stopPropagation()}>
+      <TableCell
+        className="font-medium"
+        style={{ width: "var(--name-w, 220px)", minWidth: "var(--name-w, 220px)", maxWidth: "var(--name-w, 220px)" }}
+        onClick={(e) => editingName && e.stopPropagation()}
+      >
         {editingName ? (
           <div className="flex items-center gap-1">
             <Input
