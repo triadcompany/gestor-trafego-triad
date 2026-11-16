@@ -2,11 +2,13 @@
 // handler do tick e via import() dinâmico dentro de handlers). Concentra toda a
 // lógica que toca o banco fora de um createServerFn: escolha de token/instância
 // sem sessão, materialização de regra em mensagem agendada, e o tick.
-import { and, desc, eq, inArray, isNotNull, isNull } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { db } from "@/db/client";
 import {
+  appConfig,
   clients,
   messageAutomations,
+  reportLog,
   metaTokens,
   organizations,
   profiles,
@@ -20,6 +22,7 @@ import {
 import { buildMetricsReportText, fetchAdAccountInfo, fetchCampaigns, mapWithConcurrency } from "@/lib/meta";
 import { isoDateInBrasilia, daysAgoInBrasilia, dayOfMonthInBrasilia } from "@/lib/brasilia-date";
 import { buildClientReportDoc, slug as slugifyName } from "@/lib/client-report-pdf";
+import { AUTO_REPORT_KEY, parseAutoReportConfig } from "@/server/auto-reports";
 
 // ── Escolha de token / instância (sem sessão) ────────────────────────────────
 
@@ -777,6 +780,154 @@ export async function scanClientsForSaleSuggestions(): Promise<number> {
   return created;
 }
 
+// ── Relatório automático por cliente ─────────────────────────────────────────
+// No dia do relatório do cliente (clients.monthly_report_day), a partir das 9h
+// (Brasília), gera o PDF de campanhas dos últimos 30 dias e agenda o envio pro
+// grupo operacional ou pro grupo do cliente (escolha por cliente, ver
+// auto-reports.ts). Só roda uma vez por mês por cliente: se já existe relatório
+// mensal enviado no mês, pula; se falhar, tenta de novo nos próximos ticks do
+// mesmo dia, no máximo 3 vezes.
+
+const AUTO_REPORT_START_HOUR = 9;
+const AUTO_REPORT_MAX_ATTEMPTS = 3;
+
+async function readConfigValue(organizationId: string, key: string): Promise<string | null> {
+  const rows = await db
+    .select({ value: appConfig.value })
+    .from(appConfig)
+    .where(and(eq(appConfig.organizationId, organizationId), eq(appConfig.key, key)))
+    .limit(1);
+  return rows[0]?.value ?? null;
+}
+
+async function writeConfigValue(organizationId: string, key: string, value: string) {
+  await db
+    .insert(appConfig)
+    .values({ organizationId, key, value })
+    .onConflictDoUpdate({ target: [appConfig.organizationId, appConfig.key], set: { value } });
+}
+
+async function monthlyReportAlreadyDone(clientId: string, monthStart: string, monthEnd: string): Promise<boolean> {
+  const rows = await db
+    .select({ id: reportLog.id })
+    .from(reportLog)
+    .where(
+      and(
+        eq(reportLog.clientId, clientId),
+        eq(reportLog.periodType, "mensal"),
+        eq(reportLog.status, "enviado"),
+        or(
+          and(gte(reportLog.periodStart, monthStart), lte(reportLog.periodStart, monthEnd)),
+          sql`${reportLog.sentAt}::date between ${monthStart}::date and ${monthEnd}::date`
+        )
+      )
+    )
+    .limit(1);
+  return rows.length > 0;
+}
+
+export async function runAutoClientReports(): Promise<{ created: number; warnings: string[] }> {
+  const out = { created: 0, warnings: [] as string[] };
+  const sp = nowInSaoPaulo();
+  if (sp.hour < AUTO_REPORT_START_HOUR) return out;
+
+  const p2 = (n: number) => String(n).padStart(2, "0");
+  const monthStart = `${sp.year}-${p2(sp.month)}-01`;
+  const lastDay = new Date(sp.year, sp.month, 0).getDate();
+  const monthEnd = `${sp.year}-${p2(sp.month)}-${p2(lastDay)}`;
+  const today = `${sp.year}-${p2(sp.month)}-${p2(sp.day)}`;
+
+  const configs = await db.select().from(appConfig).where(eq(appConfig.key, AUTO_REPORT_KEY));
+  for (const row of configs) {
+    const config = parseAutoReportConfig(row.value);
+    for (const [clientId, cfg] of Object.entries(config)) {
+      if (!cfg.enabled) continue;
+      try {
+        const client = await db.query.clients.findFirst({
+          where: eq(clients.id, clientId),
+          columns: { id: true, name: true, organizationId: true, active: true, metaAdAccountId: true, whatsappGroupId: true, cplMax: true, monthlyReportDay: true },
+        });
+        if (!client || client.organizationId !== row.organizationId || !client.active || client.monthlyReportDay === null) continue;
+        // Dia 31 num mês de 30 dias vence no último dia do mês.
+        if (sp.day !== Math.min(client.monthlyReportDay, lastDay)) continue;
+        if (await monthlyReportAlreadyDone(client.id, monthStart, monthEnd)) continue;
+
+        // Controle de tentativas do dia: "YYYY-MM-DD:n".
+        const attemptKey = `auto_report_attempt:${client.id}`;
+        const prev = await readConfigValue(row.organizationId, attemptKey);
+        const [prevDate, prevN] = (prev ?? "").split(":");
+        const attempts = prevDate === today ? Number(prevN) || 0 : 0;
+        if (attempts >= AUTO_REPORT_MAX_ATTEMPTS) continue;
+        await writeConfigValue(row.organizationId, attemptKey, `${today}:${attempts + 1}`);
+
+        const tokenRow = await pickMetaTokenRow({ organizationId: row.organizationId, clientId: client.id });
+        if (!tokenRow) { out.warnings.push(`Relatório automático (${client.name}): nenhum token Meta ativo.`); continue; }
+        if (tokenRow.expiresAt && new Date(tokenRow.expiresAt) < new Date()) { out.warnings.push(`Relatório automático (${client.name}): token Meta expirado.`); continue; }
+
+        const instanceRow = await pickGestorWhatsappInstance({ organizationId: row.organizationId });
+        if (!instanceRow) { out.warnings.push(`Relatório automático (${client.name}): nenhuma instância de WhatsApp do gestor ativa.`); continue; }
+
+        let groupId: string | null = null;
+        if (cfg.destination === "client_group") {
+          groupId = client.whatsappGroupId;
+        } else {
+          const inst = await db.query.whatsappInstances.findFirst({
+            where: eq(whatsappInstances.id, instanceRow.instanceId),
+            columns: { operationalGroupId: true },
+          });
+          groupId = inst?.operationalGroupId ?? (await readConfigValue(row.organizationId, "whatsapp_group_operacional_id"));
+        }
+        if (!groupId) {
+          out.warnings.push(`Relatório automático (${client.name}): destino ${cfg.destination === "client_group" ? "grupo do cliente" : "grupo operacional"} não configurado.`);
+          continue;
+        }
+
+        const until = isoDateInBrasilia();
+        const since = daysAgoInBrasilia(30);
+        const campaigns = await fetchCampaigns(client.metaAdAccountId, tokenRow.accessToken, "today", { since, until });
+        const org = await db.query.organizations.findFirst({ where: eq(organizations.id, row.organizationId), columns: { name: true } });
+        const doc = buildClientReportDoc({
+          clientName: client.name,
+          organizationName: org?.name ?? "Gestão de Tráfego",
+          since,
+          until,
+          cplMax: client.cplMax,
+          campaigns,
+        });
+        const base64 = Buffer.from(doc.output("arraybuffer")).toString("base64");
+        const dest = cfg.destination === "client_group" ? "Grupo do cliente" : "Grupo operacional";
+
+        await db.transaction(async (tx) => {
+          const [msg] = await tx
+            .insert(scheduledMessages)
+            .values({
+              organizationId: row.organizationId,
+              whatsappInstanceId: instanceRow.instanceId,
+              body: `📊 Relatório mensal — ${client.name}`,
+              scheduledAt: new Date().toISOString(),
+              status: "pending",
+            })
+            .returning();
+          await tx.insert(scheduledMessageRecipients).values({ messageId: msg.id, remoteJid: groupId!, name: dest, status: "pending" as const });
+          await tx.insert(scheduledMessageMedia).values({
+            messageId: msg.id,
+            base64,
+            mimetype: "application/pdf",
+            filename: `relatorio-${slugifyName(client.name)}-${since}_a_${until}.pdf`,
+            sortOrder: 0,
+          });
+          // Marca como feito no controle mensal da tela de Tarefas.
+          await tx.insert(reportLog).values({ clientId: client.id, periodType: "mensal", periodStart: monthStart, status: "enviado", sentAt: new Date().toISOString() });
+        });
+        out.created++;
+      } catch (e) {
+        out.warnings.push(`Relatório automático (${clientId}): erro — ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+  }
+  return out;
+}
+
 // ── Tick ────────────────────────────────────────────────────────────────────
 
 export interface TickResult {
@@ -807,6 +958,14 @@ export async function runAutomationsTick(): Promise<TickResult> {
         result.warnings.push(`Regra "${rule.name}": erro inesperado — ${e instanceof Error ? e.message : String(e)}`);
       }
     }
+  }
+
+  try {
+    const auto = await runAutoClientReports();
+    result.messagesCreated += auto.created;
+    result.warnings.push(...auto.warnings);
+  } catch (e) {
+    result.warnings.push(`Relatórios automáticos: erro inesperado — ${e instanceof Error ? e.message : String(e)}`);
   }
 
   try {

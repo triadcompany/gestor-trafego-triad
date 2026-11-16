@@ -6,6 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { fetchAutoReportConfig, setAutoReportClient, type AutoReportConfig, type AutoReportDestination } from "@/server/auto-reports";
 import {
   Select,
   SelectContent,
@@ -429,6 +431,20 @@ function ReportDatesSection({ clients, reports }: { clients: ClientRow[]; report
   // lista quem já tem dia configurado, sem edição inline.
   const isTriad = isTriadCompanyOrg(currentUser?.actingOrganizationId ?? currentUser?.organizationId);
 
+  // Relatório automático (liga/desliga por cliente + destino). Só Triad por enquanto.
+  const { data: autoConfig = {} as AutoReportConfig } = useQuery({
+    queryKey: ["auto-report-config"],
+    queryFn: fetchAutoReportConfig,
+    enabled: isTriad,
+  });
+  const autoMutation = useMutation({
+    mutationFn: ({ clientId, enabled, destination }: { clientId: string; enabled: boolean; destination: AutoReportDestination }) =>
+      setAutoReportClient(clientId, enabled, destination),
+    onSuccess: (cfg) => qc.setQueryData(["auto-report-config"], cfg),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar o relatório automático."),
+  });
+
+
   const updateDayMutation = useMutation({
     mutationFn: ({ client, day }: { client: ClientRow; day: number | null }) =>
       upsertClient({
@@ -501,6 +517,32 @@ function ReportDatesSection({ clients, reports }: { clients: ClientRow[]; report
       </button>
     );
   };
+  const autoCell = (c: ClientRow) => {
+    if (c.monthly_report_day === null) return null;
+    const cfg = autoConfig[c.id];
+    const enabled = !!cfg?.enabled;
+    const destination: AutoReportDestination = cfg?.destination ?? "operacional";
+    return (
+      <div className="flex items-center gap-2" title="Gera o PDF e envia sozinho no dia do relatório">
+        <Switch
+          checked={enabled}
+          disabled={autoMutation.isPending}
+          onCheckedChange={(v) => autoMutation.mutate({ clientId: c.id, enabled: v, destination })}
+        />
+        <span className="text-xs text-muted-foreground">Automático</span>
+        {enabled && (
+          <Select value={destination} onValueChange={(v) => autoMutation.mutate({ clientId: c.id, enabled: true, destination: v as AutoReportDestination })}>
+            <SelectTrigger className="h-8 w-[150px] text-xs"><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="operacional">Grupo operacional</SelectItem>
+              <SelectItem value="client_group">Grupo do cliente</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+      </div>
+    );
+  };
+  const autoCount = tracked.filter((c) => autoConfig[c.id]?.enabled).length;
   const pct = tracked.length > 0 ? Math.round((doneCount / tracked.length) * 100) : 0;
 
   return (
@@ -517,6 +559,7 @@ function ReportDatesSection({ clients, reports }: { clients: ClientRow[]; report
                 <span className="font-semibold">{doneCount} de {tracked.length}</span> relatórios feitos em <span className="capitalize">{monthLabel}</span>
               </p>
               <p className="text-xs text-muted-foreground">
+                {isTriad && autoCount > 0 && <span className="text-emerald-400">{autoCount} automático{autoCount > 1 ? "s" : ""} · </span>}
                 {missingCount === 0 ? "Tudo feito neste mês" : `Faltam ${missingCount}`}
                 {overdueCount > 0 && <span className="text-red-400"> · {overdueCount} atrasado{overdueCount > 1 ? "s" : ""}</span>}
               </p>
@@ -562,7 +605,7 @@ function ReportDatesSection({ clients, reports }: { clients: ClientRow[]; report
         <div className="divide-y divide-border">
           {rows.map((c) =>
             isTriad ? (
-              <div key={c.id} className="flex items-center pr-4 hover:bg-muted/40 transition-colors">
+              <div key={c.id} className="flex flex-wrap items-center gap-y-2 pr-4 hover:bg-muted/40 transition-colors">
               <Popover>
                 <PopoverTrigger asChild>
                   <button type="button" className="flex items-center gap-3 px-4 py-2.5 flex-1 min-w-0 text-left">
@@ -587,7 +630,8 @@ function ReportDatesSection({ clients, reports }: { clients: ClientRow[]; report
                   />
                 </PopoverContent>
               </Popover>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2 pl-4 sm:pl-0">
+                {autoCell(c)}
                 {statusCell(c)}
                 <GenerateReportButton clientId={c.id} clientName={c.name} />
               </div>
