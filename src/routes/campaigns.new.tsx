@@ -70,6 +70,7 @@ import {
   type MetaInterest,
 } from "@/lib/meta";
 import { WhatsappNumberPicker } from "@/components/WhatsappNumberPicker";
+import { AdCreator, AdSetCreator, LevelPicker, type CreateLevel } from "@/components/CreateStructure";
 import { isN8nConfigured, triggerN8nCampaign, pollN8nJob, isN8nDuplicateConfigured, triggerN8nDuplicateCampaign } from "@/lib/n8n";
 
 import {
@@ -260,6 +261,9 @@ function NewCampaign() {
 
   // ── Navigation ──────────────────────────────────────────────
   const [step, setStep] = useState<1 | 2 | 3>(1);
+  // O que está sendo criado: campanha (fluxo completo em 3 passos) ou só um
+  // conjunto/anúncio dentro de algo que já existe.
+  const [level, setLevel] = useState<CreateLevel>("campanha");
 
   // ── Step 1: Campaign ────────────────────────────────────────
   const [clientId, setClientId] = useState(search.client ?? "");
@@ -1032,6 +1036,29 @@ function NewCampaign() {
       </Card>
   );
 
+  // Conjunto e anúncio avulsos: página própria, sem os passos do fluxo de campanha.
+  if (level !== "campanha") {
+    const Creator = level === "conjunto" ? AdSetCreator : AdCreator;
+    return (
+      <AppShell>
+        <div className="px-4 md:px-8 py-6 max-w-2xl mx-auto">
+          <Link to="/dashboard" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-6">
+            <ArrowLeft className="h-4 w-4" />
+            Voltar ao dashboard
+          </Link>
+          <h1 className="text-2xl font-semibold tracking-tight mb-1">{level === "conjunto" ? "Novo Conjunto" : "Novo Anúncio"}</h1>
+          <p className="text-sm text-muted-foreground mb-6">
+            {level === "conjunto"
+              ? "O conjunto fica dentro de uma campanha que já existe e nasce pausado."
+              : "O anúncio fica dentro de um conjunto que já existe e nasce pausado."}
+          </p>
+          <LevelPicker value={level} onChange={setLevel} />
+          <Creator clients={clients} clientId={clientId} onClientChange={setClientId} />
+        </div>
+      </AppShell>
+    );
+  }
+
   return (
     <AppShell>
       <div className="px-4 md:px-8 py-6 max-w-2xl mx-auto">
@@ -1047,6 +1074,8 @@ function NewCampaign() {
         <p className="text-sm text-muted-foreground mb-6">
           A campanha será criada <strong>pausada</strong> para revisão antes de ativar.
         </p>
+
+        <LevelPicker value={level} onChange={setLevel} />
 
         {/* Step indicator — scratch mode only */}
         {(mode === "scratch" || mode === "bulk") && <div className="flex items-center gap-2 mb-8 overflow-x-auto">

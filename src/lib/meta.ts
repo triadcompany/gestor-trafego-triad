@@ -3202,7 +3202,9 @@ export async function duplicateAdSet(
   campaignId: string,
   adAccountId: string,
   token: string,
-  whatsappNumber?: string
+  whatsappNumber?: string,
+  writer?: MetaWriter,
+  newName?: string
 ): Promise<string> {
   const srcRes = await spacedFetch(
     `${BASE_URL}/${adSetId}?fields=name,daily_budget,billing_event,optimization_goal,bid_strategy,bid_amount,bid_constraints,targeting,destination_type,promoted_object,instagram_actor_id&access_token=${encodeURIComponent(token)}`,
@@ -3244,7 +3246,7 @@ export async function duplicateAdSet(
   const effectiveDestinationType = adSet.destination_type ?? "";
 
   const adSetParams: Record<string, string> = {
-    name: `${adSet.name} - Cópia`,
+    name: newName?.trim() || `${adSet.name} - Cópia`,
     campaign_id: campaignId,
     billing_event: "IMPRESSIONS",
     optimization_goal: "CONVERSATIONS",
@@ -3277,6 +3279,14 @@ export async function duplicateAdSet(
     if (Object.keys(po).length > 0) adSetParams.promoted_object = JSON.stringify(po);
   }
 
+  if (writer) {
+    // Execução pelo n8n: o id do conjunto novo não volta pra cá.
+    const { access_token: _t, ...writeParams } = adSetParams;
+    void _t;
+    await writer([{ path: `${adAccountId}/adsets`, params: writeParams, label: "duplicar-conjunto" }]);
+    return "";
+  }
+
   let newAdSetRes: { id: string };
   try {
     newAdSetRes = (await postMeta(`${adAccountId}/adsets`, adSetParams, adAccountId)) as { id: string };
@@ -3293,7 +3303,14 @@ export async function duplicateAdSet(
  * creative_id do anúncio original, sem depender do endpoint /copies).
  * Retorna o id do novo anúncio.
  */
-export async function duplicateAd(adId: string, adSetId: string, adAccountId: string, token: string): Promise<string> {
+export async function duplicateAd(
+  adId: string,
+  adSetId: string,
+  adAccountId: string,
+  token: string,
+  writer?: MetaWriter,
+  newName?: string
+): Promise<string> {
   const adDetailRes = await spacedFetch(
     `${BASE_URL}/${adId}?fields=name,creative&access_token=${encodeURIComponent(token)}`,
     adAccountId
@@ -3308,17 +3325,17 @@ export async function duplicateAd(adId: string, adSetId: string, adAccountId: st
   const creativeId = adDetail.creative?.id;
   if (!creativeId) throw new Error(`Criativo não encontrado para o anúncio "${adDetail.name}"`);
 
-  const newAdRes = (await postMeta(
-    `${adAccountId}/ads`,
-    {
-      name: `${adDetail.name} - Cópia`,
-      adset_id: adSetId,
-      creative: JSON.stringify({ creative_id: creativeId }),
-      status: "PAUSED",
-      access_token: token,
-    },
-    adAccountId
-  )) as { id: string };
+  const adParams = {
+    name: newName?.trim() || `${adDetail.name} - Cópia`,
+    adset_id: adSetId,
+    creative: JSON.stringify({ creative_id: creativeId }),
+    status: "PAUSED",
+  };
+  if (writer) {
+    await writer([{ path: `${adAccountId}/ads`, params: adParams, label: "duplicar-anuncio" }]);
+    return "";
+  }
+  const newAdRes = (await postMeta(`${adAccountId}/ads`, { ...adParams, access_token: token }, adAccountId)) as { id: string };
 
   return newAdRes.id;
 }
@@ -3823,11 +3840,9 @@ function buildWelcomeMessage(greeting: string, autofillMessage: string): string 
   });
 }
 
-export async function createAdCreative(
-  adAccountId: string,
-  opts: AdCreativeOptions,
-  token: string
-): Promise<string> {
+// Parâmetros do POST /adcreatives (sem token) — usado tanto na chamada direta
+// quanto na lista de operações executada pelo n8n.
+export function buildAdCreativeParams(opts: AdCreativeOptions): Record<string, string> {
   const waLink = opts.whatsappMessage
     ? `https://wa.me/${opts.whatsappNumber}?text=${encodeURIComponent(opts.whatsappMessage)}`
     : `https://wa.me/${opts.whatsappNumber}`;
@@ -3868,15 +3883,22 @@ export async function createAdCreative(
           },
         };
 
+  return {
+    name: opts.name,
+    object_story_spec: JSON.stringify(
+      opts.instagramUserId ? { ...objectStorySpec, instagram_user_id: opts.instagramUserId } : objectStorySpec
+    ),
+  };
+}
+
+export async function createAdCreative(
+  adAccountId: string,
+  opts: AdCreativeOptions,
+  token: string
+): Promise<string> {
   const result = (await postMeta(
     `${adAccountId}/adcreatives`,
-    {
-      name: opts.name,
-      object_story_spec: JSON.stringify(
-        opts.instagramUserId ? { ...objectStorySpec, instagram_user_id: opts.instagramUserId } : objectStorySpec
-      ),
-      access_token: token,
-    },
+    { ...buildAdCreativeParams(opts), access_token: token },
     adAccountId
   )) as { id: string };
 
@@ -3902,4 +3924,71 @@ export async function createAd(
     adAccountId
   )) as { id: string };
   return result.id;
+}
+
+
+// ── Criar conjunto / anúncio dentro de algo que já existe ─────────────────────
+
+/**
+ * Novo conjunto numa campanha existente. Nasce pausado, com público amplo (Brasil,
+ * 18–65, posicionamentos Advantage+) — o ajuste fino (cidades, idade, posições)
+ * é feito depois no editor da campanha. Com `writer`, a gravação sai pelo n8n.
+ */
+export async function createAdSetInCampaign(
+  opts: {
+    adAccountId: string;
+    campaignId: string;
+    name: string;
+    pageId: string;
+    whatsappNumber: string;
+    dailyBudget?: number; // só quando a campanha não tem orçamento próprio
+    token: string;
+  },
+  writer?: MetaWriter
+): Promise<void> {
+  const phone = opts.whatsappNumber.replace(/\D/g, "");
+  if (!phone) throw new Error("Escolha o número de WhatsApp que recebe as conversas.");
+  if (!opts.pageId) throw new Error("O cliente não tem Página do Facebook cadastrada.");
+  const params: Record<string, string> = {
+    name: opts.name,
+    campaign_id: opts.campaignId,
+    billing_event: "IMPRESSIONS",
+    optimization_goal: "CONVERSATIONS",
+    destination_type: "WHATSAPP",
+    promoted_object: JSON.stringify({ page_id: opts.pageId, whatsapp_phone_number: phone }),
+    targeting: JSON.stringify({ geo_locations: { countries: ["BR"] }, targeting_automation: { advantage_audience: 0 } }),
+    status: "PAUSED",
+  };
+  if (opts.dailyBudget && opts.dailyBudget > 0) params.daily_budget = String(Math.round(opts.dailyBudget * 100));
+  if (writer) {
+    await writer([{ path: `${opts.adAccountId}/adsets`, params, label: "criar-conjunto" }]);
+    return;
+  }
+  await postMeta(`${opts.adAccountId}/adsets`, { ...params, access_token: opts.token }, opts.adAccountId);
+}
+
+/** Novo anúncio (criativo + anúncio, pausado) num conjunto existente. */
+export async function createAdInAdSet(
+  adAccountId: string,
+  opts: { name: string; adSetId: string },
+  creative: AdCreativeOptions,
+  token: string,
+  writer?: MetaWriter
+): Promise<void> {
+  const creativeParams = buildAdCreativeParams(creative);
+  const adParams = (creativeId: string) => ({
+    name: opts.name,
+    adset_id: opts.adSetId,
+    creative: JSON.stringify({ creative_id: creativeId }),
+    status: "PAUSED",
+  });
+  if (writer) {
+    await writer([
+      { path: `${adAccountId}/adcreatives`, params: creativeParams, label: "criar-criativo" },
+      { path: `${adAccountId}/ads`, params: adParams("{{op:0.id}}"), label: "criar-anuncio" },
+    ]);
+    return;
+  }
+  const created = (await postMeta(`${adAccountId}/adcreatives`, { ...creativeParams, access_token: token }, adAccountId)) as { id: string };
+  await postMeta(`${adAccountId}/ads`, { ...adParams(created.id), access_token: token }, adAccountId);
 }
