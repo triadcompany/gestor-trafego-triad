@@ -536,7 +536,7 @@ function ClientDetail() {
 
   return (
     <AppShell>
-      <div className="px-4 md:px-8 py-6 max-w-7xl mx-auto">
+      <div className="px-4 md:px-8 py-6 max-w-7xl mx-auto overflow-x-clip">
         <Link
           to="/dashboard"
           className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground mb-4"
@@ -965,9 +965,9 @@ function ClientDetail() {
         </Card>
 
         {/* Campanhas */}
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
           <h2 className="text-lg font-semibold">Campanhas</h2>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <UITooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -1606,7 +1606,7 @@ function CampaignsTotals({
 
   return (
     <Card className="p-3 mb-3 overflow-x-auto">
-      <div className="flex items-center gap-1 min-w-max">
+      <div className="flex flex-wrap items-center gap-x-1 gap-y-3 md:flex-nowrap md:min-w-max">
         <span className="text-xs text-muted-foreground mr-3 shrink-0">
           {campaigns.length} campanhas
         </span>
