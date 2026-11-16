@@ -16,6 +16,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { fetchAllClients } from "@/lib/queries";
+import { fetchAllClientBrands } from "@/server/client-brand";
 import { getMetaToken } from "@/lib/meta";
 import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
@@ -119,11 +120,30 @@ function AgenteTriadPage() {
     enabled: clientIds.length > 0,
     staleTime: 5 * 60_000,
   });
+  // Logos e cores das marcas dos clientes: levadas pro painel do Mac, onde o agente as usa nas artes.
+  const { data: brands } = useQuery({ queryKey: ["client-brands-all"], queryFn: fetchAllClientBrands, staleTime: 60_000 });
+  const pushedBrands = useRef<Record<string, string>>({});
+  useEffect(() => {
+    if (!online || !brands) return;
+    for (const [clientId, b] of Object.entries(brands)) {
+      const sig = `${b.logo?.length ?? 0}:${b.colors.join(",")}`;
+      if (!b.logo || pushedBrands.current[clientId] === sig) continue;
+      pushedBrands.current[clientId] = sig;
+      fetch(`${PAINEL}/api/brand`, {
+        method: "POST",
+        body: JSON.stringify({ id: clientId, colors: b.colors, logo: b.logo }),
+      }).catch(() => {
+        delete pushedBrands.current[clientId];
+      });
+    }
+  }, [online, brands]);
+
   const clientCtx = useMemo(
     () =>
       clients
         .filter((c) => c.active)
         .map((c) => ({
+          id: c.id,
           name: c.name,
           account: c.meta_ad_account_id,
           page: c.meta_page_id,

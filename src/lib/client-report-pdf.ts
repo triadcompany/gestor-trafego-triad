@@ -8,6 +8,7 @@ export interface ClientReportInput {
   until: string; // YYYY-MM-DD
   cplMax: number | null;
   campaigns: MetaCampaign[];
+  logoDataUri?: string | null; // logo do cliente (PNG/JPG), no topo da primeira página
 }
 
 // ── Paleta ───────────────────────────────────────────────────────────────────
@@ -262,6 +263,19 @@ export function buildClientReportDoc(input: ClientReportInput): jsPDF {
   };
 
   headerBar();
+
+  // Logo do cliente no canto superior direito da primeira página.
+  if (input.logoDataUri) {
+    try {
+      const props = doc.getImageProperties(input.logoDataUri);
+      const h = 26;
+      const w = Math.min(120, (props.width * h) / props.height);
+      const hh = (props.height * w) / props.width;
+      doc.addImage(input.logoDataUri, props.fileType, contentRight - w, 12, w, hh);
+    } catch {
+      /* logo inválida: segue sem */
+    }
+  }
 
   // ── Eyebrow + título ─────────────────────────────────────────────────────
   drawTracked(doc, `RELATÓRIO DE DESEMPENHO — ${periodLabel(since, until, "eyebrow")}`, marginX, y, {

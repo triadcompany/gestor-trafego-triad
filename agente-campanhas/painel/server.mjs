@@ -44,6 +44,7 @@ const SYSTEM = `${agentMd}
 - Tudo é criado como rascunho. NUNCA ative sem o usuário pedir; a ativação abre um cartão de aprovação no painel.
 - Para vídeo enviado pelo painel (pasta ${path.join(__dirname, 'uploads')}), publique por link temporário (cloudflared quick tunnel + python3 -m http.server) e apague o link depois do upload.
 - Quando a mensagem trouxer "CLIENTES DO GESTOR", essa é a fonte de verdade de quem é cliente e qual a conta de anúncio (act_), página e WhatsApp dele. Resolva o nome citado pelo usuário nessa lista (aceite grafia aproximada, ex.: "devetim" = DV Team). Se houver dúvida entre dois clientes, pergunte antes de criar ou alterar qualquer coisa. Se a conta do cliente não aparecer no conector (ads_get_ad_accounts), avise que o conector não enxerga essa conta e não tente outra.
+- PADRÃO DAS ARTES (siga sempre): arte quadrada de anúncio de loja de carros, com hierarquia assim, de cima pra baixo: (a) marca do carro pequena e o MODELO enorme em letras grossas, com o ano em destaque na cor de acento; (b) 2 a 3 especificações curtas com ícones de linha (câmbio, km, combustível/4x4, etc.) em coluna à esquerda; (c) o carro grande, centralizado, em ângulo 3/4, com reflexo suave no piso e iluminação de estúdio; (d) o preço bem grande, com a palavra VALOR acima; (e) uma faixa de 3 benefícios com ícones embaixo (ex.: "Financiamento em até 60x", "Parcelamento no cartão", "Aceitamos troca"); (f) a logo da loja no canto superior direito, e se a placa do carro aparecer, troque pela logo da loja (placa-logo). Há dois estilos: ESCURO (fundo preto/grafite, brilhos e linhas na cor da marca, marca-d'água grande da logo ao fundo, textos brancos, preço na cor de acento) e CLARO (fundo branco de estúdio, textos pretos, etiquetas cinza inclinadas, faixa preta com chamada tipo "FINANCIAMENTO EM TODOS OS BANCOS" e um botão "Clique no botão abaixo"). Use o escuro por padrão, e o claro se o usuário pedir ou se a logo for escura. AS CORES de acento, brilhos e faixas vêm das "cores da marca" do cliente (lista CLIENTES DO GESTOR); mande sempre a logo do cliente (caminho em "logo:") junto das fotos do carro em "fotos", e cite no prompt, em hexadecimal, as cores da marca e que a logo deve ser reproduzida fiel, sem redesenhar. Se o cliente estiver sem logo cadastrada, avise e pergunte se segue sem logo. Dados que o usuário não informou (preço, km, ano) NÃO invente: deixe de fora ou pergunte.
 - ARTES: quando o usuário pedir uma arte/criativo/imagem pro anúncio com fotos do carro, use a ferramenta gerar_arte (OpenAI). Antes, abra cada foto com Read pra ver o carro. Passe em "fotos" os caminhos em uploads. Escreva o "prompt" em inglês, detalhado: (1) o carro das fotos de referência deve aparecer IDÊNTICO (mesma cor, modelo, rodas, placa, riscos e detalhes), sem inventar, trocar ou deformar nada; (2) o cenário/estilo pedido; (3) textos curtos em português do Brasil, entre aspas, exatamente como o usuário pediu (nome do carro, preço, faixa de destaque), sem criar texto extra, logos ou placas; (4) deixe o conteúdo principal no centro com margem de segurança, porque a Meta corta as bordas no feed. Depois de gerar, descreva em uma frase o resultado e pergunte se quer ajuste. Para ajustar, chame de novo com o prompt corrigido e a arte anterior (caminho em artes/) como foto de referência extra. Nunca diga que a arte está perfeita: avise se notar defeito no carro ou no texto.
 - Modelo de copy:\n${copyMd}`;
 
@@ -103,6 +104,13 @@ function n8nServer(tokens) {
 // ── Artes (geração de imagem com fotos do carro como referência) ─────────────
 const ARTES = path.join(__dirname, 'artes');
 fs.mkdirSync(ARTES, { recursive: true });
+// Logos e cores das marcas dos clientes (o app do gestor manda pra cá: ver /api/brand).
+const BRANDS = path.join(__dirname, 'brands');
+fs.mkdirSync(BRANDS, { recursive: true });
+function brandOf(id) {
+  if (!/^[\w-]{8,64}$/.test(String(id || ''))) return null;
+  try { return JSON.parse(fs.readFileSync(path.join(BRANDS, id + '.json'), 'utf8')); } catch { return null; }
+}
 const ARTE_MODEL = process.env.ARTE_MODEL || 'gpt-image-1';
 const SIZES = { retrato: '1024x1536', quadrado: '1024x1024', paisagem: '1536x1024' };
 const IMG_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
@@ -122,7 +130,7 @@ function artesServer(res) {
         'gerar_arte',
         'Gera uma arte de anúncio com IA a partir das fotos do carro (referência) e de um prompt em inglês. Salva em artes/ e mostra no painel. Cada chamada custa dinheiro na OpenAI: peça só o necessário (1 variação, no máximo 3).',
         {
-          fotos: z.array(z.string()).min(1).max(8).describe('Caminhos das fotos de referência (dentro de uploads/ ou artes/)'),
+          fotos: z.array(z.string()).min(1).max(8).describe('Caminhos das fotos de referência (dentro de uploads/, artes/ ou brands/ — a logo do cliente)'),
           prompt: z.string().min(20).describe('Instrução da arte, em inglês, detalhada'),
           tamanho: z.enum(['retrato', 'quadrado', 'paisagem']).default('retrato').describe('retrato 1024x1536 (feed/story), quadrado 1024x1024, paisagem 1536x1024'),
           qualidade: z.enum(['low', 'medium', 'high']).default('medium'),
@@ -140,7 +148,7 @@ function artesServer(res) {
             form.append('n', String(quantidade));
             for (const f of fotos) {
               const abs = path.resolve(f);
-              if (!abs.startsWith(UPLOADS + path.sep) && !abs.startsWith(ARTES + path.sep)) throw new Error('foto fora das pastas permitidas: ' + f);
+              if (!abs.startsWith(UPLOADS + path.sep) && !abs.startsWith(ARTES + path.sep) && !abs.startsWith(BRANDS + path.sep)) throw new Error('foto fora das pastas permitidas: ' + f);
               const mime = IMG_MIME[path.extname(abs).toLowerCase()];
               if (!mime) throw new Error('formato não suportado (use png, jpg ou webp): ' + path.basename(abs));
               form.append('image[]', new Blob([fs.readFileSync(abs)], { type: mime }), path.basename(abs));
@@ -325,7 +333,7 @@ http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/chat') {
       const { text, clients, conversationId, tokens } = JSON.parse((await readBody(req)).toString());
       const ctx = Array.isArray(clients) && clients.length
-        ? `CLIENTES DO GESTOR (nome | conta de anúncio | página | WhatsApp | orçamento mensal | meta de CCI em R$ mín-máx):\n` + clients.map((c) => `- ${c.name} | ${c.account} | ${c.page || '?'} | ${c.whatsapp || '?'} | ${c.budget ?? '?'} | ${c.cci || '?'}`).join('\n') + '\n\n'
+        ? `CLIENTES DO GESTOR (nome | conta de anúncio | página | WhatsApp | orçamento mensal | meta de CCI em R$ mín-máx | arquivo da logo | cores da marca):\n` + clients.map((c) => { const b = brandOf(c.id); return `- ${c.name} | ${c.account} | ${c.page || '?'} | ${c.whatsapp || '?'} | ${c.budget ?? '?'} | ${c.cci || '?'} | logo: ${b?.file ? path.join(BRANDS, b.file) : 'sem logo cadastrada'} | cores da marca: ${b?.colors?.length ? b.colors.join(' ') : '?'}`; }).join('\n') + '\n\n'
         : '';
       return runChat(ctx + text, res, origin, conversationId, tokens && typeof tokens === 'object' ? tokens : {});
     }
@@ -352,6 +360,15 @@ http.createServer(async (req, res) => {
       res.setHeader('Content-Type', 'image/png');
       res.setHeader('Content-Disposition', `inline; filename="${am[1]}"`);
       return res.end(fs.readFileSync(f));
+    }
+    if (req.method === 'POST' && url.pathname === '/api/brand') {
+      const { id, colors, logo } = JSON.parse((await readBody(req)).toString());
+      const m = /^data:image\/(png|jpeg|webp);base64,(.+)$/.exec(String(logo || ''));
+      if (!okId(id) || !m) { res.statusCode = 400; return res.end('bad'); }
+      const file = id + (m[1] === 'jpeg' ? '.jpg' : '.' + m[1]);
+      fs.writeFileSync(path.join(BRANDS, file), Buffer.from(m[2], 'base64'));
+      fs.writeFileSync(path.join(BRANDS, id + '.json'), JSON.stringify({ file, colors: Array.isArray(colors) ? colors.filter((c) => /^#[0-9a-f]{6}$/i.test(c)).slice(0, 5) : [] }));
+      return res.end('ok');
     }
     if (req.method === 'POST' && url.pathname === '/api/upload') {
       const name = path.basename(url.searchParams.get('name') || 'video.mp4').replace(/[^\w.\-]/g, '_');

@@ -16,6 +16,7 @@ import { FileText, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { getMetaToken, fetchCampaigns } from "@/lib/meta";
 import { generateClientReportPdf } from "@/lib/client-report-pdf";
+import { fetchClientBrand } from "@/server/client-brand";
 import { getCurrentUser } from "@/server/session";
 import { cn } from "@/lib/utils";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
@@ -77,7 +78,9 @@ export function ClientReportDialog({
       const token = await getMetaToken(client.id);
       if (!token) throw new Error("Este cliente não tem token da Meta configurado.");
       const campaigns = await fetchCampaigns(client.meta_ad_account_id, token, "today", range);
+      const brand = await fetchClientBrand(client.id).catch(() => null);
       generateClientReportPdf({
+        logoDataUri: brand?.logo ?? null,
         clientName: client.name,
         organizationName: currentUser?.organizationName ?? "Gestão de Tráfego",
         since: range.since,

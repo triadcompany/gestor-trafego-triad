@@ -36,3 +36,7 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# painel do Agente Triad (dados locais)
+agente-campanhas/painel/brands/
+agente-campanhas/painel/artes/

@@ -509,6 +509,7 @@ export async function materializeAutomation(ruleId: string, slot: "primary" | "s
             const campaigns = await fetchCampaigns(client.metaAdAccountId, tokenRow.accessToken, "today", { since, until });
             const org = await db.query.organizations.findFirst({ where: eq(organizations.id, rule.organizationId), columns: { name: true } });
             const doc = buildClientReportDoc({
+              logoDataUri: await readClientLogo(rule.organizationId, client.id),
               clientName: client.name,
               organizationName: org?.name ?? "Gestão de Tráfego",
               since,
@@ -808,6 +809,17 @@ async function writeConfigValue(organizationId: string, key: string, value: stri
     .onConflictDoUpdate({ target: [appConfig.organizationId, appConfig.key], set: { value } });
 }
 
+async function readClientLogo(organizationId: string, clientId: string): Promise<string | null> {
+  const raw = await readConfigValue(organizationId, `client_brand:${clientId}`);
+  if (!raw) return null;
+  try {
+    const j = JSON.parse(raw) as { logo?: string | null };
+    return typeof j.logo === "string" ? j.logo : null;
+  } catch {
+    return null;
+  }
+}
+
 async function monthlyReportAlreadyDone(clientId: string, monthStart: string, monthEnd: string): Promise<boolean> {
   const rows = await db
     .select({ id: reportLog.id })
@@ -890,6 +902,7 @@ export async function runAutoClientReports(): Promise<{ created: number; warning
         const campaigns = await fetchCampaigns(client.metaAdAccountId, tokenRow.accessToken, "today", { since, until });
         const org = await db.query.organizations.findFirst({ where: eq(organizations.id, row.organizationId), columns: { name: true } });
         const doc = buildClientReportDoc({
+          logoDataUri: await readClientLogo(row.organizationId, client.id),
           clientName: client.name,
           organizationName: org?.name ?? "Gestão de Tráfego",
           since,

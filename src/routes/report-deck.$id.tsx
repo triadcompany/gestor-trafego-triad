@@ -17,6 +17,7 @@ import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { fetchClientDetail } from "@/lib/queries";
 import { getMetaToken, fetchCampaigns } from "@/lib/meta";
+import { fetchClientBrand } from "@/server/client-brand";
 import { fetchReportDeck, upsertReportDeck, sendReportPdfToOperationalGroup, type ReportDeckRow, type ReportDeckFunilItem, type ReportDeckCreative, type ReportDeckCustomPage, type ReportDeckTextBox } from "@/server/report-decks";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
@@ -507,6 +508,8 @@ function ReportDeckPage() {
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const { data: client } = useQuery({ queryKey: ["client", id], queryFn: () => fetchClientDetail(id) });
+  // Logo cadastrada no cliente: aparece na capa quando o relatório ainda não tem logo própria.
+  const { data: brand } = useQuery({ queryKey: ["client-brand", id], queryFn: () => fetchClientBrand(id), staleTime: 60_000 });
   const range = useMemo(
     () => (preset === "custom" ? { since: customSince, until: customUntil } : rangeForPreset(preset)),
     [preset, customSince, customUntil]
@@ -797,6 +800,8 @@ function ReportDeckPage() {
                       alt=""
                       className="h-56 object-contain"
                     />
+                  ) : brand?.logo ? (
+                    <img src={brand.logo} alt="" className="h-56 max-w-[320px] object-contain" />
                   ) : (
                     <span className="flex items-center gap-1.5 text-xs text-white/40 border border-dashed border-white/20 rounded px-2.5 py-1.5">
                       <ImagePlus className="h-3.5 w-3.5" /> logo do cliente

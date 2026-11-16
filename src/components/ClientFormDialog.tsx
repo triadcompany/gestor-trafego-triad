@@ -30,6 +30,8 @@ import {
   disconnectClientMetaWhatsappOfficial,
 } from "@/server/meta-whatsapp-official";
 import { toast } from "sonner";
+import { fetchClientBrand, saveClientBrand } from "@/server/client-brand";
+import { shrinkLogo, extractLogoColors } from "@/lib/logo-colors";
 import { CheckCircle2 } from "lucide-react";
 
 const segmentDefaults = {
@@ -94,6 +96,81 @@ export function DayOfMonthPicker({
         >
           Remover dia configurado
         </button>
+      )}
+    </div>
+  );
+}
+
+function ClientBrandField({ clientId }: { clientId: string }) {
+  const queryClient = useQueryClient();
+  const { data: brand, isLoading } = useQuery({ queryKey: ["client-brand", clientId], queryFn: () => fetchClientBrand(clientId), staleTime: 0 });
+  const [busy, setBusy] = useState(false);
+  const [colors, setColors] = useState<string[] | null>(null);
+  const shownColors = colors ?? brand?.colors ?? [];
+
+  const persist = async (logo: string | null, nextColors: string[]) => {
+    setBusy(true);
+    try {
+      await saveClientBrand(clientId, logo, nextColors);
+      await queryClient.invalidateQueries({ queryKey: ["client-brand", clientId] });
+      await queryClient.invalidateQueries({ queryKey: ["client-brands-all"] });
+      setColors(null);
+      toast.success("Identidade visual salva.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao salvar a logo.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onFile = async (file: File) => {
+    try {
+      const logo = await shrinkLogo(file);
+      const extracted = await extractLogoColors(logo);
+      await persist(logo, extracted);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Erro ao ler a logo.");
+    }
+  };
+
+  if (isLoading) return <p className="text-xs text-muted-foreground">Carregando...</p>;
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-3">
+        <div className="flex h-20 w-32 shrink-0 items-center justify-center rounded-lg border border-border bg-neutral-800 p-2">
+          {brand?.logo ? <img src={brand.logo} alt="Logo" className="max-h-full max-w-full object-contain" /> : <span className="text-xs text-muted-foreground">sem logo</span>}
+        </div>
+        <div className="space-y-2">
+          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted/40">
+            {busy ? "Salvando..." : brand?.logo ? "Trocar logo" : "Adicionar logo"}
+            <input type="file" accept="image/png,image/jpeg,image/webp" className="hidden" disabled={busy} onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])} />
+          </label>
+          {brand?.logo && (
+            <button type="button" className="block text-xs text-red-400 underline" disabled={busy} onClick={() => persist(null, [])}>
+              Remover logo
+            </button>
+          )}
+          <p className="text-xs text-muted-foreground">Usada nas artes do Agente Triad e nos relatórios. De preferência PNG com fundo transparente.</p>
+        </div>
+      </div>
+      {brand?.logo && (
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">Cores da marca (tiradas da logo — clique pra ajustar)</Label>
+          <div className="flex items-center gap-2">
+            {shownColors.map((c, i) => (
+              <input
+                key={i}
+                type="color"
+                value={c}
+                disabled={busy}
+                onChange={(e) => setColors(shownColors.map((x, j) => (j === i ? e.target.value : x)))}
+                onBlur={() => colors && persist(brand.logo, colors)}
+                className="h-8 w-8 cursor-pointer rounded border border-border bg-transparent p-0"
+              />
+            ))}
+            {shownColors.length === 0 && <span className="text-xs text-muted-foreground">Nenhuma cor detectada.</span>}
+          </div>
+        </div>
       )}
     </div>
   );
@@ -247,6 +324,14 @@ export function ClientFormDialog({
                 />
               </div>
             </div>
+          </FormSection>
+
+          <FormSection title="Identidade visual" icon={Target}>
+            {client ? (
+              <ClientBrandField clientId={client.id} />
+            ) : (
+              <p className="text-xs text-muted-foreground">Salve o cliente primeiro; depois edite e adicione a logo e as cores da marca.</p>
+            )}
           </FormSection>
 
           <FormSection title="Segmento e meta de CCI" icon={Target}>
