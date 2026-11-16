@@ -23,6 +23,7 @@ import { buildMetricsReportText, fetchAdAccountInfo, fetchCampaigns, mapWithConc
 import { isoDateInBrasilia, daysAgoInBrasilia, dayOfMonthInBrasilia } from "@/lib/brasilia-date";
 import { buildClientReportDoc, slug as slugifyName } from "@/lib/client-report-pdf";
 import { AUTO_REPORT_KEY, parseAutoReportConfig } from "@/server/auto-reports";
+import { isTriadCompanyOrg } from "@/lib/feature-flags";
 
 // ── Escolha de token / instância (sem sessão) ────────────────────────────────
 
@@ -839,6 +840,8 @@ export async function runAutoClientReports(): Promise<{ created: number; warning
 
   const configs = await db.select().from(appConfig).where(eq(appConfig.key, AUTO_REPORT_KEY));
   for (const row of configs) {
+    // Relatório automático é só da Triad Company: qualquer outra organização é ignorada aqui também.
+    if (!isTriadCompanyOrg(row.organizationId)) continue;
     const config = parseAutoReportConfig(row.value);
     for (const [clientId, cfg] of Object.entries(config)) {
       if (!cfg.enabled) continue;
