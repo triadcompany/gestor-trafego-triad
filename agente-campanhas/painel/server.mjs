@@ -44,6 +44,7 @@ const SYSTEM = `${agentMd}
 - Tudo é criado como rascunho. NUNCA ative sem o usuário pedir; a ativação abre um cartão de aprovação no painel.
 - Para vídeo enviado pelo painel (pasta ${path.join(__dirname, 'uploads')}), publique por link temporário (cloudflared quick tunnel + python3 -m http.server) e apague o link depois do upload.
 - Quando a mensagem trouxer "CLIENTES DO GESTOR", essa é a fonte de verdade de quem é cliente e qual a conta de anúncio (act_), página e WhatsApp dele. Resolva o nome citado pelo usuário nessa lista (aceite grafia aproximada, ex.: "devetim" = DV Team). Se houver dúvida entre dois clientes, pergunte antes de criar ou alterar qualquer coisa. Se a conta do cliente não aparecer no conector (ads_get_ad_accounts), avise que o conector não enxerga essa conta e não tente outra.
+- ARTES: quando o usuário pedir uma arte/criativo/imagem pro anúncio com fotos do carro, use a ferramenta gerar_arte (OpenAI). Antes, abra cada foto com Read pra ver o carro. Passe em "fotos" os caminhos em uploads. Escreva o "prompt" em inglês, detalhado: (1) o carro das fotos de referência deve aparecer IDÊNTICO (mesma cor, modelo, rodas, placa, riscos e detalhes), sem inventar, trocar ou deformar nada; (2) o cenário/estilo pedido; (3) textos curtos em português do Brasil, entre aspas, exatamente como o usuário pediu (nome do carro, preço, faixa de destaque), sem criar texto extra, logos ou placas; (4) deixe o conteúdo principal no centro com margem de segurança, porque a Meta corta as bordas no feed. Depois de gerar, descreva em uma frase o resultado e pergunte se quer ajuste. Para ajustar, chame de novo com o prompt corrigido e a arte anterior (caminho em artes/) como foto de referência extra. Nunca diga que a arte está perfeita: avise se notar defeito no carro ou no texto.
 - Modelo de copy:\n${copyMd}`;
 
 // Toda gravação na Meta passa pelo n8n (workflow "Agente: Escrever na Meta"); o conector Meta Ads só lê.
@@ -92,6 +93,73 @@ function n8nServer(tokens) {
             return { isError: !j.ok, content: [{ type: 'text', text: JSON.stringify(j) }] };
           } catch (e) {
             return { isError: true, content: [{ type: 'text', text: 'Falha ao falar com o n8n: ' + String(e.message || e) }] };
+          }
+        },
+      ),
+    ],
+  });
+}
+
+// ── Artes (geração de imagem com fotos do carro como referência) ─────────────
+const ARTES = path.join(__dirname, 'artes');
+fs.mkdirSync(ARTES, { recursive: true });
+const ARTE_MODEL = process.env.ARTE_MODEL || 'gpt-image-1';
+const SIZES = { retrato: '1024x1536', quadrado: '1024x1024', paisagem: '1536x1024' };
+const IMG_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
+
+// Chave da OpenAI: variável OPENAI_API_KEY ou ~/.claude/credentials/openai.json ({"api_key":"..."})
+function openaiKey() {
+  if (process.env.OPENAI_API_KEY) return process.env.OPENAI_API_KEY;
+  try { return JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude/credentials/openai.json'), 'utf8')).api_key || null; } catch { return null; }
+}
+
+function artesServer(res) {
+  return createSdkMcpServer({
+    name: 'gestor-artes',
+    version: '1.0.0',
+    tools: [
+      tool(
+        'gerar_arte',
+        'Gera uma arte de anúncio com IA a partir das fotos do carro (referência) e de um prompt em inglês. Salva em artes/ e mostra no painel. Cada chamada custa dinheiro na OpenAI: peça só o necessário (1 variação, no máximo 3).',
+        {
+          fotos: z.array(z.string()).min(1).max(8).describe('Caminhos das fotos de referência (dentro de uploads/ ou artes/)'),
+          prompt: z.string().min(20).describe('Instrução da arte, em inglês, detalhada'),
+          tamanho: z.enum(['retrato', 'quadrado', 'paisagem']).default('retrato').describe('retrato 1024x1536 (feed/story), quadrado 1024x1024, paisagem 1536x1024'),
+          qualidade: z.enum(['low', 'medium', 'high']).default('medium'),
+          quantidade: z.number().int().min(1).max(3).default(1),
+        },
+        async ({ fotos, prompt, tamanho, qualidade, quantidade }) => {
+          const key = openaiKey();
+          if (!key) return { isError: true, content: [{ type: 'text', text: 'Chave da OpenAI não configurada no painel. Peça ao usuário para criar ~/.claude/credentials/openai.json com {"api_key":"..."} e reiniciar o painel.' }] };
+          try {
+            const form = new FormData();
+            form.append('model', ARTE_MODEL);
+            form.append('prompt', prompt);
+            form.append('size', SIZES[tamanho] || SIZES.retrato);
+            form.append('quality', qualidade);
+            form.append('n', String(quantidade));
+            for (const f of fotos) {
+              const abs = path.resolve(f);
+              if (!abs.startsWith(UPLOADS + path.sep) && !abs.startsWith(ARTES + path.sep)) throw new Error('foto fora das pastas permitidas: ' + f);
+              const mime = IMG_MIME[path.extname(abs).toLowerCase()];
+              if (!mime) throw new Error('formato não suportado (use png, jpg ou webp): ' + path.basename(abs));
+              form.append('image[]', new Blob([fs.readFileSync(abs)], { type: mime }), path.basename(abs));
+            }
+            const r = await fetch('https://api.openai.com/v1/images/edits', { method: 'POST', headers: { Authorization: 'Bearer ' + key }, body: form, signal: AbortSignal.timeout(280000) });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) return { isError: true, content: [{ type: 'text', text: 'OpenAI recusou: ' + (j.error?.message || r.status) }] };
+            const saved = [];
+            for (const [i, d] of (j.data || []).entries()) {
+              if (!d.b64_json) continue;
+              const name = `arte-${Date.now()}-${i + 1}.png`;
+              fs.writeFileSync(path.join(ARTES, name), Buffer.from(d.b64_json, 'base64'));
+              saved.push(name);
+              sse(res, 'image', { url: `/api/arte/${name}`, name });
+            }
+            if (!saved.length) return { isError: true, content: [{ type: 'text', text: 'A OpenAI não devolveu imagem.' }] };
+            return { content: [{ type: 'text', text: `Geradas ${saved.length} arte(s), já exibidas no painel: ${saved.map((n) => path.join(ARTES, n)).join(', ')}` }] };
+          } catch (e) {
+            return { isError: true, content: [{ type: 'text', text: 'Falha ao gerar a arte: ' + String(e.message || e) }] };
           }
         },
       ),
@@ -205,10 +273,11 @@ async function runChat(text, res, corsOrigin, convId, tokens = {}) {
         resume: sessionId ?? undefined,
         includePartialMessages: true,
         disallowedTools: ['Write', 'Edit', 'NotebookEdit'],
-        mcpServers: { 'gestor-n8n': n8nServer(tokens) },
+        mcpServers: { 'gestor-n8n': n8nServer(tokens), 'gestor-artes': artesServer(res) },
         canUseTool: async (name, input) => {
           if (name.startsWith(META) && !META_READ.test(name)) return { behavior: 'deny', message: 'Gravações na Meta só pelo n8n: use a ferramenta escrever_meta (conector Meta é só leitura).' };
           if (name === N8N_TOOL && n8nWriteSafe(input)) return { behavior: 'allow', updatedInput: input };
+          if (name === 'mcp__gestor-artes__gerar_arte') return { behavior: 'allow', updatedInput: input };
           if (SAFE(name) || metaOk(name, input) || READ_LOCAL.has(name) || (name === 'Bash' && bashSafe(String(input.command || '')))) return { behavior: 'allow', updatedInput: input };
           const id = 'a' + Date.now() + '_' + n++;
           const label = name.startsWith(META) ? name.slice(META.length) : name === N8N_TOOL ? 'escrever_meta (n8n)' : name;
@@ -224,7 +293,7 @@ async function runChat(text, res, corsOrigin, convId, tokens = {}) {
         const d = m.event?.delta;
         if (m.event?.type === 'content_block_delta' && d?.type === 'text_delta') sse(res, 'text', d.text);
       } else if (m.type === 'assistant') {
-        for (const b of m.message.content) if (b.type === 'tool_use') sse(res, 'tool', { name: b.name === N8N_TOOL ? 'gravando na Meta via n8n…' : b.name.replace(META, '') });
+        for (const b of m.message.content) if (b.type === 'tool_use') sse(res, 'tool', { name: b.name === N8N_TOOL ? 'gravando na Meta via n8n…' : b.name.endsWith('gerar_arte') ? 'gerando a arte… (pode levar até 1 min)' : b.name.replace(META, '') });
       } else if (m.type === 'result') {
         sse(res, 'done', { error: m.is_error ? (m.result || 'erro') : null });
       }
@@ -275,6 +344,14 @@ http.createServer(async (req, res) => {
       if (req.method === 'GET') { const c = readConv(id); if (!c) { res.statusCode = 404; return res.end('{}'); } return res.end(JSON.stringify({ id: c.id, title: c.title, items: c.items })); }
       if (req.method === 'POST') { const { title, items } = JSON.parse((await readBody(req)).toString()); writeConv(id, { title: String(title || 'Conversa').slice(0, 80), items: Array.isArray(items) ? items : [] }); return res.end('{"ok":true}'); }
       if (req.method === 'DELETE') { try { fs.unlinkSync(convPath(id)); } catch {} return res.end('{"ok":true}'); }
+    }
+    const am = url.pathname.match(/^\/api\/arte\/([\w.\-]+\.png)$/);
+    if (req.method === 'GET' && am) {
+      const f = path.join(ARTES, am[1]);
+      if (!fs.existsSync(f)) { res.statusCode = 404; return res.end('404'); }
+      res.setHeader('Content-Type', 'image/png');
+      res.setHeader('Content-Disposition', `inline; filename="${am[1]}"`);
+      return res.end(fs.readFileSync(f));
     }
     if (req.method === 'POST' && url.pathname === '/api/upload') {
       const name = path.basename(url.searchParams.get('name') || 'video.mp4').replace(/[^\w.\-]/g, '_');

@@ -65,6 +65,7 @@ interface ConvSummary {
 type Item =
   | { kind: "me" | "ag" | "err"; text: string; id?: string }
   | { kind: "tool"; text: string }
+| { kind: "img"; url: string; name: string }
   | {
       kind: "approval";
       id: string;
@@ -294,6 +295,10 @@ function AgenteTriadPage() {
             curId = null;
             full = "";
             setItems((p) => [...p, { kind: "tool", text: data.name }]);
+          } else if (ev === "image") {
+            curId = null;
+            full = "";
+            setItems((p) => [...p, { kind: "img", url: data.url, name: data.name }]);
           } else if (ev === "approval") {
             curId = null;
             full = "";
@@ -457,6 +462,19 @@ function AgenteTriadPage() {
                 return (
                   <div key={i} className="font-mono text-[11px] text-muted-foreground">
                     ▸ {it.text}
+                  </div>
+                );
+              if (it.kind === "img")
+                return (
+                  <div key={i} className="max-w-[320px] space-y-1.5">
+                    <img src={`${PAINEL}${it.url}`} alt={it.name} className="w-full rounded-xl border" />
+                    <a
+                      href={`${PAINEL}${it.url}`}
+                      download={it.name}
+                      className="text-xs text-primary underline"
+                    >
+                      Baixar {it.name}
+                    </a>
                   </div>
                 );
               if (it.kind === "approval")
