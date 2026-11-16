@@ -105,6 +105,7 @@ function ClientBrandField({ clientId }: { clientId: string }) {
   const queryClient = useQueryClient();
   const { data: brand, isLoading } = useQuery({ queryKey: ["client-brand", clientId], queryFn: () => fetchClientBrand(clientId), staleTime: 0 });
   const [busy, setBusy] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [colors, setColors] = useState<string[] | null>(null);
   const shownColors = colors ?? brand?.colors ?? [];
 
@@ -124,6 +125,10 @@ function ClientBrandField({ clientId }: { clientId: string }) {
   };
 
   const onFile = async (file: File) => {
+    if (!/^image\/(png|jpeg|webp)$/.test(file.type)) {
+      toast.error("Use uma imagem PNG, JPG ou WebP.");
+      return;
+    }
     try {
       const logo = await shrinkLogo(file);
       const extracted = await extractLogoColors(logo);
@@ -136,9 +141,28 @@ function ClientBrandField({ clientId }: { clientId: string }) {
   if (isLoading) return <p className="text-xs text-muted-foreground">Carregando...</p>;
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-3">
-        <div className="flex h-20 w-32 shrink-0 items-center justify-center rounded-lg border border-border bg-neutral-800 p-2">
-          {brand?.logo ? <img src={brand.logo} alt="Logo" className="max-h-full max-w-full object-contain" /> : <span className="text-xs text-muted-foreground">sem logo</span>}
+      <div
+        className={`flex items-center gap-3 rounded-lg border border-dashed p-2 transition-colors ${dragging ? "border-primary bg-primary/10" : "border-transparent"}`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!busy) setDragging(true);
+        }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragging(false);
+          const f = e.dataTransfer.files?.[0];
+          if (f && !busy) onFile(f);
+        }}
+      >
+        <div className="flex h-20 w-32 shrink-0 items-center justify-center rounded-lg border border-border bg-neutral-800 p-2 text-center">
+          {dragging ? (
+            <span className="text-xs text-primary">solte aqui</span>
+          ) : brand?.logo ? (
+            <img src={brand.logo} alt="Logo" className="max-h-full max-w-full object-contain" />
+          ) : (
+            <span className="text-xs text-muted-foreground">arraste a logo aqui</span>
+          )}
         </div>
         <div className="space-y-2">
           <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-border px-3 py-1.5 text-sm hover:bg-muted/40">
@@ -150,7 +174,7 @@ function ClientBrandField({ clientId }: { clientId: string }) {
               Remover logo
             </button>
           )}
-          <p className="text-xs text-muted-foreground">Usada nas artes do Agente Triad e nos relatórios. De preferência PNG com fundo transparente.</p>
+          <p className="text-xs text-muted-foreground">Usada nas artes do Agente Triad e nos relatórios. Arraste a imagem pra cá ou clique no botão. De preferência PNG com fundo transparente.</p>
         </div>
       </div>
       {brand?.logo && (
