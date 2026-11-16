@@ -3949,16 +3949,42 @@ export async function createAdSetInCampaign(
   const phone = opts.whatsappNumber.replace(/\D/g, "");
   if (!phone) throw new Error("Escolha o número de WhatsApp que recebe as conversas.");
   if (!opts.pageId) throw new Error("O cliente não tem Página do Facebook cadastrada.");
+  // Lance, meta de otimização e destino precisam combinar com a campanha (ex.: campanha
+  // de vendas com ROAS mínimo exige meta de valor, não de conversas). Por isso, quando a
+  // campanha já tem conjunto, o novo copia essas configurações do primeiro.
+  let sibling: {
+    optimization_goal?: string;
+    billing_event?: string;
+    bid_strategy?: string;
+    bid_amount?: string;
+    bid_constraints?: Record<string, unknown>;
+    destination_type?: string;
+    promoted_object?: Record<string, string>;
+  } | undefined;
+  try {
+    const res = await spacedFetch(
+      `${BASE_URL}/${opts.campaignId}/adsets?fields=optimization_goal,billing_event,bid_strategy,bid_amount,bid_constraints,destination_type,promoted_object&limit=1&access_token=${encodeURIComponent(opts.token)}`,
+      opts.adAccountId
+    );
+    const json = (await res.json()) as { data?: NonNullable<typeof sibling>[] };
+    sibling = json.data?.[0];
+  } catch {
+    sibling = undefined;
+  }
+
   const params: Record<string, string> = {
     name: opts.name,
     campaign_id: opts.campaignId,
-    billing_event: "IMPRESSIONS",
-    optimization_goal: "CONVERSATIONS",
-    destination_type: "WHATSAPP",
+    billing_event: sibling?.billing_event ?? "IMPRESSIONS",
+    optimization_goal: sibling?.optimization_goal ?? "CONVERSATIONS",
+    destination_type: sibling?.destination_type ?? "WHATSAPP",
     promoted_object: JSON.stringify({ page_id: opts.pageId, whatsapp_phone_number: phone }),
     targeting: JSON.stringify({ geo_locations: { countries: ["BR"] }, targeting_automation: { advantage_audience: 0 } }),
     status: "PAUSED",
   };
+  if (sibling?.bid_strategy) params.bid_strategy = sibling.bid_strategy;
+  if (sibling?.bid_amount) params.bid_amount = sibling.bid_amount;
+  if (sibling?.bid_constraints) params.bid_constraints = JSON.stringify(sibling.bid_constraints);
   if (opts.dailyBudget && opts.dailyBudget > 0) params.daily_budget = String(Math.round(opts.dailyBudget * 100));
   if (writer) {
     await writer([{ path: `${opts.adAccountId}/adsets`, params, label: "criar-conjunto" }]);
