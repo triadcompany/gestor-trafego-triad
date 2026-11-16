@@ -13,6 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { WhatsappNumberPicker } from "@/components/WhatsappNumberPicker";
 import { getN8nMetaWriter } from "@/lib/n8n";
 import {
+  explainMetaError,
   createAdInAdSet,
   createAdSetInCampaign,
   duplicateAd,
@@ -283,7 +284,7 @@ export function AdSetCreator({ clients, clientId, onClientChange }: CreatorProps
             ? "O conjunto foi criado pausado, com público amplo (Brasil, 18–65). Abra a campanha pra ajustar cidades, idade e posicionamentos."
             : "O conjunto foi duplicado pausado, com o mesmo público do original. Confira no editor da campanha antes de ativar.",
       }),
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao criar o conjunto.", { duration: 12000 }),
+    onError: (e) => toast.error(explainMetaError(e instanceof Error ? e.message : "Erro ao criar o conjunto."), { duration: 12000 }),
   });
 
   if (done) return <DoneCard title={how === "novo" ? "Conjunto criado!" : "Conjunto duplicado!"} text={done.text} clientId={clientId} campaignId={done.campaignId} onAgain={reset} />;
@@ -473,7 +474,7 @@ export function AdCreator({ clients, clientId, onClientChange }: CreatorProps) {
             ? "O anúncio foi criado pausado dentro do conjunto escolhido. Revise no editor da campanha e ative quando estiver pronto."
             : "O anúncio foi duplicado pausado. Revise no editor da campanha e ative quando estiver pronto.",
       }),
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao criar o anúncio.", { duration: 12000 }),
+    onError: (e) => toast.error(explainMetaError(e instanceof Error ? e.message : "Erro ao criar o anúncio."), { duration: 12000 }),
   });
 
   if (done) return <DoneCard title={how === "novo" ? "Anúncio criado!" : "Anúncio duplicado!"} text={done.text} clientId={clientId} campaignId={done.campaignId} onAgain={reset} />;

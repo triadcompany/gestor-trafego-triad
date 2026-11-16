@@ -69,6 +69,7 @@ import {
   type SelectedLocation,
   type MetaInterest,
 } from "@/lib/meta";
+import { explainMetaError } from "@/lib/meta";
 import { WhatsappNumberPicker } from "@/components/WhatsappNumberPicker";
 import { AdCreator, AdSetCreator, LevelPicker, type CreateLevel } from "@/components/CreateStructure";
 import { isN8nConfigured, triggerN8nCampaign, pollN8nJob, isN8nDuplicateConfigured, triggerN8nDuplicateCampaign } from "@/lib/n8n";
@@ -471,7 +472,7 @@ function NewCampaign() {
       if (jobStatus.campaignId) setCreatedId(jobStatus.campaignId);
     } else if (jobStatus.status === "error") {
       toast.dismiss("n8n-progress");
-      toast.error(`Erro no n8n: ${jobStatus.errorMessage ?? "Erro desconhecido"}`, { duration: 20000 });
+      toast.error(explainMetaError(`Erro no n8n: ${jobStatus.errorMessage ?? "Erro desconhecido"}`), { duration: 20000 });
       setPendingJobId(null);
       setPendingJobKind(null);
     }
@@ -735,7 +736,7 @@ function NewCampaign() {
       });
     },
     onError: (e) => {
-      toast.error(e instanceof Error ? e.message : "Erro ao duplicar", {
+      toast.error(explainMetaError(e instanceof Error ? e.message : "Erro ao duplicar"), {
         duration: 12000,
         action: { label: "Ver diagnóstico", onClick: () => navigate({ to: "/diagnostico-meta" }) },
       });
@@ -852,7 +853,7 @@ function NewCampaign() {
     onError: (e) => {
       const msg = e instanceof Error ? e.message : "Erro ao criar campanha";
       console.error("[campaigns] erro ao criar anúncio:", e);
-      toast.error(msg, {
+      toast.error(explainMetaError(msg), {
         duration: 20000,
         action: { label: "Ver diagnóstico", onClick: () => navigate({ to: "/diagnostico-meta" }) },
       });

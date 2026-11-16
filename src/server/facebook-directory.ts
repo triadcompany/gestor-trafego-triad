@@ -78,6 +78,24 @@ async function fetchWhatsappNumbers(accountId: string, pageId: string, token: st
   };
 
   try {
+    let url: string | null = `${BASE_URL}/${accountId}/adsets?fields=promoted_object&limit=200&access_token=${encodeURIComponent(token)}`;
+    while (url) {
+      const json: {
+        data?: Array<{ promoted_object?: { page_id?: string; whatsapp_phone_number?: string } }>;
+        paging?: { next?: string };
+      } = await fetch(url).then((r) => r.json());
+      for (const a of json.data ?? []) {
+        if (a.promoted_object?.page_id === pageId && a.promoted_object.whatsapp_phone_number) {
+          add(a.promoted_object.whatsapp_phone_number, `Usado em anúncios · +${a.promoted_object.whatsapp_phone_number}`);
+        }
+      }
+      url = json.paging?.next ?? null;
+    }
+  } catch {
+    // segue sem isso
+  }
+
+  try {
     const businessId = await resolveBusinessId(accountId, token);
     if (businessId) {
       const [owned, client] = (await Promise.all([
@@ -94,29 +112,11 @@ async function fetchWhatsappNumbers(accountId: string, pageId: string, token: st
         )
       );
       for (const n of numbersPerWaba.flat()) {
-        add(n.display_phone_number, `${n.verified_name || "WhatsApp"} · ${n.display_phone_number ?? ""}`);
+        add(n.display_phone_number, `${n.verified_name || "WhatsApp"} · ${n.display_phone_number ?? ""} (BM — confirme o vínculo com a Página)`);
       }
     }
   } catch {
     // sem whatsapp_business_management ou sem BM — segue só com as outras fontes
-  }
-
-  try {
-    let url: string | null = `${BASE_URL}/${accountId}/adsets?fields=promoted_object&limit=200&access_token=${encodeURIComponent(token)}`;
-    while (url) {
-      const json: {
-        data?: Array<{ promoted_object?: { page_id?: string; whatsapp_phone_number?: string } }>;
-        paging?: { next?: string };
-      } = await fetch(url).then((r) => r.json());
-      for (const a of json.data ?? []) {
-        if (a.promoted_object?.page_id === pageId && a.promoted_object.whatsapp_phone_number) {
-          add(a.promoted_object.whatsapp_phone_number, `Usado em anúncios · +${a.promoted_object.whatsapp_phone_number}`);
-        }
-      }
-      url = json.paging?.next ?? null;
-    }
-  } catch {
-    // segue sem isso
   }
 
   return numbers;

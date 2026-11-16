@@ -2345,6 +2345,14 @@ async function recordMetaApiError(endpoint: string, status: number, error: MetaA
   }
 }
 
+/** Acrescenta ao texto de erro da Meta a explicação do que fazer, nos casos que já conhecemos. */
+export function explainMetaError(message: string): string {
+  if (message.includes("2446886")) {
+    return `${message}\n\nO número de WhatsApp escolhido não está vinculado à Página do cliente. Escolha um número marcado “usado em anúncios” ou vincule o número em Facebook → Página → Configurações → Contas vinculadas → WhatsApp.`;
+  }
+  return message;
+}
+
 function formatMetaError(e: MetaApiError): string {
   const parts = [e.message];
   if (e.error_user_title) parts.push(`— ${e.error_user_title}`);
