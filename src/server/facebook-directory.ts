@@ -55,6 +55,10 @@ export interface WhatsappNumberOption {
   id: string;
   number: string; // dígitos, pronto pra salvar em clients.meta_whatsapp_number / promoted_object
   label: string; // "Nome verificado · +55 ..." pra mostrar no seletor
+  // true = já usado em anúncio dessa Página, então o vínculo com a Página está
+  // comprovado. false = só aparece na Business Manager (a API não diz se está
+  // vinculado à Página; se não estiver, a Meta recusa com o erro 2446886).
+  linked: boolean;
 }
 
 // A Business Manager (WABA) só lista números formalmente cadastrados ali, e
@@ -70,11 +74,11 @@ export interface WhatsappNumberOption {
 async function fetchWhatsappNumbers(accountId: string, pageId: string, token: string): Promise<WhatsappNumberOption[]> {
   const seen = new Set<string>();
   const numbers: WhatsappNumberOption[] = [];
-  const add = (raw: string | undefined, label: string) => {
+  const add = (raw: string | undefined, label: string, linked: boolean) => {
     const digits = (raw ?? "").replace(/[^\d]/g, "");
     if (!digits || seen.has(digits)) return;
     seen.add(digits);
-    numbers.push({ id: digits, number: digits, label });
+    numbers.push({ id: digits, number: digits, label, linked });
   };
 
   try {
@@ -86,7 +90,7 @@ async function fetchWhatsappNumbers(accountId: string, pageId: string, token: st
       } = await fetch(url).then((r) => r.json());
       for (const a of json.data ?? []) {
         if (a.promoted_object?.page_id === pageId && a.promoted_object.whatsapp_phone_number) {
-          add(a.promoted_object.whatsapp_phone_number, `Usado em anúncios · +${a.promoted_object.whatsapp_phone_number}`);
+          add(a.promoted_object.whatsapp_phone_number, `Usado em anúncios · +${a.promoted_object.whatsapp_phone_number}`, true);
         }
       }
       url = json.paging?.next ?? null;
@@ -112,7 +116,7 @@ async function fetchWhatsappNumbers(accountId: string, pageId: string, token: st
         )
       );
       for (const n of numbersPerWaba.flat()) {
-        add(n.display_phone_number, `${n.verified_name || "WhatsApp"} · ${n.display_phone_number ?? ""} (BM — confirme o vínculo com a Página)`);
+        add(n.display_phone_number, `${n.verified_name || "WhatsApp"} · ${n.display_phone_number ?? ""} (só na BM)`, false);
       }
     }
   } catch {
