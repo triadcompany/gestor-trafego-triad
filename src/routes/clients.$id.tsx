@@ -17,7 +17,8 @@ import {
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
 import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
-import { sendActiveCampaignsList } from "@/lib/whatsapp-messages";
+import { sendActiveCampaignsList, type CampaignsListLevel, type CampaignsListTree } from "@/lib/whatsapp-messages";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
 import { ClientReportDialog } from "@/components/ClientReportDialog";
 import { TrafficInsightsDialog } from "@/components/TrafficInsightsDialog";
@@ -53,6 +54,8 @@ import {
   fetchCampaignById,
   fetchDailyInsights,
   getMetaToken,
+  fetchAdSets,
+  fetchAds,
   sendWeeklyMetricsReport,
   resolveDatePresetRange,
   type MetaCampaign,
@@ -453,14 +456,30 @@ function ClientDetail() {
   });
 
   const sendListMutation = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (level: CampaignsListLevel) => {
       if (!client) throw new Error("Cliente não carregado.");
-      const activeNames = (campaigns ?? [])
-        .filter((c) => c.status === "ACTIVE")
-        .map((c) => extractCampaignLabel(c.name));
-      await sendActiveCampaignsList(client.id, client.name, activeNames);
+      const active = (campaigns ?? []).filter((c) => c.status === "ACTIVE");
+      const activeNames = active.map((c) => extractCampaignLabel(c.name));
+      if (level === "campanhas") {
+        await sendActiveCampaignsList(client.id, client.name, activeNames);
+        return;
+      }
+      // Conjuntos (e anúncios) só dos itens ativos de cada campanha ativa.
+      const token = await getMetaToken(client.id);
+      if (!token) throw new Error("Token Meta não encontrado.");
+      const tree: CampaignsListTree = [];
+      for (const c of active) {
+        const adsets = (await fetchAdSets(c.id, token)).filter((a) => a.status === "ACTIVE");
+        const withAds = [];
+        for (const a of adsets) {
+          const ads = level === "anuncios" ? (await fetchAds(a.id, token)).filter((x) => x.status === "ACTIVE").map((x) => extractCampaignLabel(x.name)) : [];
+          withAds.push({ name: extractCampaignLabel(a.name), ads });
+        }
+        tree.push({ name: extractCampaignLabel(c.name), adsets: withAds });
+      }
+      await sendActiveCampaignsList(client.id, client.name, activeNames, { level, tree });
     },
-    onSuccess: () => toast.success("Lista de campanhas enviada."),
+    onSuccess: () => toast.success("Lista enviada."),
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar lista", { duration: 8000 }),
   });
 
@@ -962,22 +981,27 @@ function ClientDetail() {
               </TooltipTrigger>
               <TooltipContent>Atualizar campanhas</TooltipContent>
             </UITooltip>
-            <UITooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => sendListMutation.mutate()}
-                  disabled={
-                    sendListMutation.isPending ||
-                    (campaigns ?? []).filter((c) => c.status === "ACTIVE").length === 0
-                  }
-                >
-                  <MessageCircle className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Enviar lista de campanhas ativas no WhatsApp</TooltipContent>
-            </UITooltip>
+            <DropdownMenu>
+              <UITooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      disabled={sendListMutation.isPending || (campaigns ?? []).filter((c) => c.status === "ACTIVE").length === 0}
+                    >
+                      {sendListMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>Enviar lista no WhatsApp</TooltipContent>
+              </UITooltip>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem onClick={() => sendListMutation.mutate("campanhas")}>Só campanhas</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => sendListMutation.mutate("conjuntos")}>Campanhas e conjuntos</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => sendListMutation.mutate("anuncios")}>Campanhas, conjuntos e anúncios</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <UITooltip>
               <TooltipTrigger asChild>
                 <Button

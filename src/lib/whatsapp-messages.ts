@@ -990,7 +990,18 @@ export async function searchEvolutionRecipients(query: string, groupsOnly?: bool
 }
 
 const _sendActiveCampaignsList = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ clientId: z.string(), clientName: z.string(), campaignNames: z.array(z.string()) }))
+  .inputValidator(
+    z.object({
+      clientId: z.string(),
+      clientName: z.string(),
+      campaignNames: z.array(z.string()),
+      // Quando vem, a lista inclui os conjuntos (e anúncios) de cada campanha.
+      tree: z
+        .array(z.object({ name: z.string(), adsets: z.array(z.object({ name: z.string(), ads: z.array(z.string()) })) }))
+        .optional(),
+      level: z.enum(["campanhas", "conjuntos", "anuncios"]).optional(),
+    })
+  )
   .handler(async ({ data }) => {
     const { organizationId, role, userId } = await requireOrgContext();
     const client = await db.query.clients.findFirst({
@@ -1021,7 +1032,21 @@ const _sendActiveCampaignsList = createServerFn({ method: "POST" })
       throw new Error("Grupo operacional não configurado pra essa instância. Configure em Configurações → Instâncias WhatsApp.");
     }
 
-    const text = `📋 ${data.campaignNames.length} Campanhas ativas — ${data.clientName}\n\n${data.campaignNames.map((n) => `• ${n}`).join("\n")}`;
+    let text: string;
+    if (data.tree && data.level && data.level !== "campanhas") {
+      const title = data.level === "anuncios" ? "Campanhas, conjuntos e anúncios ativos" : "Campanhas e conjuntos ativos";
+      const lines: string[] = [];
+      for (const c of data.tree) {
+        lines.push(`• ${c.name}`);
+        for (const a of c.adsets) {
+          lines.push(`   ◦ ${a.name}`);
+          if (data.level === "anuncios") for (const ad of a.ads) lines.push(`        – ${ad}`);
+        }
+      }
+      text = `📋 ${title} — ${data.clientName}\n\n${lines.join("\n")}`;
+    } else {
+      text = `📋 ${data.campaignNames.length} Campanhas ativas — ${data.clientName}\n\n${data.campaignNames.map((n) => `• ${n}`).join("\n")}`;
+    }
 
     const res = await fetch(`${url}/message/sendText/${instance}`, {
       method: "POST",
@@ -1034,8 +1059,16 @@ const _sendActiveCampaignsList = createServerFn({ method: "POST" })
     }
   });
 
-export async function sendActiveCampaignsList(clientId: string, clientName: string, campaignNames: string[]): Promise<void> {
-  await _sendActiveCampaignsList({ data: { clientId, clientName, campaignNames } });
+export type CampaignsListLevel = "campanhas" | "conjuntos" | "anuncios";
+export type CampaignsListTree = Array<{ name: string; adsets: Array<{ name: string; ads: string[] }> }>;
+
+export async function sendActiveCampaignsList(
+  clientId: string,
+  clientName: string,
+  campaignNames: string[],
+  options?: { level: CampaignsListLevel; tree: CampaignsListTree }
+): Promise<void> {
+  await _sendActiveCampaignsList({ data: { clientId, clientName, campaignNames, tree: options?.tree, level: options?.level } });
 }
 
 export interface WhatsappLabel {
