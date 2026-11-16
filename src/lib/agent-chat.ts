@@ -7,6 +7,11 @@ import type { ChatCompletionMessageParam } from "openai/resources/chat/completio
 import { db } from "@/db/client";
 import { agentConversations, agentMessages, appConfig } from "@/db/schema";
 import { requireOrgContext } from "@/server/session";
+import { isTriadCompanyOrg } from "@/lib/feature-flags";
+
+function assertTriadOnly(organizationId: string) {
+  if (!isTriadCompanyOrg(organizationId)) throw new Error("O Agente IA está disponível só para a Triad Company.");
+}
 import { fetchClients } from "./queries";
 import { getOpenAIKey } from "./meta";
 import { TOOL_DEFINITIONS, WRITE_TOOLS, executeTool, executeConfirmedAction, describeAction, type JsonArgs } from "./agent-tools";
@@ -624,6 +629,7 @@ export const agentSendMessage = createServerFn({ method: "POST" })
 
     try {
       const { userId, organizationId } = await requireOrgContext();
+      assertTriadOnly(organizationId);
 
       const mode: AgentMode = data.conversation_id
         ? await getConversationMode(data.conversation_id, organizationId, userId)
@@ -732,6 +738,7 @@ export const agentExecuteAction = createServerFn({ method: "POST" })
 
     try {
       const { organizationId, userId } = await requireOrgContext();
+      assertTriadOnly(organizationId);
       await getConversationMode(data.conversation_id, organizationId, userId); // valida posse da conversa
 
       const result = await executeConfirmedAction(data.pending_action.tool, data.pending_action.args);

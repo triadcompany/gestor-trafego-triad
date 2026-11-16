@@ -1,4 +1,6 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
+import { getCurrentUser } from "@/server/session";
+import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { useState, useRef, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
@@ -40,6 +42,12 @@ export const Route = createFileRoute("/agente")({
     meta: [{ title: "Agente IA — Gestor de Tráfego" }],
   }),
   ssr: false,
+  // Agente IA é só da organização Triad Company (o servidor também confere).
+  beforeLoad: async () => {
+    const user = await getCurrentUser();
+    const orgId = user?.actingOrganizationId ?? user?.organizationId;
+    if (!isTriadCompanyOrg(orgId)) throw redirect({ to: "/dashboard" });
+  },
   component: AgentePage,
 });
 

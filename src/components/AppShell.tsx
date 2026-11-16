@@ -113,7 +113,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const showExperimental = isTriadCompanyOrg(effectiveOrgId);
   const baseNavGroups = navGroups.map((group) => ({
     ...group,
-    items: group.items.filter((item) => (item.to !== "/conversas" && item.to !== "/agente-triad") || showExperimental),
+    items: group.items.filter((item) => (item.to !== "/conversas" && item.to !== "/agente-triad" && item.to !== "/agente") || showExperimental),
   }));
   const visibleNavGroups = currentUser?.isPlatformAdmin ? [...baseNavGroups, adminNavGroup] : baseNavGroups;
 
@@ -333,7 +333,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* Botão flutuante do agente */}
-      {!isActive("/agente", false) && (
+      {showExperimental && !isActive("/agente", false) && (
         <button
           onClick={() => setAgentOpen((v) => !v)}
           className="fixed bottom-6 right-4 md:right-6 z-40 flex items-center gap-2 bg-primary text-primary-foreground px-3 py-2 md:px-4 rounded-full shadow-lg hover:bg-primary/90 transition-colors text-sm font-medium"
@@ -343,7 +343,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </button>
       )}
 
-      {agentOpen && !isActive("/agente", false) && <AgentChatWidget onClose={() => setAgentOpen(false)} />}
+      {showExperimental && agentOpen && !isActive("/agente", false) && <AgentChatWidget onClose={() => setAgentOpen(false)} />}
     </div>
   );
 }
