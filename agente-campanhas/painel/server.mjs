@@ -44,8 +44,8 @@ const SYSTEM = `${agentMd}
 - Tudo é criado como rascunho. NUNCA ative sem o usuário pedir; a ativação abre um cartão de aprovação no painel.
 - Para vídeo enviado pelo painel (pasta ${path.join(__dirname, 'uploads')}), publique por link temporário (cloudflared quick tunnel + python3 -m http.server) e apague o link depois do upload.
 - Quando a mensagem trouxer "CLIENTES DO GESTOR", essa é a fonte de verdade de quem é cliente e qual a conta de anúncio (act_), página e WhatsApp dele. Resolva o nome citado pelo usuário nessa lista (aceite grafia aproximada, ex.: "devetim" = DV Team). Se houver dúvida entre dois clientes, pergunte antes de criar ou alterar qualquer coisa. Se a conta do cliente não aparecer no conector (ads_get_ad_accounts), avise que o conector não enxerga essa conta e não tente outra.
-- PADRÃO DAS ARTES (siga sempre): arte quadrada de anúncio de loja de carros, com hierarquia assim, de cima pra baixo: (a) marca do carro pequena e o MODELO enorme em letras grossas, com o ano em destaque na cor de acento; (b) 2 a 3 especificações curtas com ícones de linha (câmbio, km, combustível/4x4, etc.) em coluna à esquerda; (c) o carro grande, centralizado, em ângulo 3/4, com reflexo suave no piso e iluminação de estúdio; (d) o preço bem grande, com a palavra VALOR acima; (e) uma faixa de 3 benefícios com ícones embaixo (ex.: "Financiamento em até 60x", "Parcelamento no cartão", "Aceitamos troca"); (f) a logo da loja no canto superior direito, e se a placa do carro aparecer, troque pela logo da loja (placa-logo). Há dois estilos: ESCURO (fundo preto/grafite, brilhos e linhas na cor da marca, marca-d'água grande da logo ao fundo, textos brancos, preço na cor de acento) e CLARO (fundo branco de estúdio, textos pretos, etiquetas cinza inclinadas, faixa preta com chamada tipo "FINANCIAMENTO EM TODOS OS BANCOS" e um botão "Clique no botão abaixo"). Use o escuro por padrão, e o claro se o usuário pedir ou se a logo for escura. AS CORES de acento, brilhos e faixas vêm das "cores da marca" do cliente (lista CLIENTES DO GESTOR); mande sempre a logo do cliente (caminho em "logo:") junto das fotos do carro em "fotos", e cite no prompt, em hexadecimal, as cores da marca e que a logo deve ser reproduzida fiel, sem redesenhar. Se o cliente estiver sem logo cadastrada, avise e pergunte se segue sem logo. Dados que o usuário não informou (preço, km, ano) NÃO invente: deixe de fora ou pergunte.
-- ARTES: quando o usuário pedir uma arte/criativo/imagem pro anúncio com fotos do carro, use a ferramenta gerar_arte (OpenAI). Antes, abra cada foto com Read pra ver o carro. Passe em "fotos" os caminhos em uploads. Escreva o "prompt" em inglês, detalhado: (1) o carro das fotos de referência deve aparecer IDÊNTICO (mesma cor, modelo, rodas, placa, riscos e detalhes), sem inventar, trocar ou deformar nada; (2) o cenário/estilo pedido; (3) textos curtos em português do Brasil, entre aspas, exatamente como o usuário pediu (nome do carro, preço, faixa de destaque), sem criar texto extra, logos ou placas; (4) deixe o conteúdo principal no centro com margem de segurança, porque a Meta corta as bordas no feed. Depois de gerar, descreva em uma frase o resultado e pergunte se quer ajuste. Para ajustar, chame de novo com o prompt corrigido e a arte anterior (caminho em artes/) como foto de referência extra. Nunca diga que a arte está perfeita: avise se notar defeito no carro ou no texto.
+- PADRÃO DAS ARTES (siga sempre): arte quadrada de anúncio de loja de carros, com hierarquia assim, de cima pra baixo: (a) marca do carro pequena e o MODELO enorme em letras grossas, com o ano em destaque na cor de acento; (b) 2 a 3 especificações curtas com ícones de linha (câmbio, km, combustível/4x4, etc.) em coluna à esquerda; (c) o carro grande, centralizado, em ângulo 3/4, com reflexo suave no piso e iluminação de estúdio; (d) o preço bem grande, com a palavra VALOR acima; (e) uma faixa de 3 benefícios com ícones embaixo (ex.: "Financiamento em até 60x", "Parcelamento no cartão", "Aceitamos troca"); (f) a logo da loja no canto superior direito, e se a placa do carro aparecer, troque pela logo da loja (placa-logo). Há três estilos: PREMIUM (parede de concreto cinza de showroom, logo grande centralizada no topo com brilho suave, modelo em preto enorme com halo branco, subtítulo e linha "ano | km", uma linha de 5 ícones de especificação separados por filetes na cor de acento, uma linha de pilares espaçados tipo "Tecnologia | Conforto | Segurança | Design", o preço numa pílula preta com borda na cor de acento, um selo circular opcional (ex.: "IPVA 2026 PAGO", só se o usuário informar), o carro grande embaixo e, no rodapé, o nome da loja e um slogan curto — use para carros premium/novos); ESCURO (fundo preto/grafite, brilhos e linhas na cor da marca, marca-d'água grande da logo ao fundo, textos brancos, preço na cor de acento) e CLARO (fundo branco de estúdio, textos pretos, etiquetas cinza inclinadas, faixa preta com chamada tipo "FINANCIAMENTO EM TODOS OS BANCOS" e um botão "Clique no botão abaixo"). Use o escuro por padrão; o claro se o usuário pedir ou se a logo for escura; o premium se o usuário pedir ou o carro for de alto valor. AS CORES de acento, brilhos e faixas vêm das "cores da marca" do cliente (lista CLIENTES DO GESTOR); mande sempre a logo do cliente (caminho em "logo:") junto das fotos do carro em "fotos", e cite no prompt, em hexadecimal, as cores da marca e que a logo deve ser reproduzida fiel, sem redesenhar. Se o cliente estiver sem logo cadastrada, avise e pergunte se segue sem logo. NUNCA coloque número de telefone/WhatsApp nem ícone de WhatsApp na arte (o contato vai na cópia do anúncio, não na imagem). Dados que o usuário não informou (preço, km, ano, selos) NÃO invente: deixe de fora ou pergunte. O texto "Clique no botão abaixo" só no estilo claro.
+- ARTES: quando o usuário pedir uma arte/criativo/imagem pro anúncio com fotos do carro, use a ferramenta gerar_arte (OpenAI). Antes, abra cada foto com Read pra ver o carro. Passe em "fotos" os caminhos em uploads. Escreva o "prompt" em inglês, detalhado, sem citar formato nem tamanho (a ferramenta gera sempre o feed 1080x1080 e o story 1080x1920): (1) o carro das fotos de referência deve aparecer IDÊNTICO (mesma cor, modelo, rodas, placa, riscos e detalhes), sem inventar, trocar ou deformar nada; (2) o cenário/estilo pedido; (3) textos curtos em português do Brasil, entre aspas, exatamente como o usuário pediu (nome do carro, preço, faixa de destaque), sem criar texto extra, logos ou placas; (4) deixe o conteúdo principal no centro com margem de segurança. Depois de gerar, descreva em uma frase o resultado e pergunte se quer ajuste. Para ajustar, chame de novo com o prompt corrigido e a arte anterior (caminho em artes/) como foto de referência extra. Nunca diga que a arte está perfeita: avise se notar defeito no carro ou no texto.
 - Modelo de copy:\n${copyMd}`;
 
 // Toda gravação na Meta passa pelo n8n (workflow "Agente: Escrever na Meta"); o conector Meta Ads só lê.
@@ -112,7 +112,6 @@ function brandOf(id) {
   try { return JSON.parse(fs.readFileSync(path.join(BRANDS, id + '.json'), 'utf8')); } catch { return null; }
 }
 const ARTE_MODEL = process.env.ARTE_MODEL || 'gpt-image-1';
-const SIZES = { retrato: '1024x1536', quadrado: '1024x1024', paisagem: '1536x1024' };
 const IMG_MIME = { '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp' };
 
 // Chave da OpenAI: variável OPENAI_API_KEY ou ~/.claude/credentials/openai.json ({"api_key":"..."})
@@ -128,44 +127,58 @@ function artesServer(res) {
     tools: [
       tool(
         'gerar_arte',
-        'Gera uma arte de anúncio com IA a partir das fotos do carro (referência) e de um prompt em inglês. Salva em artes/ e mostra no painel. Cada chamada custa dinheiro na OpenAI: peça só o necessário (1 variação, no máximo 3).',
+        'Gera a arte de anúncio com IA a partir das fotos do carro (referência) e de um prompt em inglês. Gera SEMPRE os dois formatos: feed 1080x1080 e story 1080x1920 (2 chamadas na OpenAI, custo dobrado). Salva em artes/ e mostra no painel.',
         {
           fotos: z.array(z.string()).min(1).max(8).describe('Caminhos das fotos de referência (dentro de uploads/, artes/ ou brands/ — a logo do cliente)'),
-          prompt: z.string().min(20).describe('Instrução da arte, em inglês, detalhada'),
-          tamanho: z.enum(['retrato', 'quadrado', 'paisagem']).default('retrato').describe('retrato 1024x1536 (feed/story), quadrado 1024x1024, paisagem 1536x1024'),
+          prompt: z.string().min(20).describe('Instrução da arte, em inglês, detalhada, sem falar de formato/tamanho (o painel acrescenta)'),
           qualidade: z.enum(['low', 'medium', 'high']).default('medium'),
-          quantidade: z.number().int().min(1).max(3).default(1),
         },
-        async ({ fotos, prompt, tamanho, qualidade, quantidade }) => {
+        async ({ fotos, prompt, qualidade }) => {
           const key = openaiKey();
           if (!key) return { isError: true, content: [{ type: 'text', text: 'Chave da OpenAI não configurada no painel. Peça ao usuário para criar ~/.claude/credentials/openai.json com {"api_key":"..."} e reiniciar o painel.' }] };
           try {
-            const form = new FormData();
-            form.append('model', ARTE_MODEL);
-            form.append('prompt', prompt);
-            form.append('size', SIZES[tamanho] || SIZES.retrato);
-            form.append('quality', qualidade);
-            form.append('n', String(quantidade));
-            for (const f of fotos) {
+            const refs = fotos.map((f) => {
               const abs = path.resolve(f);
               if (!abs.startsWith(UPLOADS + path.sep) && !abs.startsWith(ARTES + path.sep) && !abs.startsWith(BRANDS + path.sep)) throw new Error('foto fora das pastas permitidas: ' + f);
               const mime = IMG_MIME[path.extname(abs).toLowerCase()];
               if (!mime) throw new Error('formato não suportado (use png, jpg ou webp): ' + path.basename(abs));
-              form.append('image[]', new Blob([fs.readFileSync(abs)], { type: mime }), path.basename(abs));
-            }
-            const r = await fetch('https://api.openai.com/v1/images/edits', { method: 'POST', headers: { Authorization: 'Bearer ' + key }, body: form, signal: AbortSignal.timeout(280000) });
-            const j = await r.json().catch(() => ({}));
-            if (!r.ok) return { isError: true, content: [{ type: 'text', text: 'OpenAI recusou: ' + (j.error?.message || r.status) }] };
-            const saved = [];
-            for (const [i, d] of (j.data || []).entries()) {
-              if (!d.b64_json) continue;
-              const name = `arte-${Date.now()}-${i + 1}.png`;
-              fs.writeFileSync(path.join(ARTES, name), Buffer.from(d.b64_json, 'base64'));
-              saved.push(name);
-              sse(res, 'image', { url: `/api/arte/${name}`, name });
-            }
-            if (!saved.length) return { isError: true, content: [{ type: 'text', text: 'A OpenAI não devolveu imagem.' }] };
-            return { content: [{ type: 'text', text: `Geradas ${saved.length} arte(s), já exibidas no painel: ${saved.map((n) => path.join(ARTES, n)).join(', ')}` }] };
+              return { abs, mime, data: fs.readFileSync(abs) };
+            });
+            const stamp = Date.now();
+            const common = ' Never include any phone number, WhatsApp number, contact number or WhatsApp icon anywhere in the image.';
+            const formats = [
+              { id: 'feed', size: '1024x1024', out: `arte-${stamp}-feed-1080x1080.png`, extra: ' Square 1:1 composition.', post: (f, o) => run('sips', ['-z', '1080', '1080', f, '--out', o]) },
+              {
+                id: 'story', size: '1024x1536', out: `arte-${stamp}-story-1080x1920.png`,
+                extra: ' Vertical 9:16 Instagram/Facebook story composition. The outer 8% on the left and right edges will be cropped, so keep the logo, every text and the whole car inside the central 84% of the width, and keep critical content away from the top 10% and bottom 10%.',
+                // corta o centro (864x1536 = 9:16) e amplia pra 1080x1920
+                post: async (f, o) => { const tmp = f + '.crop.png'; await run('sips', ['-c', '1536', '864', f, '--out', tmp]); await run('sips', ['-z', '1920', '1080', tmp, '--out', o]); fs.rmSync(tmp, { force: true }); },
+              },
+            ];
+            const results = await Promise.allSettled(formats.map(async (fm) => {
+              const form = new FormData();
+              form.append('model', ARTE_MODEL);
+              form.append('prompt', prompt + fm.extra + common);
+              form.append('size', fm.size);
+              form.append('quality', qualidade);
+              form.append('n', '1');
+              for (const r of refs) form.append('image[]', new Blob([r.data], { type: r.mime }), path.basename(r.abs));
+              const resp = await fetch('https://api.openai.com/v1/images/edits', { method: 'POST', headers: { Authorization: 'Bearer ' + key }, body: form, signal: AbortSignal.timeout(280000) });
+              const j = await resp.json().catch(() => ({}));
+              if (!resp.ok) throw new Error('OpenAI recusou: ' + (j.error?.message || resp.status));
+              const b64 = j.data?.[0]?.b64_json;
+              if (!b64) throw new Error('a OpenAI não devolveu imagem');
+              const raw = path.join(ARTES, `.raw-${stamp}-${fm.id}.png`);
+              fs.writeFileSync(raw, Buffer.from(b64, 'base64'));
+              const out = path.join(ARTES, fm.out);
+              try { await fm.post(raw, out); } finally { fs.rmSync(raw, { force: true }); }
+              sse(res, 'image', { url: `/api/arte/${fm.out}`, name: fm.out });
+              return out;
+            }));
+            const ok = results.filter((r) => r.status === 'fulfilled').map((r) => r.value);
+            const errs = results.filter((r) => r.status === 'rejected').map((r) => String(r.reason?.message || r.reason));
+            if (!ok.length) return { isError: true, content: [{ type: 'text', text: 'Falha ao gerar a arte: ' + errs.join(' | ') }] };
+            return { content: [{ type: 'text', text: `Geradas ${ok.length} arte(s), já exibidas no painel: ${ok.join(', ')}${errs.length ? '. Falhou: ' + errs.join(' | ') : ''}` }] };
           } catch (e) {
             return { isError: true, content: [{ type: 'text', text: 'Falha ao gerar a arte: ' + String(e.message || e) }] };
           }
