@@ -177,7 +177,7 @@ function ReadinessCard({
         </ul>
       )}
       <p className="text-xs text-muted-foreground mt-3">
-        “Atualizar conexão” é preciso uma vez nos WhatsApps criados antes desta tela, pra que as mensagens enviadas pelo sistema também sejam lidas.
+        <strong className="font-medium text-foreground">Clique uma vez em “Atualizar conexão”.</strong> Assim o WhatsApp deste cliente passa a avisar o sistema também das mensagens enviadas pela equipe, e não só das que o lead manda.
       </p>
     </Card>
   );
