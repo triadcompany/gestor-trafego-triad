@@ -360,7 +360,7 @@ function CreativeBox({
 
   return (
     <div
-      className="relative cursor-grab active:cursor-grabbing touch-none select-none"
+      className="relative mb-11 cursor-grab active:cursor-grabbing touch-none select-none"
       style={{ transform: `translate(${x}px, ${y}px)` }}
       onPointerDown={(e) => {
         if ((e.target as HTMLElement).closest("[data-no-drag]")) return;
@@ -990,12 +990,13 @@ function ReportDeckPage() {
                   </label>
                 )}
                 <Movable name="caption">
-                <div className="mt-4 w-full max-w-sm">
+                <div className="mt-2 w-full max-w-xl">
                   <Field
+                    as="textarea"
                     value={deck.creatives[0]?.caption ?? ""}
                     onChange={(v) => patch({ creatives: deck.creatives[0] ? [{ ...deck.creatives[0], caption: v }] : [] })}
                     placeholder="Legenda (ex: Criativos com 2 veículos)"
-                    className="text-center text-xs text-white/60"
+                    className="text-center text-sm text-white/70"
                   />
                 </div>
                 </Movable>
