@@ -86,6 +86,22 @@ export interface ReportDeckRow {
   consideracoes_items: string[];
 }
 
+// Texto inicial dos slides de Diagnóstico e Plano de Ação do Tráfego. Os trechos
+// entre [colchetes] o gestor preenche; o primeiro item do diagnóstico a tela
+// preenche sozinha com o custo por conversa real do período.
+export const DEFAULT_DIAGNOSTICO_FIRST = "Custo por conversa de R$ [valor], [dentro da/acima da] meta (R$ [mín] a [máx]).";
+export const DEFAULT_DIAGNOSTICO = [
+  DEFAULT_DIAGNOSTICO_FIRST,
+  "Plataforma e posicionamento que mais trouxeram conversas: [preencher].",
+  "Posicionamento ou público com custo acima da média: [preencher].",
+];
+export const DEFAULT_PLANO_TRAFEGO = [
+  "Concentrar a verba nos posicionamentos e públicos com menor custo por conversa.",
+  "Retirar o que gastou sem trazer conversas.",
+  "Testar 2 criativos novos com o preço do carro na tela.",
+  "Revisar os resultados em 15 dias.",
+];
+
 // Plano de ação que já vem preenchido (o gestor edita, remove ou acrescenta).
 export const DEFAULT_PLANO_ACAO = [
   "Converter cerca de 3% dos leads",
@@ -111,12 +127,12 @@ function emptyDeck(clientId: string): ReportDeckRow {
     meta_impressoes: null,
     meta_leads_count: null,
     meta_custo_por_lead: null,
-    diagnostico_items: [],
+    diagnostico_items: [...DEFAULT_DIAGNOSTICO],
     creatives: [],
     hidden_slides: [],
     custom_pages: [],
     text_boxes: [],
-    plano_trafego_items: [],
+    plano_trafego_items: [...DEFAULT_PLANO_TRAFEGO],
     offsets: {},
     funil_items: [
       { label: "Contatos", value: "" },
@@ -159,7 +175,7 @@ const _fetchReportDeck = createServerFn({ method: "GET" })
       meta_impressoes: row.metaImpressoes,
       meta_leads_count: row.metaLeadsCount,
       meta_custo_por_lead: row.metaCustoPorLead,
-      diagnostico_items: row.diagnosticoItems,
+      diagnostico_items: row.diagnosticoItems.length > 0 ? row.diagnosticoItems : [...DEFAULT_DIAGNOSTICO],
       ...splitCreatives(row.creatives),
       funil_items: row.funilItems as ReportDeckFunilItem[],
       plano_acao_items: row.planoAcaoItems.length > 0 ? row.planoAcaoItems : [...DEFAULT_PLANO_ACAO],
@@ -189,7 +205,7 @@ function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden
     custom_pages: layout?.pages ?? [],
     text_boxes: layout?.boxes ?? [],
     offsets: layout?.offsets ?? {},
-    plano_trafego_items: layout?.planoTrafego ?? [],
+    plano_trafego_items: layout?.planoTrafego && layout.planoTrafego.length > 0 ? layout.planoTrafego : [...DEFAULT_PLANO_TRAFEGO],
   };
 }
 

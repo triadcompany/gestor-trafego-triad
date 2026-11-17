@@ -18,6 +18,7 @@ import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { fetchClientDetail } from "@/lib/queries";
 import { getMetaToken, fetchCampaigns } from "@/lib/meta";
 import { fetchClientBrand } from "@/server/client-brand";
+import { DEFAULT_DIAGNOSTICO_FIRST } from "@/server/report-decks";
 import { fetchReportDeck, upsertReportDeck, sendReportPdfToOperationalGroup, type ReportDeckRow, type ReportDeckFunilItem, type ReportDeckCreative, type ReportDeckCustomPage, type ReportDeckTextBox } from "@/server/report-decks";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
@@ -603,6 +604,19 @@ function ReportDeckPage() {
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaigns, deck === null, range.since, range.until]);
+
+  // Primeiro item do diagnóstico: troca o modelo pelo custo por conversa real do período.
+  useEffect(() => {
+    if (!deck || !client || campaigns.length === 0 || deck.diagnostico_items[0] !== DEFAULT_DIAGNOSTICO_FIRST) return;
+    if (totals.cpl === null) return;
+    const hasTarget = client.cpl_max > 0;
+    const status = !hasTarget ? "" : totals.cpl <= client.cpl_max ? "dentro da" : "acima da";
+    const text = hasTarget
+      ? `Custo por conversa de ${brl(totals.cpl)}, ${status} meta (${brl(client.cpl_min)} a ${brl(client.cpl_max)}).`
+      : `Custo por conversa de ${brl(totals.cpl)} no período.`;
+    setDeck((d) => (d && d.diagnostico_items[0] === DEFAULT_DIAGNOSTICO_FIRST ? { ...d, diagnostico_items: [text, ...d.diagnostico_items.slice(1)] } : d));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deck?.diagnostico_items[0], client, campaigns, totals.cpl]);
 
   const handleLogoUpload = (file: File) => {
     const reader = new FileReader();
