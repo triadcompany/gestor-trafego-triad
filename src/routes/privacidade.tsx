@@ -5,8 +5,8 @@ export const Route = createFileRoute("/privacidade")({
   component: PrivacyPage,
 });
 
-function H2({ children }: { children: React.ReactNode }) {
-  return <h2 className="text-lg font-semibold tracking-tight mt-8 mb-2">{children}</h2>;
+function H2({ children, id }: { children: React.ReactNode; id?: string }) {
+  return <h2 id={id} className="text-lg font-semibold tracking-tight mt-8 mb-2 scroll-mt-6">{children}</h2>;
 }
 function H3({ children }: { children: React.ReactNode }) {
   return <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mt-4 mb-1.5">{children}</h3>;
@@ -84,7 +84,7 @@ function PrivacyPage() {
           armazenados de forma restrita, acessíveis apenas pelo backend da aplicação.
         </P>
 
-        <H2>6. Retenção e exclusão de dados</H2>
+        <H2 id="exclusao-de-dados">6. Retenção e exclusão de dados</H2>
         <P>
           Mantemos os dados enquanto a conta/organização estiver ativa no sistema. Qualquer gestor pode
           solicitar a exclusão dos próprios dados, ou a desconexão de uma conta da Meta/Instagram/WhatsApp, a
