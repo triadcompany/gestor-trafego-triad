@@ -16,9 +16,10 @@ import { toast } from "sonner";
 import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { fetchClientDetail } from "@/lib/queries";
-import { getMetaToken, fetchCampaigns } from "@/lib/meta";
+import { getMetaToken, fetchCampaigns, fetchOptimizationInsights } from "@/lib/meta";
 import { fetchClientBrand } from "@/server/client-brand";
-import { DEFAULT_DIAGNOSTICO_FIRST } from "@/server/report-decks";
+import { DEFAULT_DIAGNOSTICO, DEFAULT_PLANO_TRAFEGO } from "@/server/report-decks";
+import { buildAutoLists, sameList } from "@/lib/deck-auto";
 import { fetchReportDeck, upsertReportDeck, sendReportPdfToOperationalGroup, type ReportDeckRow, type ReportDeckFunilItem, type ReportDeckCreative, type ReportDeckCustomPage, type ReportDeckTextBox } from "@/server/report-decks";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
@@ -559,6 +560,7 @@ function ReportDeckPage() {
           customPages: deck.custom_pages,
           textBoxes: deck.text_boxes,
           planoTrafegoItems: deck.plano_trafego_items,
+          autoLists: deck.auto_lists,
           offsets: deck.offsets,
           funilItems: deck.funil_items,
           planoAcaoItems: deck.plano_acao_items,
@@ -605,18 +607,52 @@ function ReportDeckPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [campaigns, deck === null, range.since, range.until]);
 
-  // Primeiro item do diagnóstico: troca o modelo pelo custo por conversa real do período.
+  // Diagnóstico e plano automáticos: números reais do período (mesmas regras da aba Otimização).
+  const { data: optInsights, isFetched: optFetched } = useQuery({
+    queryKey: ["report-deck-optimization", id, range.since, range.until],
+    enabled: !!client,
+    retry: false,
+    queryFn: async () => {
+      const token = await getMetaToken(id);
+      if (!token || !client) return null;
+      return fetchOptimizationInsights(client.meta_ad_account_id, token, range.since, range.until);
+    },
+  });
+  const autoLists = useMemo(() => {
+    if (!client || !optFetched || campaigns.length === 0) return null;
+    return buildAutoLists({
+      cpl: totals.cpl,
+      target: client.cpl_max > 0 ? { min: client.cpl_min, max: client.cpl_max } : null,
+      insights: optInsights ?? null,
+    });
+  }, [client, optFetched, optInsights, campaigns.length, totals.cpl]);
+  const autoSig = autoLists ? JSON.stringify(autoLists) : "";
   useEffect(() => {
-    if (!deck || !client || campaigns.length === 0 || deck.diagnostico_items[0] !== DEFAULT_DIAGNOSTICO_FIRST) return;
-    if (totals.cpl === null) return;
-    const hasTarget = client.cpl_max > 0;
-    const status = !hasTarget ? "" : totals.cpl <= client.cpl_max ? "dentro da" : "acima da";
-    const text = hasTarget
-      ? `Custo por conversa de ${brl(totals.cpl)}, ${status} meta (${brl(client.cpl_min)} a ${brl(client.cpl_max)}).`
-      : `Custo por conversa de ${brl(totals.cpl)} no período.`;
-    setDeck((d) => (d && d.diagnostico_items[0] === DEFAULT_DIAGNOSTICO_FIRST ? { ...d, diagnostico_items: [text, ...d.diagnostico_items.slice(1)] } : d));
+    if (!autoLists) return;
+    setDeck((d) => {
+      if (!d) return d;
+      // "Gerenciada" = ainda é o texto padrão ou o último automático: o gestor não mexeu.
+      const diagManaged = sameList(d.diagnostico_items, DEFAULT_DIAGNOSTICO) || sameList(d.diagnostico_items, d.auto_lists.diagnostico);
+      const planoManaged = sameList(d.plano_trafego_items, DEFAULT_PLANO_TRAFEGO) || sameList(d.plano_trafego_items, d.auto_lists.plano);
+      if (!diagManaged && !planoManaged) return d;
+      const next = { ...d, auto_lists: { ...d.auto_lists } };
+      if (diagManaged) {
+        next.diagnostico_items = autoLists.diagnostico;
+        next.auto_lists.diagnostico = autoLists.diagnostico;
+      }
+      if (planoManaged) {
+        next.plano_trafego_items = autoLists.plano;
+        next.auto_lists.plano = autoLists.plano;
+      }
+      const changed =
+        !sameList(d.diagnostico_items, next.diagnostico_items) ||
+        !sameList(d.plano_trafego_items, next.plano_trafego_items) ||
+        !sameList(d.auto_lists.diagnostico, next.auto_lists.diagnostico) ||
+        !sameList(d.auto_lists.plano, next.auto_lists.plano);
+      return changed ? next : d;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [deck?.diagnostico_items[0], client, campaigns, totals.cpl]);
+  }, [autoSig, deck === null]);
 
   const handleLogoUpload = (file: File) => {
     const reader = new FileReader();

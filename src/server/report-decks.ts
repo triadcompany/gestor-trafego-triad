@@ -79,6 +79,8 @@ export interface ReportDeckRow {
   text_boxes: ReportDeckTextBox[];
   // lista do slide "Plano de Ação do Tráfego" (guardada no layout, sem coluna nova)
   plano_trafego_items: string[];
+  // últimos textos gerados automaticamente (se a lista ainda for igual a eles, o gestor não mexeu e pode ser recalculada)
+  auto_lists: { diagnostico: string[]; plano: string[] };
   // deslocamento (px) dos textos fixos de cada slide arrastados pelo gestor
   offsets: Record<string, { x: number; y: number }>;
   funil_items: ReportDeckFunilItem[];
@@ -133,6 +135,7 @@ function emptyDeck(clientId: string): ReportDeckRow {
     custom_pages: [],
     text_boxes: [],
     plano_trafego_items: [...DEFAULT_PLANO_TRAFEGO],
+    auto_lists: { diagnostico: [], plano: [] },
     offsets: {},
     funil_items: [
       { label: "Contatos", value: "" },
@@ -194,9 +197,10 @@ type LayoutEntry = {
   boxes?: ReportDeckTextBox[];
   offsets?: Record<string, { x: number; y: number }>;
   planoTrafego?: string[];
+  autoLists?: { diagnostico: string[]; plano: string[] };
 };
 
-function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages" | "text_boxes" | "offsets" | "plano_trafego_items"> {
+function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages" | "text_boxes" | "offsets" | "plano_trafego_items" | "auto_lists"> {
   const list = Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [];
   const layout = list.find((e) => e.kind === "layout") as LayoutEntry | undefined;
   return {
@@ -206,6 +210,7 @@ function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden
     text_boxes: layout?.boxes ?? [],
     offsets: layout?.offsets ?? {},
     plano_trafego_items: layout?.planoTrafego && layout.planoTrafego.length > 0 ? layout.planoTrafego : [...DEFAULT_PLANO_TRAFEGO],
+    auto_lists: layout?.autoLists ?? { diagnostico: [], plano: [] },
   };
 }
 
@@ -244,6 +249,7 @@ const upsertSchema = z.object({
     .optional(),
   offsets: z.record(z.string(), z.object({ x: z.number(), y: z.number() })).optional(),
   planoTrafegoItems: z.array(z.string()).optional(),
+  autoLists: z.object({ diagnostico: z.array(z.string()), plano: z.array(z.string()) }).optional(),
   funilItems: z.array(funilItemSchema).optional(),
   planoAcaoItems: z.array(z.string()).optional(),
   consideracoesItems: z.array(z.string()).optional(),
@@ -273,7 +279,7 @@ const _upsertReportDeck = createServerFn({ method: "POST" })
         ? {
             creatives: [
               ...data.creatives,
-              { kind: "layout", hidden: data.hiddenSlides ?? [], pages: data.customPages ?? [], boxes: data.textBoxes ?? [], offsets: data.offsets ?? {}, planoTrafego: data.planoTrafegoItems ?? [] },
+              { kind: "layout", hidden: data.hiddenSlides ?? [], pages: data.customPages ?? [], boxes: data.textBoxes ?? [], offsets: data.offsets ?? {}, planoTrafego: data.planoTrafegoItems ?? [], autoLists: data.autoLists ?? { diagnostico: [], plano: [] } },
             ],
           }
         : {}),
