@@ -85,6 +85,37 @@ function replaceModernColors(value: string, toRgb: (c: string) => string): strin
   return out + value.slice(last);
 }
 
+// html2canvas não entende campos de texto que crescem sozinhos (field-sizing) e fotografa
+// cada um com a altura de uma linha, cortando o resto. Na cópia usada pro PDF, troca
+// cada textarea/input por um bloco de texto com o mesmo estilo e a altura do conteúdo.
+function replaceFormControls(clonedDoc: Document) {
+  const root = clonedDoc.querySelector<HTMLElement>("[data-h2c-root]");
+  const view = clonedDoc.defaultView;
+  if (!root || !view) return;
+  root.querySelectorAll<HTMLTextAreaElement | HTMLInputElement>("textarea, input").forEach((el) => {
+    if (el instanceof HTMLInputElement && !["text", "", "search", "tel", "url", "email"].includes(el.type)) return;
+    const cs = view.getComputedStyle(el);
+    const isArea = el instanceof HTMLTextAreaElement;
+    const div = clonedDoc.createElement("div");
+    div.textContent = el.value || (isArea ? el.textContent ?? "" : el.getAttribute("value") ?? "");
+    const style = div.style;
+    style.display = "block";
+    style.boxSizing = "border-box";
+    style.width = cs.width;
+    style.minHeight = cs.lineHeight === "normal" ? "1.2em" : cs.lineHeight;
+    style.height = "auto";
+    style.overflow = "visible";
+    style.whiteSpace = isArea ? "pre-wrap" : "pre";
+    style.overflowWrap = "break-word";
+    style.margin = cs.margin;
+    style.padding = cs.padding;
+    for (const prop of ["font-family", "font-size", "font-weight", "font-style", "letter-spacing", "line-height", "text-align", "text-transform", "color"]) {
+      style.setProperty(prop, cs.getPropertyValue(prop));
+    }
+    el.replaceWith(div);
+  });
+}
+
 function sanitizeModernColors(clonedDoc: Document) {
   const canvas = clonedDoc.createElement("canvas");
   canvas.width = canvas.height = 1;
@@ -871,7 +902,10 @@ function ReportDeckPage() {
             scale: OUT_W / el.offsetWidth,
             backgroundColor: "#0a0a0c",
             logging: false,
-            onclone: (d) => sanitizeModernColors(d),
+            onclone: (d) => {
+              replaceFormControls(d);
+              sanitizeModernColors(d);
+            },
           });
         } finally {
           el.removeAttribute("data-h2c-root");
