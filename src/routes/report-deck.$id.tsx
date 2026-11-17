@@ -305,7 +305,7 @@ function Field({
   );
 }
 
-function BulletList({ items, onChange }: { items: string[]; onChange: (items: string[]) => void }) {
+function BulletList({ items, onChange, textClass = "text-[14px] leading-relaxed" }: { items: string[]; onChange: (items: string[]) => void; textClass?: string }) {
   const set = (i: number, v: string) => onChange(items.map((it, idx) => (idx === i ? v : it)));
   const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i));
   const add = () => onChange([...items, ""]);
@@ -315,7 +315,7 @@ function BulletList({ items, onChange }: { items: string[]; onChange: (items: st
       {items.map((item, i) => (
         <div key={i} className="flex items-start gap-2 group">
           <span className="text-orange-400 mt-[9px] text-[10px] shrink-0">●</span>
-          <Field as="textarea" value={item} onChange={(v) => set(i, v)} placeholder="Digite aqui..." className="text-[14px] leading-relaxed" />
+          <Field as="textarea" value={item} onChange={(v) => set(i, v)} placeholder="Digite aqui..." className={textClass} />
           <button
             type="button"
             onClick={() => remove(i)}
@@ -355,7 +355,7 @@ function CreativeBox({
 }) {
   const x = creative.x ?? 0;
   const y = creative.y ?? 0;
-  const height = creative.height ?? 320;
+  const height = creative.height ?? 300;
   const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
 
   return (
@@ -410,7 +410,7 @@ function CreativeBox({
           onChange={(e) => onChange({ ...creative, x, y, height: Number(e.target.value) })}
           className="w-28"
         />
-        <button type="button" className="underline hover:text-white" onClick={() => onChange({ ...creative, x: 0, y: 0, height: 320 })}>
+        <button type="button" className="underline hover:text-white" onClick={() => onChange({ ...creative, x: 0, y: 0, height: 300 })}>
           Centralizar
         </button>
       </div>
@@ -561,6 +561,7 @@ function ReportDeckPage() {
           customPages: deck.custom_pages,
           textBoxes: deck.text_boxes,
           planoTrafegoItems: deck.plano_trafego_items,
+          criativosItems: deck.criativos_items,
           autoLists: deck.auto_lists,
           offsets: deck.offsets,
           funilItems: deck.funil_items,
@@ -975,31 +976,36 @@ function ReportDeckPage() {
               >
                 {creativeBusy ? "Buscando..." : "Usar o melhor criativo do período"}
               </button>
-              <div className="flex-1 flex flex-col items-center justify-center">
-                {deck.creatives[0] ? (
-                  <CreativeBox
-                    creative={deck.creatives[0]}
-                    onChange={(c) => patch({ creatives: [c] })}
-                    onRemove={() => patch({ creatives: [] })}
-                  />
-                ) : (
-                  <label className="flex flex-col items-center gap-2 text-sm text-white/40 border border-dashed border-white/20 rounded-lg px-8 py-10 cursor-pointer">
-                    <ImagePlus className="h-6 w-6" />
-                    Enviar imagem/thumbnail do criativo
-                    <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleCreativeUpload(e.target.files[0])} />
-                  </label>
-                )}
-                <Movable name="caption">
-                <div className="mt-2 w-full max-w-xl">
-                  <Field
-                    as="textarea"
-                    value={deck.creatives[0]?.caption ?? ""}
-                    onChange={(v) => patch({ creatives: deck.creatives[0] ? [{ ...deck.creatives[0], caption: v }] : [] })}
-                    placeholder="Legenda (ex: Criativos com 2 veículos)"
-                    className="text-center text-sm text-white/70"
-                  />
+              <div className="flex-1 flex items-center gap-10">
+                {/* Esquerda: o criativo */}
+                <div className="shrink-0 flex w-[260px] justify-center">
+                  {deck.creatives[0] ? (
+                    <CreativeBox
+                      creative={deck.creatives[0]}
+                      onChange={(c) => patch({ creatives: [c] })}
+                      onRemove={() => patch({ creatives: [] })}
+                    />
+                  ) : (
+                    <label className="flex flex-col items-center gap-2 text-center text-sm text-white/40 border border-dashed border-white/20 rounded-lg px-6 py-10 cursor-pointer">
+                      <ImagePlus className="h-6 w-6" />
+                      Enviar imagem/thumbnail do criativo
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleCreativeUpload(e.target.files[0])} />
+                    </label>
+                  )}
                 </div>
-                </Movable>
+                {/* Direita: legenda + orientações do vídeo */}
+                <div className="min-w-0 flex-1 space-y-4 pb-11">
+                  <Movable name="caption">
+                    <Field
+                      as="textarea"
+                      value={deck.creatives[0]?.caption ?? ""}
+                      onChange={(v) => patch({ creatives: deck.creatives[0] ? [{ ...deck.creatives[0], caption: v }] : [] })}
+                      placeholder="Legenda (ex: Menor custo por conversa do período)"
+                      className="text-sm text-white/60"
+                    />
+                  </Movable>
+                  <BulletList items={deck.criativos_items} onChange={(items) => patch({ criativos_items: items })} textClass="text-[18px] leading-snug" />
+                </div>
               </div>
             </Slide>
           </SlideFrame>

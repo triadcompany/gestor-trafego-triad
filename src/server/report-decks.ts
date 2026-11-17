@@ -79,6 +79,8 @@ export interface ReportDeckRow {
   text_boxes: ReportDeckTextBox[];
   // lista do slide "Plano de Ação do Tráfego" (guardada no layout, sem coluna nova)
   plano_trafego_items: string[];
+  // texto ao lado do criativo no slide "Melhores Criativos" (no layout, sem coluna nova)
+  criativos_items: string[];
   // últimos textos gerados automaticamente (se a lista ainda for igual a eles, o gestor não mexeu e pode ser recalculada)
   auto_lists: { diagnostico: string[]; plano: string[]; contatos?: string; creativeAd?: string };
   // deslocamento (px) dos textos fixos de cada slide arrastados pelo gestor
@@ -96,6 +98,10 @@ export const DEFAULT_DIAGNOSTICO = [
   DEFAULT_DIAGNOSTICO_FIRST,
   "Plataforma e posicionamento que mais trouxeram conversas: [preencher].",
   "Posicionamento ou público com custo acima da média: [preencher].",
+];
+export const DEFAULT_CRIATIVOS = [
+  "Falar sempre km e principais características do veículo para qualificação de interesse.",
+  "Falar valor, entrada + parcela, bom relacionamento com o banco para qualificação financeira.",
 ];
 export const DEFAULT_PLANO_TRAFEGO = [
   "Concentrar a verba nos posicionamentos e públicos com menor custo por conversa.",
@@ -135,6 +141,7 @@ function emptyDeck(clientId: string): ReportDeckRow {
     custom_pages: [],
     text_boxes: [],
     plano_trafego_items: [...DEFAULT_PLANO_TRAFEGO],
+    criativos_items: [...DEFAULT_CRIATIVOS],
     auto_lists: { diagnostico: [], plano: [] },
     offsets: {},
     funil_items: [
@@ -197,10 +204,11 @@ type LayoutEntry = {
   boxes?: ReportDeckTextBox[];
   offsets?: Record<string, { x: number; y: number }>;
   planoTrafego?: string[];
+  criativosItems?: string[];
   autoLists?: { diagnostico: string[]; plano: string[]; contatos?: string; creativeAd?: string };
 };
 
-function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages" | "text_boxes" | "offsets" | "plano_trafego_items" | "auto_lists"> {
+function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages" | "text_boxes" | "offsets" | "plano_trafego_items" | "criativos_items" | "auto_lists"> {
   const list = Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [];
   const layout = list.find((e) => e.kind === "layout") as LayoutEntry | undefined;
   return {
@@ -210,6 +218,7 @@ function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden
     text_boxes: layout?.boxes ?? [],
     offsets: layout?.offsets ?? {},
     plano_trafego_items: layout?.planoTrafego && layout.planoTrafego.length > 0 ? layout.planoTrafego : [...DEFAULT_PLANO_TRAFEGO],
+    criativos_items: layout?.criativosItems && layout.criativosItems.length > 0 ? layout.criativosItems : [...DEFAULT_CRIATIVOS],
     auto_lists: layout?.autoLists ?? { diagnostico: [], plano: [] },
   };
 }
@@ -249,6 +258,7 @@ const upsertSchema = z.object({
     .optional(),
   offsets: z.record(z.string(), z.object({ x: z.number(), y: z.number() })).optional(),
   planoTrafegoItems: z.array(z.string()).optional(),
+  criativosItems: z.array(z.string()).optional(),
   autoLists: z.object({ diagnostico: z.array(z.string()), plano: z.array(z.string()), contatos: z.string().optional(), creativeAd: z.string().optional() }).optional(),
   funilItems: z.array(funilItemSchema).optional(),
   planoAcaoItems: z.array(z.string()).optional(),
@@ -279,7 +289,7 @@ const _upsertReportDeck = createServerFn({ method: "POST" })
         ? {
             creatives: [
               ...data.creatives,
-              { kind: "layout", hidden: data.hiddenSlides ?? [], pages: data.customPages ?? [], boxes: data.textBoxes ?? [], offsets: data.offsets ?? {}, planoTrafego: data.planoTrafegoItems ?? [], autoLists: data.autoLists ?? { diagnostico: [], plano: [] } },
+              { kind: "layout", hidden: data.hiddenSlides ?? [], pages: data.customPages ?? [], boxes: data.textBoxes ?? [], offsets: data.offsets ?? {}, planoTrafego: data.planoTrafegoItems ?? [], criativosItems: data.criativosItems ?? [], autoLists: data.autoLists ?? { diagnostico: [], plano: [] } },
             ],
           }
         : {}),
