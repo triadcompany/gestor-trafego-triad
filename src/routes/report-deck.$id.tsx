@@ -135,28 +135,39 @@ function sanitizeModernColors(clonedDoc: Document) {
   }
 }
 
-// Tela de edição em 960x540 (16:9) — metade do tamanho final. Export usa
-// scale:2 no html2canvas, resultando em exatamente 1920x1080 no PDF.
+// Os slides são desenhados num espaço de 960x540 (16:9) e mostrados em tamanho real,
+// 1920x1080, ampliando 2× (ver ViewScaleCtx). Posições salvas (arrastes, caixas de
+// texto) ficam nesse espaço de 960x540. Na exportação o editor volta a 1× e o
+// html2canvas amplia 2×, saindo exatamente 1920x1080.
 const PAGE_W = 960;
 const PAGE_H = 540;
 const EXPORT_SCALE = 2;
+const OUT_W = 1920;
+const OUT_H = 1080;
+
+// Quantos pixels da tela cada unidade do espaço de 960x540 ocupa (2 = tamanho real 1920x1080).
+const ViewScaleCtx = createContext(2);
+const scaleStyle = (S: number): React.CSSProperties => (S === 1 ? {} : { transform: `scale(${S})`, transformOrigin: "top left" });
 
 function Slide({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  const S = useContext(ViewScaleCtx);
   return (
-    <div
-      className={`relative overflow-hidden shrink-0 ${className}`}
-      style={{ width: PAGE_W, height: PAGE_H, background: "#0a0a0c", color: "#fff" }}
-    >
+    <div className="shrink-0" style={{ width: PAGE_W * S, height: PAGE_H * S }}>
       <div
-        className="absolute -right-24 -top-24 h-72 w-72 rounded-full opacity-40 blur-[70px]"
-        style={{ background: "radial-gradient(circle, #ff7a1a 0%, transparent 70%)" }}
-      />
-      <div
-        className="absolute -left-28 bottom-10 h-72 w-72 rounded-full opacity-30 blur-[70px]"
-        style={{ background: "radial-gradient(circle, #7a3bff 0%, transparent 70%)" }}
-      />
-      <div className="relative h-full w-full flex flex-col px-16 py-10">{children}</div>
-      <div className="absolute bottom-7 right-10 text-[11px] font-semibold tracking-wide text-white/70">imperial <span className="font-normal opacity-70">marketing</span></div>
+        className={`relative overflow-hidden ${className}`}
+        style={{ width: PAGE_W, height: PAGE_H, background: "#0a0a0c", color: "#fff", ...scaleStyle(S) }}
+      >
+        <div
+          className="absolute -right-24 -top-24 h-72 w-72 rounded-full opacity-40 blur-[70px]"
+          style={{ background: "radial-gradient(circle, #ff7a1a 0%, transparent 70%)" }}
+        />
+        <div
+          className="absolute -left-28 bottom-10 h-72 w-72 rounded-full opacity-30 blur-[70px]"
+          style={{ background: "radial-gradient(circle, #7a3bff 0%, transparent 70%)" }}
+        />
+        <div className="relative h-full w-full flex flex-col px-16 py-10">{children}</div>
+        <div className="absolute bottom-7 right-10 text-[11px] font-semibold tracking-wide text-white/70">imperial <span className="font-normal opacity-70">marketing</span></div>
+      </div>
     </div>
   );
 }
@@ -170,6 +181,7 @@ const EditCtx = createContext<{
 
 // Alça de arrastar (fora da captura do PDF). Mexe só em posição, não no texto.
 function useDragger(x: number, y: number, set: (x: number, y: number) => void) {
+  const S = useContext(ViewScaleCtx);
   const start = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
   return {
     onPointerDown: (e: React.PointerEvent) => {
@@ -179,7 +191,7 @@ function useDragger(x: number, y: number, set: (x: number, y: number) => void) {
     },
     onPointerMove: (e: React.PointerEvent) => {
       const d = start.current;
-      if (d) set(Math.round(d.x + e.clientX - d.px), Math.round(d.y + e.clientY - d.py));
+      if (d) set(Math.round(d.x + (e.clientX - d.px) / S), Math.round(d.y + (e.clientY - d.py) / S));
     },
     onPointerUp: () => (start.current = null),
     onPointerCancel: () => (start.current = null),
@@ -356,6 +368,7 @@ function CreativeBox({
   const x = creative.x ?? 0;
   const y = creative.y ?? 0;
   const height = creative.height ?? 300;
+  const S = useContext(ViewScaleCtx);
   const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null);
 
   return (
@@ -370,7 +383,7 @@ function CreativeBox({
       onPointerMove={(e) => {
         const d = drag.current;
         if (!d) return;
-        onChange({ ...creative, x: Math.round(d.x + e.clientX - d.px), y: Math.round(d.y + e.clientY - d.py), height });
+        onChange({ ...creative, x: Math.round(d.x + (e.clientX - d.px) / S), y: Math.round(d.y + (e.clientY - d.py) / S), height });
       }}
       onPointerUp={() => (drag.current = null)}
       onPointerCancel={() => (drag.current = null)}
@@ -449,10 +462,11 @@ function SlideFrame({
   refs: React.MutableRefObject<Record<string, HTMLDivElement | null>>;
   children: React.ReactNode;
 }) {
+  const S = useContext(ViewScaleCtx);
   return (
     <EditCtx.Provider value={{ slideId: id, offsets, setOffset }}>
     <div>
-      <div className="flex items-center justify-between mb-1.5" style={{ width: PAGE_W }}>
+      <div className="flex items-center justify-between mb-1.5" style={{ width: PAGE_W * S }}>
         <span className="text-xs text-muted-foreground">
           {label}
           {hidden && " — oculto no relatório"}
@@ -472,11 +486,13 @@ function SlideFrame({
           </Button>
         </div>
       </div>
-      <div ref={(el) => { refs.current[id] = el; }} className={`relative ${hidden ? "opacity-30 transition-opacity" : "transition-opacity"}`} style={{ width: PAGE_W, height: PAGE_H }}>
+      <div ref={(el) => { refs.current[id] = el; }} className={`relative ${hidden ? "opacity-30 transition-opacity" : "transition-opacity"}`} style={{ width: PAGE_W * S, height: PAGE_H * S }}>
         {children}
-        {boxes.map((b) => (
-          <TextBoxView key={b.id} box={b} onChange={(f) => onBoxChange(b.id, f)} onRemove={() => onBoxRemove(b.id)} />
-        ))}
+        <div className="pointer-events-none absolute left-0 top-0" style={{ width: PAGE_W, height: PAGE_H, ...scaleStyle(S) }}>
+          {boxes.map((b) => (
+            <TextBoxView key={b.id} box={b} onChange={(f) => onBoxChange(b.id, f)} onRemove={() => onBoxRemove(b.id)} />
+          ))}
+        </div>
       </div>
     </div>
     </EditCtx.Provider>
@@ -507,6 +523,25 @@ function ReportDeckPage() {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [sendToGroup, setSendToGroup] = useState(true);
+  // Zoom só de visualização (100% = 1920x1080 reais). Na exportação o editor volta a 50% (1×) pra capturar.
+  const [zoom, setZoom] = useState(1);
+  useEffect(() => {
+    try {
+      const z = Number(localStorage.getItem("report-deck-zoom"));
+      if (z === 0.5 || z === 0.75 || z === 1) setZoom(z);
+    } catch {
+      /* sem armazenamento */
+    }
+  }, []);
+  const viewScale = 2 * (exporting ? 0.5 : zoom);
+  const changeZoom = (z: number) => {
+    setZoom(z);
+    try {
+      localStorage.setItem("report-deck-zoom", String(z));
+    } catch {
+      /* ignora */
+    }
+  };
   const [exportProgress, setExportProgress] = useState<{ done: number; total: number } | null>(null);
   const slideRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -789,15 +824,15 @@ function ReportDeckPage() {
     let toastId: string | number | undefined;
     try {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
-      const outW = PAGE_W * EXPORT_SCALE;
-      const outH = PAGE_H * EXPORT_SCALE;
+      const outW = OUT_W;
+      const outH = OUT_H;
       const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: [outW, outH] });
       const ids = [...STANDARD_SLIDES.map((x) => x.id), ...deck.custom_pages.map((pg) => pg.id)].filter((sid) => !deck.hidden_slides.includes(sid));
       if (ids.length === 0) throw new Error("Todos os slides estão ocultos.");
       toastId = toast.loading(`Gerando PDF... 0 de ${ids.length}`);
       setExportProgress({ done: 0, total: ids.length });
-      // deixa a tela pintar o "Gerando..." antes de começar o trabalho pesado
-      await new Promise((r) => setTimeout(r, 30));
+      // deixa a tela pintar o "Gerando..." e o editor voltar a 1× (ver viewScale) antes de capturar
+      await new Promise((r) => setTimeout(r, 250));
       let first = true;
       for (let i = 0; i < ids.length; i++) {
         const el = slideRefs.current[ids[i]];
@@ -806,7 +841,7 @@ function ReportDeckPage() {
         let canvas: HTMLCanvasElement;
         try {
           canvas = await html2canvas(el, {
-            scale: EXPORT_SCALE,
+            scale: OUT_W / el.offsetWidth,
             backgroundColor: "#0a0a0c",
             logging: false,
             onclone: (d) => sanitizeModernColors(d),
@@ -896,6 +931,14 @@ function ReportDeckPage() {
                 <Input type="date" value={customUntil} min={customSince} max={isoDateInBrasilia()} onChange={(e) => e.target.value && setCustomUntil(e.target.value)} className="h-9 w-36" />
               </>
             )}
+            <Select value={String(zoom)} onValueChange={(v) => changeZoom(Number(v))}>
+              <SelectTrigger className="w-28 h-9" title="Zoom da tela (100% = 1920x1080 reais)"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Zoom 100%</SelectItem>
+                <SelectItem value="0.75">Zoom 75%</SelectItem>
+                <SelectItem value="0.5">Zoom 50%</SelectItem>
+              </SelectContent>
+            </Select>
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
               <input type="checkbox" checked={sendToGroup} onChange={(e) => setSendToGroup(e.target.checked)} />
               Enviar ao grupo operacional
@@ -907,7 +950,9 @@ function ReportDeckPage() {
           </div>
         </div>
 
-        <div className="flex flex-col items-center gap-8 pb-10">
+        <ViewScaleCtx.Provider value={viewScale}>
+        <div className="overflow-x-auto">
+        <div className="mx-auto flex w-max flex-col items-center gap-8 pb-10">
           {/* Página 1 — Capa */}
           <SlideFrame id="capa" label="Capa" hidden={isHidden("capa")} onToggle={() => toggleHidden("capa")} {...frameProps("capa")} refs={slideRefs}>
             <Slide>
@@ -1117,6 +1162,8 @@ function ReportDeckPage() {
             <Plus className="h-4 w-4" /> Adicionar página
           </Button>
         </div>
+        </div>
+        </ViewScaleCtx.Provider>
       </div>
     </AppShell>
   );
