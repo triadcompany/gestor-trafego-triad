@@ -661,6 +661,19 @@ function ReportDeckPage() {
     if (optError) toast.error("Não consegui buscar os dados do período pro diagnóstico automático. Tente recarregar a página.", { id: "deck-opt-error" });
   }, [optError]);
 
+  // Migração única do slide "Melhores Criativos" (layout novo: vídeo à esquerda, texto à direita):
+  // posições arrastadas no layout antigo e caixas soltas com as mesmas orientações saem do caminho.
+  useEffect(() => {
+    if (!deck || deck.auto_lists.layoutV === 2) return;
+    setDeck((d) => {
+      if (!d || d.auto_lists.layoutV === 2) return d;
+      const offsets = Object.fromEntries(Object.entries(d.offsets).filter(([k]) => !k.startsWith("criativos:")));
+      const text_boxes = d.text_boxes.filter((b) => !(b.slide === "criativos" && /Falar (sempre km|valor, entrada)/i.test(b.text)));
+      const creatives = d.creatives.map((c) => ({ ...c, x: undefined, y: undefined, height: undefined }));
+      return { ...d, offsets, text_boxes, creatives, auto_lists: { ...d.auto_lists, layoutV: 2 } };
+    });
+  }, [deck === null]);
+
   // Melhores criativos: o anúncio com menor custo por conversa do período, com a imagem
   // de capa que a Meta guarda dele. Preenche sozinho enquanto o slide estiver vazio ou com
   // um criativo automático (arquivo "auto-<id>"); um criativo enviado por você nunca é trocado.

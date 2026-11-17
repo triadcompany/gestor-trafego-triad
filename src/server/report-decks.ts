@@ -82,7 +82,7 @@ export interface ReportDeckRow {
   // texto ao lado do criativo no slide "Melhores Criativos" (no layout, sem coluna nova)
   criativos_items: string[];
   // últimos textos gerados automaticamente (se a lista ainda for igual a eles, o gestor não mexeu e pode ser recalculada)
-  auto_lists: { diagnostico: string[]; plano: string[]; contatos?: string; creativeAd?: string };
+  auto_lists: { diagnostico: string[]; plano: string[]; contatos?: string; creativeAd?: string; layoutV?: number };
   // deslocamento (px) dos textos fixos de cada slide arrastados pelo gestor
   offsets: Record<string, { x: number; y: number }>;
   funil_items: ReportDeckFunilItem[];
@@ -205,7 +205,7 @@ type LayoutEntry = {
   offsets?: Record<string, { x: number; y: number }>;
   planoTrafego?: string[];
   criativosItems?: string[];
-  autoLists?: { diagnostico: string[]; plano: string[]; contatos?: string; creativeAd?: string };
+  autoLists?: { diagnostico: string[]; plano: string[]; contatos?: string; creativeAd?: string; layoutV?: number };
 };
 
 function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages" | "text_boxes" | "offsets" | "plano_trafego_items" | "criativos_items" | "auto_lists"> {
@@ -259,7 +259,7 @@ const upsertSchema = z.object({
   offsets: z.record(z.string(), z.object({ x: z.number(), y: z.number() })).optional(),
   planoTrafegoItems: z.array(z.string()).optional(),
   criativosItems: z.array(z.string()).optional(),
-  autoLists: z.object({ diagnostico: z.array(z.string()), plano: z.array(z.string()), contatos: z.string().optional(), creativeAd: z.string().optional() }).optional(),
+  autoLists: z.object({ diagnostico: z.array(z.string()), plano: z.array(z.string()), contatos: z.string().optional(), creativeAd: z.string().optional(), layoutV: z.number().optional() }).optional(),
   funilItems: z.array(funilItemSchema).optional(),
   planoAcaoItems: z.array(z.string()).optional(),
   consideracoesItems: z.array(z.string()).optional(),
