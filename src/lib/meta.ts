@@ -1819,6 +1819,33 @@ async function commitNewCreative(
   await updateMetaObject(adId, { creative: JSON.stringify({ creative_id: newCreative.id }) }, token);
 }
 
+/**
+ * Número de WhatsApp de um anúncio, na ordem: o informado → o do criativo atual →
+ * o botão do criativo atual (CTA) → o número do conjunto do anúncio. Evita travar uma
+ * troca de vídeo ou texto só porque o cadastro do cliente ou o promoted_object vieram sem número.
+ */
+async function resolveAdWhatsapp(adId: string, token: string, creative: MetaAdCreative, given?: string): Promise<string> {
+  const direct = (given ?? creative.whatsapp_number ?? "").replace(/\D/g, "");
+  if (direct) return direct;
+  const spec = creative.object_story_spec as
+    | { video_data?: { call_to_action?: { value?: { whatsapp_number?: string } } }; link_data?: { call_to_action?: { value?: { whatsapp_number?: string } }; link?: string } }
+    | undefined;
+  const cta = spec?.video_data?.call_to_action?.value?.whatsapp_number ?? spec?.link_data?.call_to_action?.value?.whatsapp_number;
+  if (cta) return cta.replace(/\D/g, "");
+  const wa = (spec?.link_data?.link ?? "").match(/wa\.me\/(\d+)/);
+  if (wa) return wa[1];
+  try {
+    const r = await fetchMetaJson<{ adset_id?: string }>(`${BASE_URL}/${adId}?${new URLSearchParams({ fields: "adset_id", access_token: token })}`);
+    if (r.adset_id) {
+      const n = await fetchAdSetWhatsappNumber(r.adset_id, token);
+      if (n) return n.replace(/\D/g, "");
+    }
+  } catch {
+    /* sem o conjunto: segue sem número */
+  }
+  return "";
+}
+
 export async function swapAdCreativeMedia(
   adId: string,
   creative: MetaAdCreative,
@@ -1836,7 +1863,7 @@ export async function swapAdCreativeMedia(
   // object_story_spec do tipo errado, e a Meta aceita e publica como se nada tivesse mudado).
   const isVideo = mediaFile.type.startsWith("video/");
   const pageId = creative.actor_id ?? creative.object_story_spec?.page_id;
-  const resolvedWa = (clientWhatsappNumber ?? creative.whatsapp_number ?? "").replace(/\D/g, "");
+  const resolvedWa = await resolveAdWhatsapp(adId, token, creative, clientWhatsappNumber);
   // Prioriza o texto atual do formulário (pode ter edições não salvas) sobre o criativo já publicado na Meta
   const primaryText = textOverrides?.body ?? creative.body ?? creative.object_story_spec?.video_data?.message ?? creative.object_story_spec?.link_data?.message ?? "";
   const title = textOverrides?.title ?? creative.title ?? creative.object_story_spec?.video_data?.title ?? creative.object_story_spec?.link_data?.name ?? "";
@@ -1984,7 +2011,7 @@ export async function updateAdCreative(
   const videoId = creative.video_id ?? creative.object_story_spec?.video_data?.video_id;
   const pageId2 = creative.actor_id ?? creative.object_story_spec?.page_id;
   if (videoId && pageId2) {
-    const resolvedWa = (overrideWa ?? clientWhatsappNumber ?? creative.whatsapp_number ?? "").replace(/\D/g, "");
+    const resolvedWa = overrideWa || (await resolveAdWhatsapp(adId, token, creative, clientWhatsappNumber));
     if (!resolvedWa) throw new Error("Número WhatsApp não encontrado. Cadastre o número em Configurações do cliente.");
 
     await commitNewCreative(accountId, adId, {
