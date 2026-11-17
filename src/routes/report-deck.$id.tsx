@@ -523,8 +523,8 @@ function ReportDeckPage() {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [sendToGroup, setSendToGroup] = useState(true);
-  // Zoom só de visualização (100% = 1920x1080 reais). Na exportação o editor volta a 50% (1×) pra capturar.
-  const [zoom, setZoom] = useState(1);
+  // Zoom só de visualização: padrão 50% (o tamanho de sempre, 960x540 na tela); 100% = 1920x1080 reais. Na exportação o editor usa 50% (1×) pra capturar.
+  const [zoom, setZoom] = useState(0.5);
   useEffect(() => {
     try {
       const z = Number(localStorage.getItem("report-deck-zoom"));
@@ -932,11 +932,11 @@ function ReportDeckPage() {
               </>
             )}
             <Select value={String(zoom)} onValueChange={(v) => changeZoom(Number(v))}>
-              <SelectTrigger className="w-28 h-9" title="Zoom da tela (100% = 1920x1080 reais)"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="w-36 h-9" title="Zoom da tela (50% = tamanho de sempre, 100% = 1920x1080 reais)"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="1">Zoom 100%</SelectItem>
+                <SelectItem value="0.5">Zoom 50% (padrão)</SelectItem>
                 <SelectItem value="0.75">Zoom 75%</SelectItem>
-                <SelectItem value="0.5">Zoom 50%</SelectItem>
+                <SelectItem value="1">Zoom 100%</SelectItem>
               </SelectContent>
             </Select>
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer select-none">
