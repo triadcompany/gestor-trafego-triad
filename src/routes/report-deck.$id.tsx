@@ -1126,11 +1126,11 @@ function ReportDeckPage() {
           </SlideFrame>
 
           {/* Página 7 — Considerações finais */}
-          <SlideFrame id="consideracoes" label="Considerações finais" hidden={isHidden("consideracoes")} onToggle={() => toggleHidden("consideracoes")} {...frameProps("consideracoes")} refs={slideRefs}>
+          <SlideFrame id="consideracoes" label="Encerramento" hidden={isHidden("consideracoes")} onToggle={() => toggleHidden("consideracoes")} {...frameProps("consideracoes")} refs={slideRefs}>
             <Slide>
-              <SlideEyebrow>Fechamento</SlideEyebrow>
-              <SlideTitle>Considerações Finais</SlideTitle>
-              <BulletList items={deck.consideracoes_items} onChange={(items) => patch({ consideracoes_items: items })} />
+              <div className="flex flex-1 items-center justify-center">
+                <h1 className="text-[96px] font-extrabold leading-none tracking-tight">Obrigado</h1>
+              </div>
             </Slide>
           </SlideFrame>
 
