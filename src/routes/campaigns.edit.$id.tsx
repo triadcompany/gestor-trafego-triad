@@ -60,6 +60,7 @@ import {
   type SelectedLocation,
   type MetaInterest,
 } from "@/lib/meta";
+import { formatWhatsappNumber } from "@/components/TargetingEditor";
 import { getN8nMetaWriter } from "@/lib/n8n";
 import {
   FB_POSITION_OPTIONS as FB_POSITIONS,
@@ -572,7 +573,7 @@ function EditCampaign() {
               <SectionTitle>WhatsApp</SectionTitle>
               <div className="space-y-2">
                 <Label>Número que recebe os cliques</Label>
-                <p className="font-mono text-sm">{whatsappNumber || "—"}</p>
+                <p className="font-mono text-sm">{whatsappNumber ? formatWhatsappNumber(whatsappNumber) : "Não encontrei o número desse conjunto"}</p>
                 <p className="text-xs text-muted-foreground">
                   A Meta não permite trocar o número de um conjunto que já foi criado. Pra usar outro número, duplique de novo escolhendo o número na tela de duplicar.
                 </p>

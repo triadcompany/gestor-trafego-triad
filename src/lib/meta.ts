@@ -3443,7 +3443,7 @@ export async function fetchBaseCampaignPrefill(
   // chamar waitForWriteSlot mais de uma vez por leitura evita a soma de
   // esperas que travou a tela antes.
   const asRes = await spacedFetch(
-    `${BASE_URL}/${campaignId}/adsets?fields=targeting,promoted_object,instagram_actor_id,daily_budget&limit=1&access_token=${encodeURIComponent(token)}`,
+    `${BASE_URL}/${campaignId}/adsets?fields=targeting,promoted_object{page_id,whatsapp_phone_number},instagram_actor_id,daily_budget&limit=1&access_token=${encodeURIComponent(token)}`,
     accountScope,
     LIGHT_WRITE_SPACING_MS
   );
@@ -3537,12 +3537,19 @@ export async function fetchBaseCampaignPrefill(
   const dailyBudgetCents =
     campJson.daily_budget ? parseInt(campJson.daily_budget, 10) : (adSet?.daily_budget ? parseInt(adSet.daily_budget, 10) : 5000);
 
+  // Conjuntos criados no Gerenciador (ou com o número só no criativo) vêm sem o número no
+  // promoted_object: cai pra leitura completa (subcampo explícito + CTA do anúncio).
+  let whatsappNumber = adSet?.promoted_object?.whatsapp_phone_number ?? "";
+  if (!whatsappNumber && adSet?.id) {
+    whatsappNumber = ((await fetchAdSetWhatsappNumber(adSet.id, token).catch(() => null)) ?? "").replace(/\D/g, "");
+  }
+
   return {
     name: campJson.name ?? "",
     objective: campJson.objective ?? "OUTCOME_ENGAGEMENT",
     dailyBudget: dailyBudgetCents / 100,
     pageId: adSet?.promoted_object?.page_id ?? "",
-    whatsappNumber: adSet?.promoted_object?.whatsapp_phone_number ?? "",
+    whatsappNumber,
     instagramActorId: adSet?.instagram_actor_id,
     adsetId: adSet?.id,
     adId: resolvedAdId,
