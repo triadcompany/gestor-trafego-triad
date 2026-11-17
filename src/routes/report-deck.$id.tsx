@@ -361,6 +361,7 @@ function BulletList({ items, onChange, textClass = "text-[14px] leading-relaxed"
           <Field as="textarea" value={item} onChange={(v) => set(i, v)} placeholder="Digite aqui..." className={textClass} />
           <button
             type="button"
+            data-html2canvas-ignore
             onClick={() => remove(i)}
             className="opacity-0 group-hover:opacity-100 shrink-0 mt-1 text-white/40 hover:text-white/80 print:hidden"
           >
@@ -368,7 +369,7 @@ function BulletList({ items, onChange, textClass = "text-[14px] leading-relaxed"
           </button>
         </div>
       ))}
-      <button type="button" onClick={add} className="flex items-center gap-1.5 text-[11px] text-white/50 hover:text-white/90 mt-1">
+      <button type="button" data-html2canvas-ignore onClick={add} className="flex items-center gap-1.5 text-[11px] text-white/50 hover:text-white/90 mt-1">
         <Plus className="h-3 w-3" /> adicionar item
       </button>
     </div>
@@ -1032,7 +1033,7 @@ function ReportDeckPage() {
                   ) : brand?.logo ? (
                     <img src={brand.logo} alt="" className="h-56 max-w-[320px] object-contain" />
                   ) : (
-                    <span className="flex items-center gap-1.5 text-xs text-white/40 border border-dashed border-white/20 rounded px-2.5 py-1.5">
+                    <span data-html2canvas-ignore className="flex items-center gap-1.5 text-xs text-white/40 border border-dashed border-white/20 rounded px-2.5 py-1.5">
                       <ImagePlus className="h-3.5 w-3.5" /> logo do cliente
                     </span>
                   )}
@@ -1105,7 +1106,7 @@ function ReportDeckPage() {
                       onRemove={() => patch({ creatives: [] })}
                     />
                   ) : (
-                    <label className="flex flex-col items-center gap-2 text-center text-sm text-white/40 border border-dashed border-white/20 rounded-lg px-6 py-10 cursor-pointer">
+                    <label data-html2canvas-ignore className="flex flex-col items-center gap-2 text-center text-sm text-white/40 border border-dashed border-white/20 rounded-lg px-6 py-10 cursor-pointer">
                       <ImagePlus className="h-6 w-6" />
                       Enviar imagem/thumbnail do criativo
                       <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && handleCreativeUpload(e.target.files[0])} />
@@ -1162,6 +1163,7 @@ function ReportDeckPage() {
                       />
                       <button
                         type="button"
+                        data-html2canvas-ignore
                         onClick={() => setFunilItems(deck.funil_items.filter((_, idx) => idx !== i))}
                         className="opacity-0 group-hover:opacity-100 text-white/40 hover:text-white/80 print:hidden shrink-0"
                       >
@@ -1172,6 +1174,7 @@ function ReportDeckPage() {
                 })}
                 <button
                   type="button"
+                  data-html2canvas-ignore
                   onClick={() => setFunilItems([...deck.funil_items, { label: "", value: "" }])}
                   className="flex items-center gap-1.5 text-[11px] text-white/50 hover:text-white/90 mt-1"
                 >
