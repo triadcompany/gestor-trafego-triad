@@ -597,6 +597,7 @@ function ReportDeckPage() {
           textBoxes: deck.text_boxes,
           planoTrafegoItems: deck.plano_trafego_items,
           criativosItems: deck.criativos_items,
+          estruturaItems: deck.estrutura_items,
           autoLists: deck.auto_lists,
           offsets: deck.offsets,
           funilItems: deck.funil_items,
@@ -1064,7 +1065,11 @@ function ReportDeckPage() {
                       className="text-sm text-white/60"
                     />
                   </Movable>
-                  <BulletList items={deck.criativos_items} onChange={(items) => patch({ criativos_items: items })} textClass="text-[18px] leading-snug" />
+                  <BulletList items={deck.criativos_items} onChange={(items) => patch({ criativos_items: items })} textClass="text-[16px] leading-snug" />
+                  <div className="pt-1">
+                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-orange-400">Estrutura do vídeo</p>
+                    <BulletList items={deck.estrutura_items} onChange={(items) => patch({ estrutura_items: items })} textClass="text-[12px] leading-snug" />
+                  </div>
                 </div>
               </div>
             </Slide>

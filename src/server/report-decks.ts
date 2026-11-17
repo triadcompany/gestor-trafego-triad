@@ -81,6 +81,8 @@ export interface ReportDeckRow {
   plano_trafego_items: string[];
   // texto ao lado do criativo no slide "Melhores Criativos" (no layout, sem coluna nova)
   criativos_items: string[];
+  // "Estrutura do vídeo" (gancho, prova, chamada...), abaixo das orientações do slide de criativos
+  estrutura_items: string[];
   // últimos textos gerados automaticamente (se a lista ainda for igual a eles, o gestor não mexeu e pode ser recalculada)
   auto_lists: { diagnostico: string[]; plano: string[]; contatos?: string; creativeAd?: string; layoutV?: number };
   // deslocamento (px) dos textos fixos de cada slide arrastados pelo gestor
@@ -102,6 +104,13 @@ export const DEFAULT_DIAGNOSTICO = [
 export const DEFAULT_CRIATIVOS = [
   "Falar sempre km e principais características do veículo para qualificação de interesse.",
   "Falar valor, entrada + parcela, bom relacionamento com o banco para qualificação financeira.",
+];
+export const DEFAULT_ESTRUTURA_VIDEO = [
+  "Gancho (0 a 3 s): modelo, ano e preço na tela, ou o diferencial do carro.",
+  "Mostrar o carro (3 a 15 s): volta por fora e detalhes do interior, com legenda.",
+  "Prova (15 a 22 s): único dono, revisado, IPVA pago, km baixa.",
+  "Condição (22 a 27 s): entrada + parcela, aceita troca, financia em todos os bancos.",
+  "Chamada (últimos 3 s): chame no WhatsApp.",
 ];
 export const DEFAULT_PLANO_TRAFEGO = [
   "Concentrar a verba nos posicionamentos e públicos com menor custo por conversa.",
@@ -142,6 +151,7 @@ function emptyDeck(clientId: string): ReportDeckRow {
     text_boxes: [],
     plano_trafego_items: [...DEFAULT_PLANO_TRAFEGO],
     criativos_items: [...DEFAULT_CRIATIVOS],
+    estrutura_items: [...DEFAULT_ESTRUTURA_VIDEO],
     auto_lists: { diagnostico: [], plano: [] },
     offsets: {},
     funil_items: [
@@ -205,10 +215,11 @@ type LayoutEntry = {
   offsets?: Record<string, { x: number; y: number }>;
   planoTrafego?: string[];
   criativosItems?: string[];
+  estruturaItems?: string[];
   autoLists?: { diagnostico: string[]; plano: string[]; contatos?: string; creativeAd?: string; layoutV?: number };
 };
 
-function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages" | "text_boxes" | "offsets" | "plano_trafego_items" | "criativos_items" | "auto_lists"> {
+function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages" | "text_boxes" | "offsets" | "plano_trafego_items" | "criativos_items" | "estrutura_items" | "auto_lists"> {
   const list = Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [];
   const layout = list.find((e) => e.kind === "layout") as LayoutEntry | undefined;
   return {
@@ -219,6 +230,7 @@ function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden
     offsets: layout?.offsets ?? {},
     plano_trafego_items: layout?.planoTrafego && layout.planoTrafego.length > 0 ? layout.planoTrafego : [...DEFAULT_PLANO_TRAFEGO],
     criativos_items: layout?.criativosItems && layout.criativosItems.length > 0 ? layout.criativosItems : [...DEFAULT_CRIATIVOS],
+    estrutura_items: layout?.estruturaItems && layout.estruturaItems.length > 0 ? layout.estruturaItems : [...DEFAULT_ESTRUTURA_VIDEO],
     auto_lists: layout?.autoLists ?? { diagnostico: [], plano: [] },
   };
 }
@@ -259,6 +271,7 @@ const upsertSchema = z.object({
   offsets: z.record(z.string(), z.object({ x: z.number(), y: z.number() })).optional(),
   planoTrafegoItems: z.array(z.string()).optional(),
   criativosItems: z.array(z.string()).optional(),
+  estruturaItems: z.array(z.string()).optional(),
   autoLists: z.object({ diagnostico: z.array(z.string()), plano: z.array(z.string()), contatos: z.string().optional(), creativeAd: z.string().optional(), layoutV: z.number().optional() }).optional(),
   funilItems: z.array(funilItemSchema).optional(),
   planoAcaoItems: z.array(z.string()).optional(),
@@ -289,7 +302,7 @@ const _upsertReportDeck = createServerFn({ method: "POST" })
         ? {
             creatives: [
               ...data.creatives,
-              { kind: "layout", hidden: data.hiddenSlides ?? [], pages: data.customPages ?? [], boxes: data.textBoxes ?? [], offsets: data.offsets ?? {}, planoTrafego: data.planoTrafegoItems ?? [], criativosItems: data.criativosItems ?? [], autoLists: data.autoLists ?? { diagnostico: [], plano: [] } },
+              { kind: "layout", hidden: data.hiddenSlides ?? [], pages: data.customPages ?? [], boxes: data.textBoxes ?? [], offsets: data.offsets ?? {}, planoTrafego: data.planoTrafegoItems ?? [], criativosItems: data.criativosItems ?? [], estruturaItems: data.estruturaItems ?? [], autoLists: data.autoLists ?? { diagnostico: [], plano: [] } },
             ],
           }
         : {}),
