@@ -58,4 +58,15 @@ export function buildAutoLists(opts: {
   return { diagnostico: diag, plano };
 }
 
+// Item "não mexido" = ainda é o texto padrão, o último automático, ou (primeiro item do
+// diagnóstico) o formato automático antigo. Só esses são recalculados; o que o gestor
+// escreveu fica como está.
+const OLD_FIRST = /^Custo por conversa de R\$ [\d.,]+/;
+export function mergeAuto(current: string[], defaults: string[], lastAuto: string[], auto: string[], isDiagnostico: boolean): string[] {
+  const untouched = (i: number) =>
+    current[i] === defaults[i] || current[i] === lastAuto[i] || (isDiagnostico && i === 0 && OLD_FIRST.test(current[i] ?? ""));
+  if (current.every((_, i) => untouched(i))) return auto;
+  return current.map((t, i) => (i < auto.length && untouched(i) ? auto[i] : t));
+}
+
 export const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);

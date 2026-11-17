@@ -19,7 +19,7 @@ import { fetchClientDetail } from "@/lib/queries";
 import { getMetaToken, fetchCampaigns, fetchOptimizationInsights } from "@/lib/meta";
 import { fetchClientBrand } from "@/server/client-brand";
 import { DEFAULT_DIAGNOSTICO, DEFAULT_PLANO_TRAFEGO } from "@/server/report-decks";
-import { buildAutoLists, sameList } from "@/lib/deck-auto";
+import { buildAutoLists, mergeAuto, sameList } from "@/lib/deck-auto";
 import { fetchReportDeck, upsertReportDeck, sendReportPdfToOperationalGroup, type ReportDeckRow, type ReportDeckFunilItem, type ReportDeckCreative, type ReportDeckCustomPage, type ReportDeckTextBox } from "@/server/report-decks";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
@@ -608,7 +608,7 @@ function ReportDeckPage() {
   }, [campaigns, deck === null, range.since, range.until]);
 
   // Diagnóstico e plano automáticos: números reais do período (mesmas regras da aba Otimização).
-  const { data: optInsights, isFetched: optFetched } = useQuery({
+  const { data: optInsights, isFetched: optFetched, isError: optError } = useQuery({
     queryKey: ["report-deck-optimization", id, range.since, range.until],
     enabled: !!client,
     retry: false,
@@ -631,28 +631,22 @@ function ReportDeckPage() {
     if (!autoLists) return;
     setDeck((d) => {
       if (!d) return d;
-      // "Gerenciada" = ainda é o texto padrão ou o último automático: o gestor não mexeu.
-      const diagManaged = sameList(d.diagnostico_items, DEFAULT_DIAGNOSTICO) || sameList(d.diagnostico_items, d.auto_lists.diagnostico);
-      const planoManaged = sameList(d.plano_trafego_items, DEFAULT_PLANO_TRAFEGO) || sameList(d.plano_trafego_items, d.auto_lists.plano);
-      if (!diagManaged && !planoManaged) return d;
-      const next = { ...d, auto_lists: { ...d.auto_lists } };
-      if (diagManaged) {
-        next.diagnostico_items = autoLists.diagnostico;
-        next.auto_lists.diagnostico = autoLists.diagnostico;
-      }
-      if (planoManaged) {
-        next.plano_trafego_items = autoLists.plano;
-        next.auto_lists.plano = autoLists.plano;
-      }
+      const diag = mergeAuto(d.diagnostico_items, DEFAULT_DIAGNOSTICO, d.auto_lists.diagnostico, autoLists.diagnostico, true);
+      const plano = mergeAuto(d.plano_trafego_items, DEFAULT_PLANO_TRAFEGO, d.auto_lists.plano, autoLists.plano, false);
       const changed =
-        !sameList(d.diagnostico_items, next.diagnostico_items) ||
-        !sameList(d.plano_trafego_items, next.plano_trafego_items) ||
-        !sameList(d.auto_lists.diagnostico, next.auto_lists.diagnostico) ||
-        !sameList(d.auto_lists.plano, next.auto_lists.plano);
-      return changed ? next : d;
+        !sameList(d.diagnostico_items, diag) ||
+        !sameList(d.plano_trafego_items, plano) ||
+        !sameList(d.auto_lists.diagnostico, autoLists.diagnostico) ||
+        !sameList(d.auto_lists.plano, autoLists.plano);
+      return changed ? { ...d, diagnostico_items: diag, plano_trafego_items: plano, auto_lists: { diagnostico: autoLists.diagnostico, plano: autoLists.plano } } : d;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoSig, deck === null]);
+
+  // Sem os dados do período, os itens automáticos ficam como [preencher]: avisa em vez de falhar calado.
+  useEffect(() => {
+    if (optError) toast.error("Não consegui buscar os dados do período pro diagnóstico automático. Tente recarregar a página.", { id: "deck-opt-error" });
+  }, [optError]);
 
   const handleLogoUpload = (file: File) => {
     const reader = new FileReader();
