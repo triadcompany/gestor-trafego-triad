@@ -1045,6 +1045,44 @@ export async function fetchAdCreativeMedia(adId: string, token: string): Promise
   }
 }
 
+/**
+ * Melhor imagem disponível de um anúncio: pro vídeo, o quadro de capa preferido da
+ * Meta (ou o maior disponível); pra imagem, a imagem original; por último o thumbnail
+ * ampliado. A Meta não deixa pegar um quadro qualquer do vídeo, só os que ela mesma gera.
+ */
+export async function fetchAdBestImageUrl(adId: string, token: string): Promise<string | null> {
+  type CreativeShape = {
+    thumbnail_url?: string;
+    image_url?: string;
+    video_id?: string;
+    object_story_spec?: { video_data?: { video_id?: string; image_url?: string }; link_data?: { picture?: string } };
+  };
+  const get = (fields: string) =>
+    fetchMetaJson<{ creative?: CreativeShape }>(`${BASE_URL}/${adId}?${new URLSearchParams({ fields, access_token: token })}`);
+  let creative: CreativeShape | undefined;
+  try {
+    creative = (await get("creative.thumbnail_width(1080).thumbnail_height(1080){thumbnail_url,image_url,video_id,object_story_spec}")).creative;
+  } catch {
+    creative = (await get("creative{thumbnail_url,image_url,video_id,object_story_spec}")).creative;
+  }
+  const videoId = creative?.video_id ?? creative?.object_story_spec?.video_data?.video_id;
+  if (videoId) {
+    try {
+      const v = await fetchMetaJson<{
+        picture?: string;
+        thumbnails?: { data?: Array<{ uri: string; width?: number; height?: number; is_preferred?: boolean }> };
+      }>(`${BASE_URL}/${videoId}?${new URLSearchParams({ fields: "picture,thumbnails{uri,width,height,is_preferred}", access_token: token })}`);
+      const list = [...(v.thumbnails?.data ?? [])];
+      const best = list.find((t) => t.is_preferred) ?? list.sort((a, b) => (b.width ?? 0) - (a.width ?? 0))[0];
+      if (best?.uri) return best.uri;
+      if (v.picture) return v.picture;
+    } catch {
+      /* cai pro thumbnail do criativo */
+    }
+  }
+  return creative?.image_url ?? creative?.object_story_spec?.link_data?.picture ?? creative?.object_story_spec?.video_data?.image_url ?? creative?.thumbnail_url ?? null;
+}
+
 export async function fetchCampaigns(
   adAccountId: string,
   token: string,

@@ -16,10 +16,11 @@ import { toast } from "sonner";
 import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { fetchClientDetail } from "@/lib/queries";
-import { getMetaToken, fetchCampaigns, fetchOptimizationInsights } from "@/lib/meta";
+import { getMetaToken, fetchCampaigns, fetchOptimizationInsights, fetchAllAds, fetchAdBestImageUrl } from "@/lib/meta";
+import { fetchRemoteImage } from "@/server/deck-creative";
 import { fetchClientBrand } from "@/server/client-brand";
 import { DEFAULT_DIAGNOSTICO, DEFAULT_PLANO_TRAFEGO } from "@/server/report-decks";
-import { buildAutoLists, mergeAuto, sameList } from "@/lib/deck-auto";
+import { buildAutoLists, mergeAuto, pickBestAd, sameList } from "@/lib/deck-auto";
 import { fetchReportDeck, upsertReportDeck, sendReportPdfToOperationalGroup, type ReportDeckRow, type ReportDeckFunilItem, type ReportDeckCreative, type ReportDeckCustomPage, type ReportDeckTextBox } from "@/server/report-decks";
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
@@ -648,7 +649,7 @@ function ReportDeckPage() {
         d.auto_lists.contatos !== autoLists.contatos ||
         funil !== d.funil_items;
       return changed
-        ? { ...d, diagnostico_items: diag, plano_trafego_items: plano, funil_items: funil, auto_lists: { diagnostico: autoLists.diagnostico, plano: autoLists.plano, contatos: autoLists.contatos } }
+        ? { ...d, diagnostico_items: diag, plano_trafego_items: plano, funil_items: funil, auto_lists: { ...d.auto_lists, diagnostico: autoLists.diagnostico, plano: autoLists.plano, contatos: autoLists.contatos } }
         : d;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -658,6 +659,57 @@ function ReportDeckPage() {
   useEffect(() => {
     if (optError) toast.error("Não consegui buscar os dados do período pro diagnóstico automático. Tente recarregar a página.", { id: "deck-opt-error" });
   }, [optError]);
+
+  // Melhores criativos: o anúncio com menor custo por conversa do período, com a imagem
+  // de capa que a Meta guarda dele. Preenche sozinho enquanto o slide estiver vazio ou com
+  // um criativo automático (arquivo "auto-<id>"); um criativo enviado por você nunca é trocado.
+  const { data: periodAds } = useQuery({
+    queryKey: ["report-deck-ads", id, range.since, range.until],
+    enabled: !!client,
+    retry: false,
+    queryFn: async () => {
+      const token = await getMetaToken(id);
+      if (!token || !client) return [];
+      return fetchAllAds(client.meta_ad_account_id, token, "today", range);
+    },
+  });
+  const bestAd = useMemo(() => pickBestAd(periodAds ?? []), [periodAds]);
+  const [creativeBusy, setCreativeBusy] = useState(false);
+  const loadBestCreative = async (manual: boolean) => {
+    if (!bestAd) {
+      if (manual) toast.error("Nenhum anúncio teve conversas no período.");
+      return;
+    }
+    setCreativeBusy(true);
+    try {
+      const token = await getMetaToken(id);
+      if (!token) throw new Error("Token da Meta não encontrado.");
+      const url = await fetchAdBestImageUrl(bestAd.ad.id, token);
+      if (!url) throw new Error("A Meta não devolveu imagem desse anúncio.");
+      const img = await fetchRemoteImage(url);
+      const creative: ReportDeckCreative = {
+        base64: img.base64,
+        mimetype: img.mimetype,
+        filename: `auto-${bestAd.ad.id}.${img.mimetype.includes("png") ? "png" : "jpg"}`,
+        caption: `Menor custo por conversa do período: ${brl(bestAd.cpl)} (${bestAd.conversations} conversas)`,
+      };
+      setDeck((d) => (d ? { ...d, creatives: [creative], auto_lists: { ...d.auto_lists, creativeAd: bestAd.ad.id } } : d));
+      if (manual) toast.success("Melhor criativo do período aplicado.");
+    } catch (e) {
+      if (manual) toast.error(e instanceof Error ? e.message : "Erro ao buscar o criativo.");
+    } finally {
+      setCreativeBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (!deck || !bestAd || creativeBusy) return;
+    const cur = deck.creatives[0];
+    if (cur && !cur.filename.startsWith("auto-")) return; // criativo enviado pelo gestor
+    if (cur && cur.filename.startsWith(`auto-${bestAd.ad.id}.`)) return; // já é o melhor
+    if (!cur && deck.auto_lists.creativeAd === bestAd.ad.id) return; // o gestor removeu esse mesmo
+    void loadBestCreative(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deck === null, bestAd?.ad.id]);
 
   const handleLogoUpload = (file: File) => {
     const reader = new FileReader();
@@ -914,6 +966,15 @@ function ReportDeckPage() {
             <Slide>
               <SlideEyebrow>Destaque</SlideEyebrow>
               <SlideTitle>Melhores Criativos</SlideTitle>
+              <button
+                type="button"
+                data-html2canvas-ignore
+                disabled={creativeBusy}
+                onClick={() => loadBestCreative(true)}
+                className="absolute right-4 top-4 z-10 rounded-md bg-white/10 px-2.5 py-1 text-[11px] text-white/80 hover:bg-white/20 disabled:opacity-50"
+              >
+                {creativeBusy ? "Buscando..." : "Usar o melhor criativo do período"}
+              </button>
               <div className="flex-1 flex flex-col items-center justify-center">
                 {deck.creatives[0] ? (
                   <CreativeBox

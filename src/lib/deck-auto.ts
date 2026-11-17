@@ -1,6 +1,6 @@
 // Texto automático dos slides de Diagnóstico e Plano de Ação do Tráfego, a partir
 // dos números reais do período (mesmas regras da aba Otimização).
-import type { OptimizationInsights } from "@/lib/meta";
+import type { MetaAd, OptimizationInsights } from "@/lib/meta";
 import { brl, buildOptimizationReport, type CciTarget } from "@/lib/optimization";
 import { DEFAULT_DIAGNOSTICO, DEFAULT_PLANO_TRAFEGO } from "@/server/report-decks";
 
@@ -72,3 +72,18 @@ export function mergeAuto(current: string[], defaults: string[], lastAuto: strin
 }
 
 export const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+/**
+ * Anúncio com o menor custo por conversa do período. Exige volume mínimo pra não
+ * premiar sorte (2+ conversas e R$ 10+ gastos); se ninguém passa, aceita 1 conversa.
+ */
+export function pickBestAd(ads: MetaAd[]): { ad: MetaAd; conversations: number; cpl: number } | null {
+  const scored = ads
+    .map((ad) => ({ ad, conversations: (ad.leads ?? 0) + (ad.forms ?? 0), spend: ad.spend ?? 0 }))
+    .filter((x) => x.conversations > 0 && x.spend > 0)
+    .map((x) => ({ ...x, cpl: x.spend / x.conversations }));
+  const strong = scored.filter((x) => x.conversations >= 2 && x.spend >= 10);
+  const pool = strong.length > 0 ? strong : scored;
+  const best = [...pool].sort((a, b) => a.cpl - b.cpl)[0];
+  return best ? { ad: best.ad, conversations: best.conversations, cpl: best.cpl } : null;
+}
