@@ -84,7 +84,7 @@ export interface ReportDeckRow {
   // "Estrutura do vídeo" (gancho, prova, chamada...), abaixo das orientações do slide de criativos
   estrutura_items: string[];
   // últimos textos gerados automaticamente (se a lista ainda for igual a eles, o gestor não mexeu e pode ser recalculada)
-  auto_lists: { diagnostico: string[]; plano: string[]; contatos?: string; creativeAd?: string; layoutV?: number };
+  auto_lists: { diagnostico: string[]; plano: string[]; contatos?: string; creativeAd?: string; layoutV?: number; hiddenMonth?: string };
   // deslocamento (px) dos textos fixos de cada slide arrastados pelo gestor
   offsets: Record<string, { x: number; y: number }>;
   funil_items: ReportDeckFunilItem[];
@@ -216,7 +216,7 @@ type LayoutEntry = {
   planoTrafego?: string[];
   criativosItems?: string[];
   estruturaItems?: string[];
-  autoLists?: { diagnostico: string[]; plano: string[]; contatos?: string; creativeAd?: string; layoutV?: number };
+  autoLists?: { diagnostico: string[]; plano: string[]; contatos?: string; creativeAd?: string; layoutV?: number; hiddenMonth?: string };
 };
 
 function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages" | "text_boxes" | "offsets" | "plano_trafego_items" | "criativos_items" | "estrutura_items" | "auto_lists"> {
@@ -272,7 +272,7 @@ const upsertSchema = z.object({
   planoTrafegoItems: z.array(z.string()).optional(),
   criativosItems: z.array(z.string()).optional(),
   estruturaItems: z.array(z.string()).optional(),
-  autoLists: z.object({ diagnostico: z.array(z.string()), plano: z.array(z.string()), contatos: z.string().optional(), creativeAd: z.string().optional(), layoutV: z.number().optional() }).optional(),
+  autoLists: z.object({ diagnostico: z.array(z.string()), plano: z.array(z.string()), contatos: z.string().optional(), creativeAd: z.string().optional(), layoutV: z.number().optional(), hiddenMonth: z.string().optional() }).optional(),
   funilItems: z.array(funilItemSchema).optional(),
   planoAcaoItems: z.array(z.string()).optional(),
   consideracoesItems: z.array(z.string()).optional(),

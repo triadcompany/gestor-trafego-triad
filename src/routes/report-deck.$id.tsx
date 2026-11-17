@@ -710,6 +710,15 @@ function ReportDeckPage() {
     });
   }, [deck === null]);
 
+  // Todos os slides visíveis por padrão: o que você oculta (olho) vale só pro mês do relatório;
+  // num mês novo, ou num relatório que nunca teve essa marca, volta tudo a aparecer.
+  useEffect(() => {
+    if (!deck) return;
+    const key = range.until.slice(0, 7);
+    if (deck.auto_lists.hiddenMonth === key) return;
+    setDeck((d) => (d && d.auto_lists.hiddenMonth !== key ? { ...d, hidden_slides: [], auto_lists: { ...d.auto_lists, hiddenMonth: key } } : d));
+  }, [deck === null, range.until]);
+
   // Limpeza única (v3): remove o texto de teste "fsa", seja legenda do criativo ou caixa de texto solta.
   useEffect(() => {
     if (!deck || (deck.auto_lists.layoutV ?? 0) >= 3) return;
