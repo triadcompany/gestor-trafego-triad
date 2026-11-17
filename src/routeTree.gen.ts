@@ -29,6 +29,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as ClientsIndexRouteImport } from './routes/clients.index'
 import { Route as ReportDeckIdRouteImport } from './routes/report-deck.$id'
 import { Route as RTokenRouteImport } from './routes/r.$token'
+import { Route as ConversoesIdRouteImport } from './routes/conversoes.$id'
 import { Route as ConnectTokenRouteImport } from './routes/connect.$token'
 import { Route as ClientsImportarRouteImport } from './routes/clients.importar'
 import { Route as ClientsIdRouteImport } from './routes/clients.$id'
@@ -137,6 +138,11 @@ const RTokenRoute = RTokenRouteImport.update({
   path: '/r/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConversoesIdRoute = ConversoesIdRouteImport.update({
+  id: '/conversoes/$id',
+  path: '/conversoes/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConnectTokenRoute = ConnectTokenRouteImport.update({
   id: '/connect/$token',
   path: '/connect/$token',
@@ -197,6 +203,7 @@ export interface FileRoutesByFullPath {
   '/clients/$id': typeof ClientsIdRoute
   '/clients/importar': typeof ClientsImportarRoute
   '/connect/$token': typeof ConnectTokenRoute
+  '/conversoes/$id': typeof ConversoesIdRoute
   '/r/$token': typeof RTokenRoute
   '/report-deck/$id': typeof ReportDeckIdRoute
   '/clients/': typeof ClientsIndexRoute
@@ -226,6 +233,7 @@ export interface FileRoutesByTo {
   '/clients/$id': typeof ClientsIdRoute
   '/clients/importar': typeof ClientsImportarRoute
   '/connect/$token': typeof ConnectTokenRoute
+  '/conversoes/$id': typeof ConversoesIdRoute
   '/r/$token': typeof RTokenRoute
   '/report-deck/$id': typeof ReportDeckIdRoute
   '/clients': typeof ClientsIndexRoute
@@ -256,6 +264,7 @@ export interface FileRoutesById {
   '/clients/$id': typeof ClientsIdRoute
   '/clients/importar': typeof ClientsImportarRoute
   '/connect/$token': typeof ConnectTokenRoute
+  '/conversoes/$id': typeof ConversoesIdRoute
   '/r/$token': typeof RTokenRoute
   '/report-deck/$id': typeof ReportDeckIdRoute
   '/clients/': typeof ClientsIndexRoute
@@ -287,6 +296,7 @@ export interface FileRouteTypes {
     | '/clients/$id'
     | '/clients/importar'
     | '/connect/$token'
+    | '/conversoes/$id'
     | '/r/$token'
     | '/report-deck/$id'
     | '/clients/'
@@ -316,6 +326,7 @@ export interface FileRouteTypes {
     | '/clients/$id'
     | '/clients/importar'
     | '/connect/$token'
+    | '/conversoes/$id'
     | '/r/$token'
     | '/report-deck/$id'
     | '/clients'
@@ -345,6 +356,7 @@ export interface FileRouteTypes {
     | '/clients/$id'
     | '/clients/importar'
     | '/connect/$token'
+    | '/conversoes/$id'
     | '/r/$token'
     | '/report-deck/$id'
     | '/clients/'
@@ -375,6 +387,7 @@ export interface RootRouteChildren {
   ClientsIdRoute: typeof ClientsIdRoute
   ClientsImportarRoute: typeof ClientsImportarRoute
   ConnectTokenRoute: typeof ConnectTokenRoute
+  ConversoesIdRoute: typeof ConversoesIdRoute
   RTokenRoute: typeof RTokenRoute
   ReportDeckIdRoute: typeof ReportDeckIdRoute
   ClientsIndexRoute: typeof ClientsIndexRoute
@@ -523,6 +536,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/conversoes/$id': {
+      id: '/conversoes/$id'
+      path: '/conversoes/$id'
+      fullPath: '/conversoes/$id'
+      preLoaderRoute: typeof ConversoesIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/connect/$token': {
       id: '/connect/$token'
       path: '/connect/$token'
@@ -599,6 +619,7 @@ const rootRouteChildren: RootRouteChildren = {
   ClientsIdRoute: ClientsIdRoute,
   ClientsImportarRoute: ClientsImportarRoute,
   ConnectTokenRoute: ConnectTokenRoute,
+  ConversoesIdRoute: ConversoesIdRoute,
   RTokenRoute: RTokenRoute,
   ReportDeckIdRoute: ReportDeckIdRoute,
   ClientsIndexRoute: ClientsIndexRoute,

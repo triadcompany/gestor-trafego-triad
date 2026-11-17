@@ -15,7 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3, TrendingUp } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3, TrendingUp, Target } from "lucide-react";
 import { toast } from "sonner";
 import { sendActiveCampaignsList, type CampaignsListLevel, type CampaignsListTree } from "@/lib/whatsapp-messages";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
@@ -1042,6 +1042,12 @@ function ClientDetail() {
                 </Link>
               </Button>
             )}
+            <Button asChild size="sm" variant="outline" className="gap-2">
+              <Link to="/conversoes/$id" params={{ id: client.id }}>
+                <Target className="h-4 w-4" />
+                Conversões
+              </Link>
+            </Button>
             <Button asChild size="sm" className="gap-2">
               <Link to="/campaigns/new" search={{ client: client.id }}>
                 <Plus className="h-4 w-4" />

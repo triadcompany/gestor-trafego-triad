@@ -281,6 +281,13 @@
       "when": 1794072723368,
       "tag": "0039_report_decks_editable_meta_fields",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794956875268,
+      "tag": "0040_client_event_keywords_and_meta_event_log",
+      "breakpoints": true
     }
   ]
 }

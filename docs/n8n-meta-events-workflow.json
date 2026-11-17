@@ -1,0 +1,350 @@
+{
+  "name": "Gestor Tráfego — Enviar Evento Meta",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "enviar-evento-meta",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "705f6048-0dc5-4a45-b83e-15ea3144489a",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "7d2c1d03-e4fb-4884-876b-526031a0732b"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "bb8da904-5a80-43c2-ac14-75fc1a97830d",
+              "leftValue": "={{ $json.headers['x-webhook-secret'] }}",
+              "rightValue": "__SEGREDO__",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "2e4bf071-bdbe-4bcf-9200-68e9d847d41f",
+      "name": "Segredo válido?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'unauthorized' }) }}",
+        "options": {
+          "responseCode": 401
+        }
+      },
+      "id": "1d9767f2-bb14-487b-892d-52076a341311",
+      "name": "Responder 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        440,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://graph.facebook.com/v21.0/{{ $('Webhook').first().json.body.adId }}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "fields",
+              "value": "tracking_specs"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Webhook').first().json.body.token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": false
+            }
+          }
+        }
+      },
+      "id": "dc7422d8-8e5b-44ed-b7ee-01a7b4b7fef1",
+      "name": "Buscar tracking_specs do anúncio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Descobre dataset (pixel) e página pelo anúncio; usa a alternativa do payload se o anúncio não devolver.\nfunction findDatasetAndPage(root) {\n  const result = { dataset: [], page: [] };\n  (function walk(obj) {\n    if (obj && typeof obj === 'object') {\n      if (Array.isArray(obj.dataset)) result.dataset.push(...obj.dataset);\n      else if (Array.isArray(obj.fb_pixel)) result.dataset.push(...obj.fb_pixel);\n      if (Array.isArray(obj.page)) result.page.push(...obj.page);\n      for (const k of Object.keys(obj)) if (obj[k] && typeof obj[k] === 'object') walk(obj[k]);\n    }\n  })(root);\n  return result;\n}\n\nconst body = $('Webhook').first().json.body || {};\nconst specs = $input.first().json || {};\nconst found = findDatasetAndPage(specs.body || specs);\n\nconst datasetId = String(found.dataset[0] || body.fallbackDatasetId || '');\nconst pageId = String(found.page[0] || body.fallbackPageId || '');\n\nif (!datasetId) {\n  return [{ json: { ok: false, noDataset: true, error: 'Anúncio sem pixel/dataset de mensagem e cliente sem conjunto de dados alternativo.' } }];\n}\n\nconst event = JSON.parse(JSON.stringify(body.event || {}));\nevent.user_data = event.user_data || {};\nif (pageId) event.user_data.page_id = pageId;\n\nreturn [{ json: { ok: true, datasetId, pageId, event } }];\n"
+      },
+      "id": "523089f5-a53f-4a17-9e62-7a3654cbd377",
+      "name": "Resolver dataset e página",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c2b3f07c-ee48-4cfa-a0cf-6d1dae7907f4",
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "137d9e82-c133-48be-95b9-7418ac79054f",
+      "name": "Achou dataset?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        880,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, noDataset: true, error: $json.error }) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "8586145e-a80e-417d-a8cf-ba1f092f91be",
+      "name": "Responder 422 sem dataset",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://graph.facebook.com/v21.0/{{ $json.datasetId }}/events",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $('Webhook').first().json.body.token }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ data: [ $json.event ] }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "8202079c-b4c8-463f-b3aa-76ef4a02f054",
+      "name": "Enviar evento pra Meta",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Monta a resposta devolvida ao app.\nconst resolved = $('Resolver dataset e página').first().json;\nconst r = $input.first().json;\nconst status = Number(r.statusCode || 0);\nconst metaBody = r.body || {};\nconst ok = status >= 200 && status < 300 && !metaBody.error;\nreturn [{ json: {\n  ok,\n  datasetId: resolved.datasetId,\n  pageId: resolved.pageId || null,\n  metaResponse: ok ? metaBody : undefined,\n  error: ok ? undefined : ((metaBody.error && (metaBody.error.error_user_msg || metaBody.error.message)) || ('Meta respondeu HTTP ' + status)),\n} }];\n"
+      },
+      "id": "65d5f799-7cda-484b-950b-fca5ad69c8a4",
+      "name": "Montar resposta",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1320,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {
+          "responseCode": "={{ $json.ok ? 200 : 422 }}"
+        }
+      },
+      "id": "c59f25ea-9e9e-426f-a7a0-2b44ed4730cf",
+      "name": "Responder app",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1540,
+        -100
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Enviar evento Meta (gestor-trafego-triad)\n\nRecebe do app: adId, token, event (sem page_id), fallbackDatasetId, fallbackPageId.\nDescobre o pixel pelo anúncio, injeta page_id e envia pra Conversions API. Responde na mesma chamada.\nProtegido pelo header x-webhook-secret.",
+        "height": 220,
+        "width": 420
+      },
+      "id": "a19990e7-b230-4d0c-b895-f4b7bb17f1f6",
+      "name": "Nota",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -320
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Segredo válido?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Segredo válido?": {
+      "main": [
+        [
+          {
+            "node": "Buscar tracking_specs do anúncio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Buscar tracking_specs do anúncio": {
+      "main": [
+        [
+          {
+            "node": "Resolver dataset e página",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolver dataset e página": {
+      "main": [
+        [
+          {
+            "node": "Achou dataset?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Achou dataset?": {
+      "main": [
+        [
+          {
+            "node": "Enviar evento pra Meta",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Responder 422 sem dataset",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar evento pra Meta": {
+      "main": [
+        [
+          {
+            "node": "Montar resposta",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Montar resposta": {
+      "main": [
+        [
+          {
+            "node": "Responder app",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

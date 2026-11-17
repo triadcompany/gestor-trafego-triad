@@ -145,7 +145,7 @@ const APP_URL = () => (process.env.APP_URL || "https://gestor.triadcomp4ny.com.b
 // sistema sobre mensagens novas — descoberto manualmente uma vez (instância
 // da Gama Veículos criada sem esse passo, zero leads capturados) e daí em
 // diante automatizado aqui pra nunca mais precisar configurar isso na mão.
-async function configureEvolutionWebhook(instanceName: string, apikey: string): Promise<void> {
+export async function configureEvolutionWebhook(instanceName: string, apikey: string): Promise<void> {
   const secret = process.env.EVOLUTION_WEBHOOK_SECRET;
   if (!secret) return; // sem secret configurado no ambiente, não dá pra montar a URL com segurança
   await evoFetch(`/webhook/set/${encodeURIComponent(instanceName)}`, {
@@ -157,7 +157,7 @@ async function configureEvolutionWebhook(instanceName: string, apikey: string): 
         url: `${APP_URL()}/api/webhooks/evolution?secret=${secret}`,
         webhookByEvents: false,
         webhookBase64: false,
-        events: ["MESSAGES_UPSERT", "LABELS_ASSOCIATION"],
+        events: ["MESSAGES_UPSERT", "SEND_MESSAGE", "LABELS_ASSOCIATION"],
       },
     }),
   });

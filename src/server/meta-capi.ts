@@ -3,100 +3,69 @@
 // que é importado por componentes de página).
 import { createHash } from "node:crypto";
 import { postMetaJson } from "@/lib/meta";
+import { buildEventId, clampEventTime, META_EVENT_NAME, type MetaEventKind } from "@/lib/keyword-match";
 
 function sha256Hex(input: string): string {
   return createHash("sha256").update(input).digest("hex");
 }
 
-// Normalização exigida pela Meta antes de hashear: telefone só dígitos (com
-// DDI), email em minúsculas e sem espaço nas pontas. Aumenta o Event Match
-// Quality (EMQ) — quanto mais dado bate com uma conta real, melhor a Meta
-// otimiza a entrega pelo evento.
-function buildMetaUserData(ctwaClid: string, phoneRemoteJid?: string, email?: string, pageId?: string): Record<string, string> {
-  const userData: Record<string, string> = { ctwa_clid: ctwaClid };
-  // Exigido pela Meta pra eventos com action_source "business_messaging" —
-  // sem isso a API recusa com "Page ID or WhatsApp Business Account ID Is
-  // Missing" (code 100.2804116). Precisa ser o Page ID vinculado ao mesmo
-  // conjunto de dados pro qual o evento está sendo enviado.
-  if (pageId) userData.page_id = pageId;
-  if (phoneRemoteJid) {
-    const digits = phoneRemoteJid.replace(/\D/g, "");
-    if (digits) userData.ph = sha256Hex(digits);
-  }
-  if (email?.trim()) {
-    userData.em = sha256Hex(email.trim().toLowerCase());
-  }
-  return userData;
+// Nome do WhatsApp (pushName) costuma vir com emoji, número ou nome de empresa.
+// Só vira fn/ln se sobrar texto de letras depois de limpar — e nunca hasheamos
+// string vazia (o hash de "" é igual pra todo mundo e só atrapalha o match).
+function splitNameForMatch(contactName: string | null | undefined): { fn?: string; ln?: string } {
+  if (!contactName) return {};
+  const cleaned = contactName
+    .normalize("NFD")
+    .replace(/[̀-ͯ]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) return {};
+  const parts = cleaned.split(" ");
+  return parts.length >= 2 ? { fn: parts[0], ln: parts[parts.length - 1] } : { fn: parts[0] };
 }
 
-export async function sendQualifiedLeadEvent(params: {
-  datasetId: string;
+export interface BuildMetaEventInput {
+  kind: MetaEventKind;
+  leadId: string;
   ctwaClid: string;
   phoneRemoteJid?: string;
-  email?: string;
-  pageId?: string;
-  token: string;
-}): Promise<void> {
-  await postMetaJson(`${params.datasetId}/events?access_token=${encodeURIComponent(params.token)}`, {
-    data: [
-      {
-        event_name: "QualifiedLead",
-        event_time: Math.floor(Date.now() / 1000),
-        action_source: "business_messaging",
-        messaging_channel: "whatsapp",
-        user_data: buildMetaUserData(params.ctwaClid, params.phoneRemoteJid, params.email, params.pageId),
-      },
-    ],
-  });
+  email?: string | null;
+  contactName?: string | null;
+  value?: number | null; // só no purchase
+  occurredAtMs?: number; // horário real do gatilho; padrão = agora
+  pageId?: string; // quando ausente, quem envia (n8n) injeta a página descoberta pelo anúncio
 }
 
-// Envio experimental com nome de evento arbitrário — usado pra testar se um
-// nome "clássico"/universal (ex: "Lead", "LeadSubmitted") ganha suporte nativo
-// de coluna no Gerenciador de Anúncios, ao contrário de "QualifiedLead" (que
-// funciona pra rastreamento mas não vira coluna, por não estar na lista de
-// eventos com otimização/relatório nativo documentada pra business_messaging).
-export async function sendCustomMessagingEvent(params: {
-  eventName: string;
-  datasetId: string;
-  ctwaClid: string;
-  phoneRemoteJid?: string;
-  email?: string;
-  pageId?: string;
-  token: string;
-}): Promise<void> {
-  await postMetaJson(`${params.datasetId}/events?access_token=${encodeURIComponent(params.token)}`, {
-    data: [
-      {
-        event_name: params.eventName,
-        event_time: Math.floor(Date.now() / 1000),
-        action_source: "business_messaging",
-        messaging_channel: "whatsapp",
-        user_data: buildMetaUserData(params.ctwaClid, params.phoneRemoteJid, params.email, params.pageId),
-      },
-    ],
-  });
+/**
+ * Monta o objeto do evento pra Conversions API (Business Messaging). Usado
+ * tanto pelo envio via n8n quanto pelo envio direto. Telefone, e-mail e nome
+ * saem hasheados (SHA256, normalizados); campo ausente é omitido.
+ */
+export function buildMetaEvent(i: BuildMetaEventInput): Record<string, unknown> {
+  const userData: Record<string, string> = { ctwa_clid: i.ctwaClid };
+  if (i.pageId) userData.page_id = i.pageId;
+  const digits = i.phoneRemoteJid?.replace(/\D/g, "");
+  if (digits) userData.ph = sha256Hex(digits);
+  const email = i.email?.trim().toLowerCase();
+  if (email) userData.em = sha256Hex(email);
+  const { fn, ln } = splitNameForMatch(i.contactName);
+  if (fn) userData.fn = sha256Hex(fn);
+  if (ln) userData.ln = sha256Hex(ln);
+
+  return {
+    event_name: META_EVENT_NAME[i.kind],
+    event_id: buildEventId(i.leadId, i.kind),
+    event_time: clampEventTime(i.occurredAtMs ?? Date.now()),
+    action_source: "business_messaging",
+    messaging_channel: "whatsapp",
+    user_data: userData,
+    ...(i.kind === "purchase" && i.value != null ? { custom_data: { currency: "BRL", value: i.value } } : {}),
+  };
 }
 
-/** Envia o evento de conversão "Purchase" pra Meta Conversions API, com valor da venda. */
-export async function sendPurchaseEvent(params: {
-  datasetId: string;
-  ctwaClid: string;
-  value: number | null;
-  phoneRemoteJid?: string;
-  email?: string;
-  pageId?: string;
-  token: string;
-}): Promise<void> {
-  await postMetaJson(`${params.datasetId}/events?access_token=${encodeURIComponent(params.token)}`, {
-    data: [
-      {
-        event_name: "Purchase",
-        event_time: Math.floor(Date.now() / 1000),
-        action_source: "business_messaging",
-        messaging_channel: "whatsapp",
-        user_data: buildMetaUserData(params.ctwaClid, params.phoneRemoteJid, params.email, params.pageId),
-        ...(params.value !== null ? { custom_data: { currency: "BRL", value: params.value } } : {}),
-      },
-    ],
-  });
+/** Envio direto (sem n8n): POST {dataset}/events com o evento já montado. */
+export async function postMetaEventDirect(params: { datasetId: string; event: Record<string, unknown>; token: string }): Promise<void> {
+  await postMetaJson(`${params.datasetId}/events?access_token=${encodeURIComponent(params.token)}`, { data: [params.event] });
 }

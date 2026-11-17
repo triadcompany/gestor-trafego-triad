@@ -2,7 +2,8 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { clients, metaLeadAttributions, whatsappInstances } from "@/db/schema";
 import { fetchAdContext } from "@/lib/meta";
-import { sendQualifiedLeadEvent } from "@/server/meta-capi";
+import { sendQualifiedLeadEventWithStatus } from "@/server/lead-events-core";
+import { processKeywordMessage } from "@/server/keyword-triggers";
 import { pickMetaTokenRow } from "./automations-core";
 
 // Recebe os webhooks da Evolution API (não passa por sessão — a instância
@@ -49,7 +50,10 @@ export async function handleEvolutionWebhook(body: EvolutionWebhookBody): Promis
   if (!client) return { handled: false, reason: "nenhum cliente vinculado a essa instância" };
 
   const eventName = (body.event ?? "").toLowerCase();
-  if (eventName === "messages.upsert") {
+  // send.message = mensagem enviada por API; messages.upsert com fromMe = enviada
+  // pelo celular/WhatsApp Web. As duas passam pelo mesmo tratamento (a
+  // reivindicação atômica do lead evita evento duplicado se chegarem as duas).
+  if (eventName === "messages.upsert" || eventName === "send.message") {
     await handleNewMessage(client.id, instance.organizationId, body.data);
     return { handled: true };
   }
@@ -112,9 +116,44 @@ function extractReferral(raw: JsonRecord): { ctwaClid: string; sourceId: string 
   return null;
 }
 
+// Texto da mensagem (conversa simples, resposta/link com extendedText ou legenda de mídia).
+function extractMessageText(raw: JsonRecord): string {
+  const message = asRecord(raw.message);
+  if (!message) return "";
+  if (typeof message.conversation === "string") return message.conversation;
+  const extended = asRecord(message.extendedTextMessage);
+  if (extended && typeof extended.text === "string") return extended.text;
+  for (const key of ["imageMessage", "videoMessage", "documentMessage"]) {
+    const media = asRecord(message[key]);
+    if (media && typeof media.caption === "string") return media.caption;
+  }
+  return "";
+}
+
+type MessageEnvelope = NonNullable<ReturnType<typeof extractMessageEnvelope>>;
+
 async function handleNewMessage(clientId: string, organizationId: string, data: unknown): Promise<void> {
   const envelope = extractMessageEnvelope(data);
-  if (!envelope || envelope.fromMe) return;
+  if (!envelope) return;
+  // 1) Atribuição do anúncio de origem: só a primeira mensagem do LEAD carrega o ctwa_clid.
+  if (!envelope.fromMe) await captureLeadAttribution(clientId, organizationId, envelope);
+  // 2) Palavra-chave (lead qualificado / compra): vale pra mensagem de qualquer lado;
+  //    o "quem diz" de cada regra decide. Depois da atribuição, pra que a primeira
+  //    mensagem do lead já encontre o lead recém-criado.
+  const text = extractMessageText(envelope.raw);
+  if (text) {
+    await processKeywordMessage({
+      clientId,
+      organizationId,
+      remoteJid: envelope.remoteJid,
+      fromMe: envelope.fromMe,
+      text,
+      timestampMs: envelope.timestamp * 1000,
+    });
+  }
+}
+
+async function captureLeadAttribution(clientId: string, organizationId: string, envelope: MessageEnvelope): Promise<void> {
   const referral = extractReferral(envelope.raw);
   if (!referral || !referral.sourceId) return; // conversa sem clique de anúncio — nada a atribuir
 
@@ -196,22 +235,19 @@ async function handleLabelAssociation(
     .set({ status: "qualified", qualifiedAt: new Date().toISOString(), labelName })
     .where(eq(metaLeadAttributions.id, attribution.id));
 
-  if (!client.metaCapiDatasetId) return; // qualificado, mas sem dataset configurado — não envia evento
-
-  const tokenRow = await pickMetaTokenRow({ organizationId: instance.organizationId, clientId: client.id });
-  const token = tokenRow?.accessToken ?? null;
-  if (!token) return;
-
+  // Mesma rotina do botão "Qualificar": resolve o token, envia pelo dispatcher
+  // (n8n ou direto) e grava conversion_sent / conversion_failed no lead. Se faltar
+  // token ou dataset, o lead fica "conversion_failed" com o motivo (reenviável)
+  // em vez de ficar parado em "qualified" sem explicação.
   try {
-    await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: attribution.ctwaClid, phoneRemoteJid: attribution.remoteJid, pageId: client.metaPageId ?? undefined, token });
-    await db
-      .update(metaLeadAttributions)
-      .set({ status: "conversion_sent", conversionSentAt: new Date().toISOString() })
-      .where(eq(metaLeadAttributions.id, attribution.id));
-  } catch (err) {
-    await db
-      .update(metaLeadAttributions)
-      .set({ status: "conversion_failed", conversionError: err instanceof Error ? err.message : String(err) })
-      .where(eq(metaLeadAttributions.id, attribution.id));
+    await sendQualifiedLeadEventWithStatus(
+      attribution.id,
+      attribution,
+      client,
+      async (clientId) => (await pickMetaTokenRow({ organizationId: instance.organizationId, clientId }))?.accessToken ?? null,
+      { trigger: "manual" }
+    );
+  } catch {
+    // o status e o erro já foram gravados no lead; o webhook não deve falhar por isso
   }
 }

@@ -7,9 +7,9 @@ import { clients, metaLeadAttributions, sales, whatsappInstances } from "@/db/sc
 import { requireOrgContext } from "@/server/session";
 import { canAccessClient } from "@/lib/client-access";
 import { getMetaToken, getMetaTokenForClient, fetchAdSpendByIds, fetchAdCreativeMedia, fetchAccountInsightsForRange } from "@/lib/meta";
-import { sendQualifiedLeadEvent, sendPurchaseEvent, sendCustomMessagingEvent } from "@/server/meta-capi";
+import { sendQualifiedLeadEventWithStatus, qualifyLeadCore, convertLeadToSaleCore, type LeadForEvent } from "@/server/lead-events-core";
 import { periodDateRange, type DashboardPeriod } from "@/lib/queries";
-import { isoDateInBrasilia, brasiliaMidnightUTC, daysAgoInBrasilia } from "@/lib/brasilia-date";
+import { brasiliaMidnightUTC, daysAgoInBrasilia } from "@/lib/brasilia-date";
 
 const periodInputSchema = z.object({
   clientId: z.string(),
@@ -782,70 +782,6 @@ async function loadLeadWithClientByToken(token: string, leadId: string) {
   return { lead, client };
 }
 
-// Tenta (de novo, se preciso) mandar o evento QualifiedLead pra Meta. Usada
-// tanto na primeira qualificação quanto no botão "Reenviar" de um lead que
-// ficou "conversion_failed" — mesma lógica, sem duplicar o try/catch.
-async function sendQualifiedLeadEventWithStatus(
-  leadId: string,
-  lead: { clientId: string; ctwaClid: string; remoteJid: string; leadEmail: string | null },
-  client: { metaCapiDatasetId: string | null; metaPageId: string | null },
-  resolveToken: (clientId: string) => Promise<string | null>,
-): Promise<void> {
-  // Antes retornava calado quando faltava dataset/token — o lead ficava
-  // travado em "qualified" pra sempre, sem erro nenhum registrado e sem
-  // opção de reenviar (que só aparece em "conversion_failed"). Agora sempre
-  // marca a falha explicitamente.
-  if (!client.metaCapiDatasetId) {
-    const error = 'Cliente sem "Identificação do conjunto de dados" configurada.';
-    await db.update(metaLeadAttributions).set({ status: "conversion_failed", conversionError: error }).where(eq(metaLeadAttributions.id, leadId));
-    throw new Error(error);
-  }
-  const token = await resolveToken(lead.clientId);
-  if (!token) {
-    const error = "Token da Meta não configurado ou expirado pra esse cliente.";
-    await db.update(metaLeadAttributions).set({ status: "conversion_failed", conversionError: error }).where(eq(metaLeadAttributions.id, leadId));
-    throw new Error(error);
-  }
-
-  try {
-    await sendQualifiedLeadEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, phoneRemoteJid: lead.remoteJid, email: lead.leadEmail ?? undefined, pageId: client.metaPageId ?? undefined, token });
-    await db
-      .update(metaLeadAttributions)
-      .set({ status: "conversion_sent", conversionSentAt: new Date().toISOString(), conversionError: null })
-      .where(eq(metaLeadAttributions.id, leadId));
-  } catch (err) {
-    await db
-      .update(metaLeadAttributions)
-      .set({ status: "conversion_failed", conversionError: err instanceof Error ? err.message : String(err) })
-      .where(eq(metaLeadAttributions.id, leadId));
-    throw err;
-  }
-
-  // "LeadSubmitted" é o evento que confirmamos aparecer como coluna nativa no
-  // Gerenciador de Anúncios (diferente de "QualifiedLead", que só serve pra
-  // rastreamento). Manda em paralelo, sem afetar o status acima — se falhar,
-  // não deve travar a qualificação real.
-  try {
-    await sendCustomMessagingEvent({ eventName: "LeadSubmitted", datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, phoneRemoteJid: lead.remoteJid, email: lead.leadEmail ?? undefined, pageId: client.metaPageId ?? undefined, token });
-  } catch {
-    // não deve impedir nem confundir o fluxo de qualificação real
-  }
-}
-
-async function qualifyLeadCore(
-  leadId: string,
-  lead: { clientId: string; ctwaClid: string; remoteJid: string; leadEmail: string | null; labelName: string | null },
-  client: { metaCapiDatasetId: string | null; metaPageId: string | null },
-  resolveToken: (clientId: string) => Promise<string | null>,
-): Promise<void> {
-  await db
-    .update(metaLeadAttributions)
-    .set({ status: "qualified", qualifiedAt: new Date().toISOString(), labelName: lead.labelName ?? "Marcado manualmente" })
-    .where(eq(metaLeadAttributions.id, leadId));
-
-  await sendQualifiedLeadEventWithStatus(leadId, lead, client, resolveToken);
-}
-
 const _markLeadQualified = createServerFn({ method: "POST" })
   .inputValidator(z.object({ leadId: z.string() }))
   .handler(async ({ data }) => {
@@ -870,7 +806,7 @@ export async function publicMarkLeadQualified(token: string, leadId: string): Pr
 
 async function retryQualifiedLeadCore(
   leadId: string,
-  lead: { clientId: string; ctwaClid: string; remoteJid: string; leadEmail: string | null; status: string },
+  lead: LeadForEvent & { status: string },
   client: { metaCapiDatasetId: string | null; metaPageId: string | null },
   resolveToken: (clientId: string) => Promise<string | null>,
 ): Promise<void> {
@@ -903,59 +839,6 @@ const _publicRetryQualifiedLeadEvent = createServerFn({ method: "POST" })
 
 export async function publicRetryQualifiedLeadEvent(token: string, leadId: string): Promise<void> {
   await _publicRetryQualifiedLeadEvent({ data: { token, leadId } });
-}
-
-async function convertLeadToSaleCore(
-  leadId: string,
-  lead: { clientId: string; ctwaClid: string; remoteJid: string; leadEmail: string | null; saleId: string | null; contactName: string | null },
-  client: { metaCapiDatasetId: string | null; metaPageId: string | null },
-  value: number | null,
-  obs: string | undefined,
-  email: string | undefined,
-  resolveToken: (clientId: string) => Promise<string | null>,
-): Promise<void> {
-  if (lead.saleId) throw new Error("Esse lead já foi convertido em venda.");
-
-  const resolvedEmail = email?.trim() || lead.leadEmail || undefined;
-
-  const [sale] = await db
-    .insert(sales)
-    .values({
-      clientId: lead.clientId,
-      date: isoDateInBrasilia(),
-      value,
-      obs: obs?.trim() || `Venda a partir do lead ${lead.contactName ?? lead.remoteJid}`,
-    })
-    .returning({ id: sales.id });
-
-  await db
-    .update(metaLeadAttributions)
-    .set({ saleId: sale.id, ...(resolvedEmail ? { leadEmail: resolvedEmail } : {}) })
-    .where(eq(metaLeadAttributions.id, leadId));
-
-  if (!client.metaCapiDatasetId) {
-    await db.update(metaLeadAttributions).set({ purchaseEventError: 'Cliente sem "Identificação do conjunto de dados" configurada.' }).where(eq(metaLeadAttributions.id, leadId));
-    return;
-  }
-  const token = await resolveToken(lead.clientId);
-  if (!token) {
-    await db.update(metaLeadAttributions).set({ purchaseEventError: "Token da Meta não configurado ou expirado pra esse cliente." }).where(eq(metaLeadAttributions.id, leadId));
-    return;
-  }
-
-  try {
-    await sendPurchaseEvent({ datasetId: client.metaCapiDatasetId, ctwaClid: lead.ctwaClid, value, phoneRemoteJid: lead.remoteJid, email: resolvedEmail, pageId: client.metaPageId ?? undefined, token });
-    await db
-      .update(metaLeadAttributions)
-      .set({ purchaseEventSentAt: new Date().toISOString() })
-      .where(eq(metaLeadAttributions.id, leadId));
-  } catch (err) {
-    await db
-      .update(metaLeadAttributions)
-      .set({ purchaseEventError: err instanceof Error ? err.message : String(err) })
-      .where(eq(metaLeadAttributions.id, leadId));
-    throw err;
-  }
 }
 
 const _convertLeadToSale = createServerFn({ method: "POST" })

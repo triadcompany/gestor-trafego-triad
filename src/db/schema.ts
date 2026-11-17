@@ -413,6 +413,56 @@ export const metaLeadAttributions = pgTable(
   ]
 );
 
+// Palavras-chave por cliente que disparam, sozinhas, o evento de lead
+// qualificado ou de compra pra Meta quando aparecem na conversa. Ver
+// docs/superpowers/specs/2026-11-17-eventos-meta-via-n8n-design.md
+export const clientEventKeywords = pgTable(
+  "client_event_keywords",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(), // qualified_lead | purchase
+    keyword: text("keyword").notNull(),
+    keywordNormalized: text("keyword_normalized").notNull(), // minúsculas, sem acento
+    source: text("source").notNull().default("team"), // team | lead | any (quem escreveu a mensagem)
+    defaultValue: numericMoney("default_value", 12, 2), // só compra: valor quando a mensagem não traz "R$"
+    active: boolean("active").notNull().default(true),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    unique("client_event_keywords_unique").on(t.clientId, t.eventType, t.keywordNormalized),
+    index("idx_client_event_keywords_client").on(t.clientId),
+  ]
+);
+
+// Histórico de cada envio de evento de conversão pra Meta (botão ou palavra-chave):
+// alimenta a página "Conversões" e serve de auditoria (qual dataset/página foi usado).
+export const metaEventLog = pgTable(
+  "meta_event_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    leadId: uuid("lead_id")
+      .notNull()
+      .references(() => metaLeadAttributions.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(), // qualified | lead | purchase
+    trigger: text("trigger").notNull(), // manual | keyword
+    keyword: text("keyword"),
+    messageExcerpt: text("message_excerpt"),
+    datasetId: text("dataset_id"),
+    pageId: text("page_id"),
+    eventId: text("event_id").notNull(),
+    status: text("status").notNull(), // sent | failed
+    error: text("error"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => [
+    index("idx_meta_event_log_lead").on(t.leadId),
+    index("idx_meta_event_log_created").on(t.createdAt),
+  ]
+);
+
 export const tags = pgTable("tags", {
   id: uuid("id").primaryKey().defaultRandom(),
   organizationId: uuid("organization_id")
