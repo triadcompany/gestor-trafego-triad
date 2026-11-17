@@ -486,6 +486,7 @@ const STANDARD_SLIDES = [
   { id: "capa" },
   { id: "resultado" },
   { id: "diagnostico" },
+  { id: "plano_trafego" },
   { id: "criativos" },
   { id: "funil" },
   { id: "plano" },
@@ -556,6 +557,7 @@ function ReportDeckPage() {
           hiddenSlides: deck.hidden_slides,
           customPages: deck.custom_pages,
           textBoxes: deck.text_boxes,
+          planoTrafegoItems: deck.plano_trafego_items,
           offsets: deck.offsets,
           funilItems: deck.funil_items,
           planoAcaoItems: deck.plano_acao_items,
@@ -838,12 +840,21 @@ function ReportDeckPage() {
           <SlideFrame id="diagnostico" label="Diagnóstico" hidden={isHidden("diagnostico")} onToggle={() => toggleHidden("diagnostico")} {...frameProps("diagnostico")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Análise</SlideEyebrow>
-              <SlideTitle>Diagnóstico do Tráfego e Plano de Ação do Tráfego</SlideTitle>
+              <SlideTitle>Diagnóstico do Tráfego</SlideTitle>
               <BulletList items={deck.diagnostico_items} onChange={(items) => patch({ diagnostico_items: items })} />
             </Slide>
           </SlideFrame>
 
-          {/* Página 4 — Melhores Criativos */}
+          {/* Página 4 — Plano de Ação do Tráfego */}
+          <SlideFrame id="plano_trafego" label="Plano de ação do tráfego" hidden={isHidden("plano_trafego")} onToggle={() => toggleHidden("plano_trafego")} {...frameProps("plano_trafego")} refs={slideRefs}>
+            <Slide>
+              <SlideEyebrow>Próximos passos</SlideEyebrow>
+              <SlideTitle>Plano de Ação do Tráfego</SlideTitle>
+              <BulletList items={deck.plano_trafego_items} onChange={(items) => patch({ plano_trafego_items: items })} />
+            </Slide>
+          </SlideFrame>
+
+          {/* Melhores Criativos */}
           <SlideFrame id="criativos" label="Melhores criativos" hidden={isHidden("criativos")} onToggle={() => toggleHidden("criativos")} {...frameProps("criativos")} refs={slideRefs}>
             <Slide>
               <SlideEyebrow>Destaque</SlideEyebrow>

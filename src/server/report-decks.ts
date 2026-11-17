@@ -77,6 +77,8 @@ export interface ReportDeckRow {
   hidden_slides: string[];
   custom_pages: ReportDeckCustomPage[];
   text_boxes: ReportDeckTextBox[];
+  // lista do slide "Plano de Ação do Tráfego" (guardada no layout, sem coluna nova)
+  plano_trafego_items: string[];
   // deslocamento (px) dos textos fixos de cada slide arrastados pelo gestor
   offsets: Record<string, { x: number; y: number }>;
   funil_items: ReportDeckFunilItem[];
@@ -114,6 +116,7 @@ function emptyDeck(clientId: string): ReportDeckRow {
     hidden_slides: [],
     custom_pages: [],
     text_boxes: [],
+    plano_trafego_items: [],
     offsets: {},
     funil_items: [
       { label: "Contatos", value: "" },
@@ -174,9 +177,10 @@ type LayoutEntry = {
   pages: ReportDeckCustomPage[];
   boxes?: ReportDeckTextBox[];
   offsets?: Record<string, { x: number; y: number }>;
+  planoTrafego?: string[];
 };
 
-function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages" | "text_boxes" | "offsets"> {
+function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages" | "text_boxes" | "offsets" | "plano_trafego_items"> {
   const list = Array.isArray(raw) ? (raw as Array<Record<string, unknown>>) : [];
   const layout = list.find((e) => e.kind === "layout") as LayoutEntry | undefined;
   return {
@@ -185,6 +189,7 @@ function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden
     custom_pages: layout?.pages ?? [],
     text_boxes: layout?.boxes ?? [],
     offsets: layout?.offsets ?? {},
+    plano_trafego_items: layout?.planoTrafego ?? [],
   };
 }
 
@@ -222,6 +227,7 @@ const upsertSchema = z.object({
     )
     .optional(),
   offsets: z.record(z.string(), z.object({ x: z.number(), y: z.number() })).optional(),
+  planoTrafegoItems: z.array(z.string()).optional(),
   funilItems: z.array(funilItemSchema).optional(),
   planoAcaoItems: z.array(z.string()).optional(),
   consideracoesItems: z.array(z.string()).optional(),
@@ -251,7 +257,7 @@ const _upsertReportDeck = createServerFn({ method: "POST" })
         ? {
             creatives: [
               ...data.creatives,
-              { kind: "layout", hidden: data.hiddenSlides ?? [], pages: data.customPages ?? [], boxes: data.textBoxes ?? [], offsets: data.offsets ?? {} },
+              { kind: "layout", hidden: data.hiddenSlides ?? [], pages: data.customPages ?? [], boxes: data.textBoxes ?? [], offsets: data.offsets ?? {}, planoTrafego: data.planoTrafegoItems ?? [] },
             ],
           }
         : {}),
