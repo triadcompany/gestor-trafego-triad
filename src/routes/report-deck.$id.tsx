@@ -622,10 +622,11 @@ function ReportDeckPage() {
     if (!client || !optFetched || campaigns.length === 0) return null;
     return buildAutoLists({
       cpl: totals.cpl,
+      leads: totals.leads,
       target: client.cpl_max > 0 ? { min: client.cpl_min, max: client.cpl_max } : null,
       insights: optInsights ?? null,
     });
-  }, [client, optFetched, optInsights, campaigns.length, totals.cpl]);
+  }, [client, optFetched, optInsights, campaigns.length, totals.cpl, totals.leads]);
   const autoSig = autoLists ? JSON.stringify(autoLists) : "";
   useEffect(() => {
     if (!autoLists) return;
@@ -633,12 +634,22 @@ function ReportDeckPage() {
       if (!d) return d;
       const diag = mergeAuto(d.diagnostico_items, DEFAULT_DIAGNOSTICO, d.auto_lists.diagnostico, autoLists.diagnostico, true);
       const plano = mergeAuto(d.plano_trafego_items, DEFAULT_PLANO_TRAFEGO, d.auto_lists.plano, autoLists.plano, false);
+      // Funil: "Contatos" = leads do período, enquanto o gestor não digitar outro valor.
+      const ci = d.funil_items.findIndex((f) => f.label.trim().toLowerCase() === "contatos");
+      let funil = d.funil_items;
+      if (ci >= 0 && autoLists.contatos && (d.funil_items[ci].value.trim() === "" || d.funil_items[ci].value === d.auto_lists.contatos)) {
+        funil = d.funil_items.map((f, i) => (i === ci ? { ...f, value: autoLists.contatos } : f));
+      }
       const changed =
         !sameList(d.diagnostico_items, diag) ||
         !sameList(d.plano_trafego_items, plano) ||
         !sameList(d.auto_lists.diagnostico, autoLists.diagnostico) ||
-        !sameList(d.auto_lists.plano, autoLists.plano);
-      return changed ? { ...d, diagnostico_items: diag, plano_trafego_items: plano, auto_lists: { diagnostico: autoLists.diagnostico, plano: autoLists.plano } } : d;
+        !sameList(d.auto_lists.plano, autoLists.plano) ||
+        d.auto_lists.contatos !== autoLists.contatos ||
+        funil !== d.funil_items;
+      return changed
+        ? { ...d, diagnostico_items: diag, plano_trafego_items: plano, funil_items: funil, auto_lists: { diagnostico: autoLists.diagnostico, plano: autoLists.plano, contatos: autoLists.contatos } }
+        : d;
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoSig, deck === null]);

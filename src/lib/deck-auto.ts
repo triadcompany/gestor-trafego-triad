@@ -7,6 +7,7 @@ import { DEFAULT_DIAGNOSTICO, DEFAULT_PLANO_TRAFEGO } from "@/server/report-deck
 export interface AutoLists {
   diagnostico: string[];
   plano: string[];
+  contatos: string; // funil: "Contatos" = quantidade de leads do período
 }
 
 const TAIL_PLAN = ["Testar 2 criativos novos com o preço do carro na tela.", "Revisar os resultados em 15 dias."];
@@ -14,10 +15,11 @@ const endWithDot = (s: string) => (/[.!?]$/.test(s.trim()) ? s.trim() : `${s.tri
 
 export function buildAutoLists(opts: {
   cpl: number | null; // custo por conversa do período (gasto / conversas)
+  leads: number; // conversas/leads do período
   target: CciTarget | null;
   insights: OptimizationInsights | null;
 }): AutoLists {
-  const { cpl, target, insights } = opts;
+  const { cpl, leads, target, insights } = opts;
   const diag = [...DEFAULT_DIAGNOSTICO];
   let plano = [...DEFAULT_PLANO_TRAFEGO];
 
@@ -55,7 +57,7 @@ export function buildAutoLists(opts: {
       if (actions.length > 0) plano = [...actions, ...TAIL_PLAN];
     }
   }
-  return { diagnostico: diag, plano };
+  return { diagnostico: diag, plano, contatos: leads > 0 ? leads.toLocaleString("pt-BR") : "" };
 }
 
 // Item "não mexido" = ainda é o texto padrão, o último automático, ou (primeiro item do

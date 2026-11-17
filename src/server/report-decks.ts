@@ -80,7 +80,7 @@ export interface ReportDeckRow {
   // lista do slide "Plano de Ação do Tráfego" (guardada no layout, sem coluna nova)
   plano_trafego_items: string[];
   // últimos textos gerados automaticamente (se a lista ainda for igual a eles, o gestor não mexeu e pode ser recalculada)
-  auto_lists: { diagnostico: string[]; plano: string[] };
+  auto_lists: { diagnostico: string[]; plano: string[]; contatos?: string };
   // deslocamento (px) dos textos fixos de cada slide arrastados pelo gestor
   offsets: Record<string, { x: number; y: number }>;
   funil_items: ReportDeckFunilItem[];
@@ -197,7 +197,7 @@ type LayoutEntry = {
   boxes?: ReportDeckTextBox[];
   offsets?: Record<string, { x: number; y: number }>;
   planoTrafego?: string[];
-  autoLists?: { diagnostico: string[]; plano: string[] };
+  autoLists?: { diagnostico: string[]; plano: string[]; contatos?: string };
 };
 
 function splitCreatives(raw: unknown): Pick<ReportDeckRow, "creatives" | "hidden_slides" | "custom_pages" | "text_boxes" | "offsets" | "plano_trafego_items" | "auto_lists"> {
@@ -249,7 +249,7 @@ const upsertSchema = z.object({
     .optional(),
   offsets: z.record(z.string(), z.object({ x: z.number(), y: z.number() })).optional(),
   planoTrafegoItems: z.array(z.string()).optional(),
-  autoLists: z.object({ diagnostico: z.array(z.string()), plano: z.array(z.string()) }).optional(),
+  autoLists: z.object({ diagnostico: z.array(z.string()), plano: z.array(z.string()), contatos: z.string().optional() }).optional(),
   funilItems: z.array(funilItemSchema).optional(),
   planoAcaoItems: z.array(z.string()).optional(),
   consideracoesItems: z.array(z.string()).optional(),
