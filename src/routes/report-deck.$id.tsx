@@ -791,7 +791,7 @@ function ReportDeckPage() {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
       const outW = PAGE_W * EXPORT_SCALE;
       const outH = PAGE_H * EXPORT_SCALE;
-      const doc = new jsPDF({ orientation: "landscape", unit: "px", format: [outW, outH] });
+      const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: [outW, outH] });
       const ids = [...STANDARD_SLIDES.map((x) => x.id), ...deck.custom_pages.map((pg) => pg.id)].filter((sid) => !deck.hidden_slides.includes(sid));
       if (ids.length === 0) throw new Error("Todos os slides estão ocultos.");
       toastId = toast.loading(`Gerando PDF... 0 de ${ids.length}`);
