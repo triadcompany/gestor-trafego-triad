@@ -700,13 +700,28 @@ function ReportDeckPage() {
   // Migração única do slide "Melhores Criativos" (layout novo: vídeo à esquerda, texto à direita):
   // posições arrastadas no layout antigo e caixas soltas com as mesmas orientações saem do caminho.
   useEffect(() => {
-    if (!deck || deck.auto_lists.layoutV === 2) return;
+    if (!deck || (deck.auto_lists.layoutV ?? 0) >= 2) return;
     setDeck((d) => {
-      if (!d || d.auto_lists.layoutV === 2) return d;
+      if (!d || (d.auto_lists.layoutV ?? 0) >= 2) return d;
       const offsets = Object.fromEntries(Object.entries(d.offsets).filter(([k]) => !k.startsWith("criativos:")));
       const text_boxes = d.text_boxes.filter((b) => !(b.slide === "criativos" && /Falar (sempre km|valor, entrada)/i.test(b.text)));
       const creatives = d.creatives.map((c) => ({ ...c, x: undefined, y: undefined, height: undefined }));
       return { ...d, offsets, text_boxes, creatives, auto_lists: { ...d.auto_lists, layoutV: 2 } };
+    });
+  }, [deck === null]);
+
+  // Limpeza única (v3): remove o texto de teste "fsa", seja legenda do criativo ou caixa de texto solta.
+  useEffect(() => {
+    if (!deck || (deck.auto_lists.layoutV ?? 0) >= 3) return;
+    setDeck((d) => {
+      if (!d || (d.auto_lists.layoutV ?? 0) >= 3) return d;
+      const isJunk = (t: string | undefined) => (t ?? "").trim().toLowerCase() === "fsa";
+      return {
+        ...d,
+        text_boxes: d.text_boxes.filter((b) => !isJunk(b.text)),
+        creatives: d.creatives.map((c) => (isJunk(c.caption) ? { ...c, caption: "" } : c)),
+        auto_lists: { ...d.auto_lists, layoutV: 3 },
+      };
     });
   }, [deck === null]);
 
