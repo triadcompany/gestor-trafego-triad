@@ -692,7 +692,7 @@ function ReportDeckPage() {
         base64: img.base64,
         mimetype: img.mimetype,
         filename: `auto-${bestAd.ad.id}.${img.mimetype.includes("png") ? "png" : "jpg"}`,
-        caption: `Menor custo por conversa do período: ${brl(bestAd.cpl)} (${bestAd.conversations} conversas)`,
+        caption: `Anúncio com o menor custo por conversa do período.\nEsse anúncio gastou ${brl(bestAd.ad.spend ?? 0)} e teve ${bestAd.conversations} conversas, com custo por lead de ${brl(bestAd.cpl)}.`,
       };
       setDeck((d) => (d ? { ...d, creatives: [creative], auto_lists: { ...d.auto_lists, creativeAd: bestAd.ad.id } } : d));
       if (manual) toast.success("Melhor criativo do período aplicado.");
