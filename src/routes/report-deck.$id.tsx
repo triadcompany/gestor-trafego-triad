@@ -1,4 +1,4 @@
-import { createFileRoute, redirect, useParams, useSearch, Link } from "@tanstack/react-router";
+import { createFileRoute, useParams, useSearch, Link } from "@tanstack/react-router";
 import { createContext, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
@@ -13,8 +13,6 @@ import {
 } from "@/components/ui/select";
 import { ArrowLeft, Download, Loader2, Plus, X, Play, ImagePlus, Save, Eye, EyeOff, Trash2, GripVertical, Bold, Type } from "lucide-react";
 import { toast } from "sonner";
-import { getCurrentUser } from "@/server/session";
-import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import { fetchClientDetail } from "@/lib/queries";
 import { getMetaToken, fetchCampaigns, fetchOptimizationInsights, fetchAllAds, fetchAdBestImageUrl } from "@/lib/meta";
 import { fetchRemoteImage } from "@/server/deck-creative";
@@ -25,15 +23,8 @@ import { fetchReportDeck, upsertReportDeck, sendReportPdfToOperationalGroup, typ
 import { isoDateInBrasilia, daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
 export const Route = createFileRoute("/report-deck/$id")({
-  head: () => ({ meta: [{ title: "Relatório visual — Gestor de Tráfego" }] }),
+  head: () => ({ meta: [{ title: "Relatório — Gestor de Tráfego" }] }),
   ssr: false,
-  // Experimental — só pra organização Triad Company (ver memória "Triad
-  // Company é a org do dono"), mesmo gate usado em /conversas.
-  beforeLoad: async () => {
-    const user = await getCurrentUser();
-    const orgId = user?.actingOrganizationId ?? user?.organizationId;
-    if (!isTriadCompanyOrg(orgId)) throw redirect({ to: "/dashboard" });
-  },
   validateSearch: (s: Record<string, unknown>): { since?: string; until?: string } => {
     const ok = (v: unknown) => (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : undefined);
     return { since: ok(s.since), until: ok(s.until) };

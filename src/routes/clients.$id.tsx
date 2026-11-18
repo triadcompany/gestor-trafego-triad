@@ -21,7 +21,6 @@ import { sendActiveCampaignsList, type CampaignsListLevel, type CampaignsListTre
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ConversionsContent } from "@/components/ConversionsContent";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
-import { ClientReportDialog } from "@/components/ClientReportDialog";
 import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import {
@@ -296,8 +295,6 @@ function ClientDetail() {
   useEffect(() => {
     if (aba) setActiveTab(aba);
   }, [aba]);
-  // Relatórios abrem pelo menu "Relatórios e envios" (diálogos controlados por aqui).
-  const [reportOpen, setReportOpen] = useState(false);
 
   const { data: client, isLoading } = useQuery({
     queryKey: ["client", id],
@@ -997,16 +994,11 @@ function ClientDetail() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-64">
                 <DropdownMenuLabel>Ver e baixar</DropdownMenuLabel>
-                <DropdownMenuItem className="gap-2" onSelect={() => setReportOpen(true)}>
-                  <FileText className="h-4 w-4" /> Relatório em PDF
+                <DropdownMenuItem asChild>
+                  <Link to="/report-deck/$id" params={{ id: client.id }} className="gap-2">
+                    <FileText className="h-4 w-4" /> Relatório
+                  </Link>
                 </DropdownMenuItem>
-                {isTriad && (
-                  <DropdownMenuItem asChild>
-                    <Link to="/report-deck/$id" params={{ id: client.id }} className="gap-2">
-                      <ClipboardList className="h-4 w-4" /> Relatório visual
-                    </Link>
-                  </DropdownMenuItem>
-                )}
                 <DropdownMenuSeparator />
                 <DropdownMenuLabel>Enviar no WhatsApp</DropdownMenuLabel>
                 <DropdownMenuItem className="gap-2" disabled={sendReportMutation.isPending} onSelect={() => sendReportMutation.mutate()}>
@@ -1024,13 +1016,6 @@ function ClientDetail() {
                 </DropdownMenuSub>
               </DropdownMenuContent>
             </DropdownMenu>
-
-            <ClientReportDialog
-              open={reportOpen}
-              onOpenChange={setReportOpen}
-              hideTrigger
-              client={{ id: client.id, name: client.name, meta_ad_account_id: client.meta_ad_account_id, cpl_max: client.cpl_max }}
-            />
 
             <Button asChild size="sm" className="gap-2">
               <Link to="/campaigns/new" search={{ client: client.id }}>
