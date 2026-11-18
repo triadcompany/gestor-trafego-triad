@@ -52,10 +52,20 @@ function rangeForPreset(preset: Preset, customSince: string, customUntil: string
 
 export function ClientReportDialog({
   client,
+  open: openProp,
+  onOpenChange,
+  hideTrigger,
 }: {
   client: { id: string; name: string; meta_ad_account_id: string; cpl_max: number | null };
+  /** Modo controlado: quem usa (ex.: um menu) decide quando abrir. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  /** Sem o botão "Relatório PDF" próprio. */
+  hideTrigger?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = onOpenChange ?? setOpenState;
   const [preset, setPreset] = useState<Preset>("30");
   const [customSince, setCustomSince] = useState("");
   const [customUntil, setCustomUntil] = useState("");
@@ -99,12 +109,14 @@ export function ClientReportDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="sm" variant="outline" className="gap-2">
-          <FileText className="h-4 w-4" />
-          Relatório PDF
-        </Button>
-      </DialogTrigger>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button size="sm" variant="outline" className="gap-2">
+            <FileText className="h-4 w-4" />
+            Relatório PDF
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Relatório de campanhas — {client.name}</DialogTitle>

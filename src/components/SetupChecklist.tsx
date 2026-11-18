@@ -93,7 +93,7 @@ export function SetupChecklist() {
         navigate({ to: "/settings", search: { aba: "whatsapp" } });
         return;
       case "conversoes":
-        if (data.nextConversionsClientId) navigate({ to: "/conversoes/$id", params: { id: data.nextConversionsClientId } });
+        if (data.nextConversionsClientId) navigate({ to: "/clients/$id", params: { id: data.nextConversionsClientId }, search: { openCampaignId: undefined, aba: "conversoes" } });
         return;
     }
   };

@@ -15,10 +15,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3, TrendingUp, Target } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3, TrendingUp, FileText, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { sendActiveCampaignsList, type CampaignsListLevel, type CampaignsListTree } from "@/lib/whatsapp-messages";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ConversionsContent } from "@/components/ConversionsContent";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
 import { ClientReportDialog } from "@/components/ClientReportDialog";
 import { TrafficInsightsDialog } from "@/components/TrafficInsightsDialog";
@@ -70,12 +71,16 @@ import { fetchDailyLeadCounts, fetchEntityLeadStats } from "@/server/lead-attrib
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { daysAgoInBrasilia, monthRangeInBrasilia } from "@/lib/brasilia-date";
 
+type ClientTab = "campanhas" | "rastreamento" | "conversoes" | "otimizacao";
+const CLIENT_TABS: readonly ClientTab[] = ["campanhas", "rastreamento", "conversoes", "otimizacao"];
+
 export const Route = createFileRoute("/clients/$id")({
   head: () => ({
     meta: [{ title: "Cliente — Gestor de Tráfego" }],
   }),
-  validateSearch: (search: Record<string, unknown>) => ({
+  validateSearch: (search: Record<string, unknown>): { openCampaignId: string | undefined; aba?: ClientTab } => ({
     openCampaignId: typeof search.openCampaignId === "string" ? search.openCampaignId : undefined,
+    aba: CLIENT_TABS.find((t) => t === search.aba),
   }),
   component: ClientDetail,
 });
@@ -248,7 +253,7 @@ function extractCampaignLabel(name: string): string {
 
 function ClientDetail() {
   const { id } = useParams({ from: "/clients/$id" });
-  const { openCampaignId } = useSearch({ from: "/clients/$id" });
+  const { openCampaignId, aba } = useSearch({ from: "/clients/$id" });
   const queryClient = useQueryClient();
   const { data: currentUser } = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser, staleTime: 1000 * 60 });
   const isTriad = isTriadCompanyOrg(currentUser?.actingOrganizationId ?? currentUser?.organizationId);
@@ -288,7 +293,13 @@ function ClientDetail() {
   const navigate = useNavigate();
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [switcherSearch, setSwitcherSearch] = useState("");
-  const [activeTab, setActiveTab] = useState<"campanhas" | "rastreamento" | "otimizacao">("campanhas");
+  const [activeTab, setActiveTab] = useState<ClientTab>(aba ?? "campanhas");
+  useEffect(() => {
+    if (aba) setActiveTab(aba);
+  }, [aba]);
+  // Relatórios abrem pelo menu "Relatórios e envios" (diálogos controlados por aqui).
+  const [reportOpen, setReportOpen] = useState(false);
+  const [insightsOpen, setInsightsOpen] = useState(false);
 
   const { data: client, isLoading } = useQuery({
     queryKey: ["client", id],
@@ -690,10 +701,11 @@ function ClientDetail() {
           </div>
         </div>
 
-        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "campanhas" | "rastreamento" | "otimizacao")} className="mb-6">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as ClientTab)} className="mb-6">
           <TabsList>
             <TabsTrigger value="campanhas">Campanhas</TabsTrigger>
-            <TabsTrigger value="rastreamento">Rastreamento</TabsTrigger>
+            <TabsTrigger value="rastreamento">Leads</TabsTrigger>
+            <TabsTrigger value="conversoes">Conversões</TabsTrigger>
             {isTriad && <TabsTrigger value="otimizacao">Otimização</TabsTrigger>}
           </TabsList>
 
@@ -970,88 +982,72 @@ function ClientDetail() {
           <div className="flex flex-wrap items-center gap-2">
             <UITooltip>
               <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => refetchCampaigns()}
-                  disabled={campaignsRefetching}
-                >
+                <Button size="icon" variant="ghost" onClick={() => refetchCampaigns()} disabled={campaignsRefetching} aria-label="Atualizar campanhas">
                   <RefreshCw className={`h-4 w-4 ${campaignsRefetching ? "animate-spin" : ""}`} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Atualizar campanhas</TooltipContent>
             </UITooltip>
+
             <DropdownMenu>
-              <UITooltip>
-                <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      disabled={sendListMutation.isPending || (campaigns ?? []).filter((c) => c.status === "ACTIVE").length === 0}
-                    >
-                      {sendListMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : <MessageCircle className="h-4 w-4" />}
-                    </Button>
-                  </DropdownMenuTrigger>
-                </TooltipTrigger>
-                <TooltipContent>Enviar lista no WhatsApp</TooltipContent>
-              </UITooltip>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => sendListMutation.mutate("campanhas")}>Só campanhas</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => sendListMutation.mutate("conjuntos")}>Campanhas e conjuntos</DropdownMenuItem>
-                <DropdownMenuItem onClick={() => sendListMutation.mutate("anuncios")}>Campanhas, conjuntos e anúncios</DropdownMenuItem>
+              <DropdownMenuTrigger asChild>
+                <Button size="sm" variant="outline" className="gap-2">
+                  {sendListMutation.isPending || sendReportMutation.isPending ? <RefreshCw className="h-4 w-4 animate-spin" /> : null}
+                  Relatórios e envios
+                  <ChevronDown className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel>Ver e baixar</DropdownMenuLabel>
+                <DropdownMenuItem className="gap-2" onSelect={() => setReportOpen(true)}>
+                  <FileText className="h-4 w-4" /> Relatório em PDF
+                </DropdownMenuItem>
+                <DropdownMenuItem className="gap-2" onSelect={() => setInsightsOpen(true)}>
+                  <TrendingUp className="h-4 w-4" /> Detalhamento
+                </DropdownMenuItem>
+                {isTriad && (
+                  <DropdownMenuItem asChild>
+                    <Link to="/report-deck/$id" params={{ id: client.id }} className="gap-2">
+                      <ClipboardList className="h-4 w-4" /> Relatório visual
+                    </Link>
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Enviar no WhatsApp</DropdownMenuLabel>
+                <DropdownMenuItem className="gap-2" disabled={sendReportMutation.isPending} onSelect={() => sendReportMutation.mutate()}>
+                  <BarChart3 className="h-4 w-4" /> Relatório semanal de métricas
+                </DropdownMenuItem>
+                <DropdownMenuSub>
+                  <DropdownMenuSubTrigger className="gap-2" disabled={sendListMutation.isPending || (campaigns ?? []).filter((c) => c.status === "ACTIVE").length === 0}>
+                    <MessageCircle className="h-4 w-4" /> Lista de campanhas
+                  </DropdownMenuSubTrigger>
+                  <DropdownMenuSubContent>
+                    <DropdownMenuItem onSelect={() => sendListMutation.mutate("campanhas")}>Só campanhas</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => sendListMutation.mutate("conjuntos")}>Campanhas e conjuntos</DropdownMenuItem>
+                    <DropdownMenuItem onSelect={() => sendListMutation.mutate("anuncios")}>Campanhas, conjuntos e anúncios</DropdownMenuItem>
+                  </DropdownMenuSubContent>
+                </DropdownMenuSub>
               </DropdownMenuContent>
             </DropdownMenu>
-            <UITooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => sendReportMutation.mutate()}
-                  disabled={sendReportMutation.isPending}
-                >
-                  <BarChart3 className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Enviar relatório semanal de métricas no WhatsApp</TooltipContent>
-            </UITooltip>
+
             <ClientReportDialog
-              client={{
-                id: client.id,
-                name: client.name,
-                meta_ad_account_id: client.meta_ad_account_id,
-                cpl_max: client.cpl_max,
-              }}
+              open={reportOpen}
+              onOpenChange={setReportOpen}
+              hideTrigger
+              client={{ id: client.id, name: client.name, meta_ad_account_id: client.meta_ad_account_id, cpl_max: client.cpl_max }}
             />
             <TrafficInsightsDialog
+              open={insightsOpen}
+              onOpenChange={setInsightsOpen}
               objectId={client.meta_ad_account_id}
               clientId={client.id}
               label={client.name}
-              trigger={
-                <Button size="sm" variant="outline" className="gap-2">
-                  <TrendingUp className="h-4 w-4" />
-                  Detalhamento
-                </Button>
-              }
             />
-            {isTriad && (
-              <Button asChild size="sm" variant="outline" className="gap-2">
-                <Link to="/report-deck/$id" params={{ id: client.id }}>
-                  <ClipboardList className="h-4 w-4" />
-                  Relatório visual
-                </Link>
-              </Button>
-            )}
-            <Button asChild size="sm" variant="outline" className="gap-2">
-              <Link to="/conversoes/$id" params={{ id: client.id }}>
-                <Target className="h-4 w-4" />
-                Conversões
-              </Link>
-            </Button>
+
             <Button asChild size="sm" className="gap-2">
               <Link to="/campaigns/new" search={{ client: client.id }}>
                 <Plus className="h-4 w-4" />
-                Nova Campanha
+                Nova campanha
               </Link>
             </Button>
           </div>
@@ -1158,6 +1154,10 @@ function ClientDetail() {
             })()}
 
             <LeadsDashboard clientId={id} controlledRange={{ since: leadStatsSinceA, until: leadStatsUntilA }} />
+          </TabsContent>
+
+          <TabsContent value="conversoes" className="mt-4">
+            <ConversionsContent clientId={id} onGoToLeads={() => setActiveTab("rastreamento")} />
           </TabsContent>
 
           {isTriad && (

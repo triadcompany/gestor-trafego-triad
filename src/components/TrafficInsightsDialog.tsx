@@ -268,13 +268,20 @@ export function TrafficInsightsDialog({
   clientId,
   label,
   trigger,
+  open: openProp,
+  onOpenChange,
 }: {
   objectId: string;
   clientId: string;
   label: string;
-  trigger: React.ReactNode;
+  /** Sem trigger, quem usa controla a abertura por open/onOpenChange (ex.: um menu). */
+  trigger?: React.ReactNode;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
-  const [open, setOpen] = useState(false);
+  const [openState, setOpenState] = useState(false);
+  const open = openProp ?? openState;
+  const setOpen = onOpenChange ?? setOpenState;
   const [preset, setPreset] = useState<Preset>("30");
   const range = rangeForPreset(preset);
 
@@ -315,7 +322,7 @@ export function TrafficInsightsDialog({
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>{trigger}</DialogTrigger>
+      {trigger && <DialogTrigger asChild>{trigger}</DialogTrigger>}
       <DialogContent className="max-w-xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Detalhamento de tráfego — {label}</DialogTitle>
