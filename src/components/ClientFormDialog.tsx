@@ -17,12 +17,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, X, Check, Search, Loader2, Users, Building2, Target, UserCog, Wallet, Tag as TagIcon, Tags, CalendarDays } from "lucide-react";
+import { Link } from "@tanstack/react-router";
 import { Switch } from "@/components/ui/switch";
 import { fetchTags, createTag, upsertClient, type ClientRow, type TagRow } from "@/lib/queries";
 import { getCurrentUser } from "@/server/session";
 import { fetchOrgMembers } from "@/server/team";
 import { TagBadge, TAG_COLORS } from "@/components/TagBadge";
-import { searchEvolutionRecipients, fetchWhatsappInstances, fetchClientWhatsappLabels, type EvolutionRecipient } from "@/lib/whatsapp-messages";
+import { searchEvolutionRecipients, fetchWhatsappInstances, type EvolutionRecipient } from "@/lib/whatsapp-messages";
 import { fetchMetaTokens } from "@/lib/meta";
 import {
   fetchClientMetaWhatsappOfficial,
@@ -228,8 +229,10 @@ export function ClientFormDialog({
   const [metaTokenId, setMetaTokenId] = useState<string | null>(client?.meta_token_id ?? null);
   const [whatsappInstanceId, setWhatsappInstanceId] = useState<string | null>(client?.whatsapp_instance_id ?? null);
   const [ownerUserId, setOwnerUserId] = useState<string>(client?.owner_user_id ?? "");
-  const [qualifiedLeadLabel, setQualifiedLeadLabel] = useState<string>(client?.qualified_lead_label ?? "");
-  const [metaCapiDatasetId, setMetaCapiDatasetId] = useState<string>(client?.meta_capi_dataset_id ?? "");
+  // Etiqueta e conjunto de dados saíram desta tela (agora em Conversões), mas os valores
+  // atuais continuam sendo reenviados no salvar pra nunca zerar o que já está configurado.
+  const [qualifiedLeadLabel] = useState<string>(client?.qualified_lead_label ?? "");
+  const [metaCapiDatasetId] = useState<string>(client?.meta_capi_dataset_id ?? "");
   const [monthlyReportDay, setMonthlyReportDay] = useState<number | null>(client?.monthly_report_day ?? null);
 
   const queryClient = useQueryClient();
@@ -254,11 +257,6 @@ export function ClientFormDialog({
   // deliberada, nunca automática.
 
   const { data: allTags = [] } = useQuery({ queryKey: ["tags"], queryFn: fetchTags });
-  const { data: whatsappLabels = [] } = useQuery({
-    queryKey: ["whatsapp-labels", client?.id],
-    queryFn: () => fetchClientWhatsappLabels(client!.id),
-    enabled: !!client?.id,
-  });
   const createTagMutation = useMutation({
     mutationFn: ({ name, color }: { name: string; color: string }) => createTag(name, color),
     onSuccess: (tag) => {
@@ -573,37 +571,22 @@ export function ClientFormDialog({
 
           <FormSection title="Rastreamento de leads do Meta Ads" icon={Tags}>
             <div className="space-y-1">
-              <Label>Etiqueta que marca lead qualificado</Label>
+              <Label>Conversões (lead qualificado e compra)</Label>
               {client?.id ? (
-                <Select value={qualifiedLeadLabel || "__none__"} onValueChange={(v) => setQualifiedLeadLabel(v === "__none__" ? "" : v)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Nenhuma (não rastreia qualificação)" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__none__">Nenhuma (não rastreia qualificação)</SelectItem>
-                    {whatsappLabels.map((l) => (
-                      <SelectItem key={l.id} value={l.name}>{l.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Link
+                  to="/conversoes/$id"
+                  params={{ id: client.id }}
+                  className="inline-flex items-center gap-1.5 text-sm text-primary underline underline-offset-2"
+                >
+                  <Target className="h-3.5 w-3.5" /> Configurar palavras-chave e IA
+                </Link>
               ) : (
                 <p className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                  Salve o cliente primeiro pra escolher a etiqueta.
+                  Salve o cliente primeiro pra configurar as conversões.
                 </p>
               )}
               <p className="text-[11px] text-muted-foreground">
-                Quando essa etiqueta for aplicada no WhatsApp Business do celular, o lead é marcado como qualificado.
-              </p>
-            </div>
-            <div className="space-y-1">
-              <Label>Identificação do conjunto de dados</Label>
-              <Input
-                value={metaCapiDatasetId}
-                onChange={(e) => setMetaCapiDatasetId(e.target.value)}
-                placeholder="Ex: 1234567890123456"
-              />
-              <p className="text-[11px] text-muted-foreground">
-                Criado no Events Manager da Meta, em "Business Messaging". Sem isso, a qualificação fica registrada mas o evento não é enviado pra Meta.
+                Como o sistema descobre que um lead é bom ou que comprou agora é configurado numa página só.
               </p>
             </div>
             {client?.id ? (

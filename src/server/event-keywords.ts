@@ -250,6 +250,40 @@ export async function getConversionsReadiness(clientId: string): Promise<Convers
   return _getConversionsReadiness({ data: { clientId } });
 }
 
+// ---------- Pixel manual (alternativa) ----------
+// Com o n8n o pixel vem do anúncio; este campo só vale quando o anúncio não devolve
+// pixel (ou no envio direto, sem n8n). Antes ficava na edição do cliente.
+
+const _getCapiDataset = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ clientId: z.string() }))
+  .handler(async ({ data }): Promise<string> => {
+    await assertAccessible(data.clientId);
+    const client = await db.query.clients.findFirst({
+      where: eq(clients.id, data.clientId),
+      columns: { metaCapiDatasetId: true },
+    });
+    return client?.metaCapiDatasetId ?? "";
+  });
+
+export async function getCapiDataset(clientId: string): Promise<string> {
+  return _getCapiDataset({ data: { clientId } });
+}
+
+const _setCapiDataset = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ clientId: z.string(), datasetId: z.string().trim().max(40) }))
+  .handler(async ({ data }): Promise<void> => {
+    await assertAccessible(data.clientId);
+    if (data.datasetId && !/^\d{5,30}$/.test(data.datasetId)) throw new Error("O ID do pixel tem só números (ex.: 1234567890123456).");
+    await db
+      .update(clients)
+      .set({ metaCapiDatasetId: data.datasetId || null })
+      .where(eq(clients.id, data.clientId));
+  });
+
+export async function setCapiDataset(clientId: string, datasetId: string): Promise<void> {
+  await _setCapiDataset({ data: { clientId, datasetId } });
+}
+
 // ---------- Reaplicar o webhook da instância ----------
 // Instâncias criadas antes desta feature só estão assinadas em MESSAGES_UPSERT e
 // LABELS_ASSOCIATION; mensagens enviadas por API só chegam com SEND_MESSAGE.
