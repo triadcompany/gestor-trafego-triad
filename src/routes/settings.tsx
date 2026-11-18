@@ -1,11 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useId } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -540,6 +541,75 @@ function QrDialog({
   );
 }
 
+type WhatsappOwnerMode = "none" | "user" | "client";
+
+// Um WhatsApp é de UM gestor OU de UM cliente (ou de ninguém em específico) — nunca dos dois.
+// Escolher um lado zera o outro. Use `key` no pai pra reiniciar ao trocar de WhatsApp editado.
+function WhatsappOwnerPicker({
+  members,
+  clients,
+  userId,
+  clientId,
+  onUserChange,
+  onClientChange,
+}: {
+  members: { id: string; fullName: string }[];
+  clients: { id: string; name: string }[];
+  userId: string;
+  clientId: string;
+  onUserChange: (v: string) => void;
+  onClientChange: (v: string) => void;
+}) {
+  const uid = useId();
+  const [mode, setMode] = useState<WhatsappOwnerMode>(clientId !== "none" ? "client" : userId !== "none" ? "user" : "none");
+  const changeMode = (m: WhatsappOwnerMode) => {
+    setMode(m);
+    if (m !== "user") onUserChange("none");
+    if (m !== "client") onClientChange("none");
+  };
+  const options: { value: WhatsappOwnerMode; label: string }[] = [
+    { value: "none", label: "Ninguém em específico" },
+    { value: "user", label: "Um gestor" },
+    { value: "client", label: "Um cliente" },
+  ];
+  const help: Record<WhatsappOwnerMode, string> = {
+    none: "WhatsApp interno, sem dono. Pode ser vinculado depois.",
+    user: "É o WhatsApp padrão desse gestor quando ele manda mensagens.",
+    client: "É o WhatsApp lido pra rastrear os leads desse cliente. Cada cliente só pode ter um.",
+  };
+
+  return (
+    <div className="space-y-2">
+      <Label>Quem usa este WhatsApp?</Label>
+      <RadioGroup value={mode} onValueChange={(v) => changeMode(v as WhatsappOwnerMode)} className="flex flex-wrap gap-x-5 gap-y-2">
+        {options.map((o) => (
+          <div key={o.value} className="flex items-center gap-2">
+            <RadioGroupItem value={o.value} id={`${uid}-${o.value}`} />
+            <Label htmlFor={`${uid}-${o.value}`} className="font-normal cursor-pointer">{o.label}</Label>
+          </div>
+        ))}
+      </RadioGroup>
+      {mode === "user" && (
+        <Select value={userId === "none" ? "" : userId} onValueChange={(v) => v && onUserChange(v)}>
+          <SelectTrigger aria-label="Gestor"><SelectValue placeholder="Escolher o gestor" /></SelectTrigger>
+          <SelectContent>
+            {members.map((m) => <SelectItem key={m.id} value={m.id}>{m.fullName}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
+      {mode === "client" && (
+        <Select value={clientId === "none" ? "" : clientId} onValueChange={(v) => v && onClientChange(v)}>
+          <SelectTrigger aria-label="Cliente"><SelectValue placeholder="Escolher o cliente" /></SelectTrigger>
+          <SelectContent>
+            {clients.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      )}
+      <p className="text-[11px] text-muted-foreground">{help[mode]}</p>
+    </div>
+  );
+}
+
 function WhatsappInstancesSection() {
   const queryClient = useQueryClient();
   const [open, setOpen] = useState(false);
@@ -578,7 +648,7 @@ function WhatsappInstancesSection() {
       setQrInitial(res.qrBase64);
       setQrFor(res.id);
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao criar instância", { duration: 8000 }),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao conectar o WhatsApp", { duration: 8000 }),
   });
 
   const linkMutation = useMutation({
@@ -594,16 +664,16 @@ function WhatsappInstancesSection() {
   const deleteMutation = useMutation({
     mutationFn: deleteWhatsappInstance,
     onSuccess: () => {
-      toast.success("Instância removida.");
+      toast.success("WhatsApp removido.");
       queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao remover instância"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao remover o WhatsApp"),
   });
 
   const setDefaultMutation = useMutation({
     mutationFn: setDefaultGestorInstance,
     onSuccess: () => {
-      toast.success("Instância marcada como padrão do gestor.");
+      toast.success("WhatsApp marcado como padrão do gestor.");
       queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao marcar como padrão"),
@@ -630,12 +700,12 @@ function WhatsappInstancesSection() {
       }
     },
     onSuccess: () => {
-      toast.success("Instância atualizada.");
+      toast.success("WhatsApp atualizado.");
       setEditing(null);
       queryClient.invalidateQueries({ queryKey: ["whatsapp-instances"] });
       queryClient.invalidateQueries({ queryKey: ["all-clients"] });
     },
-    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar instância"),
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar o WhatsApp"),
   });
 
   const openConnect = async (id: string) => {
@@ -654,17 +724,17 @@ function WhatsappInstancesSection() {
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <MessageCircle className="h-4 w-4 text-muted-foreground" />
-          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">Instâncias WhatsApp</h2>
+          <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">WhatsApps conectados</h2>
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button size="sm" variant="outline" className="gap-1.5">
-              <Plus className="h-3.5 w-3.5" /> Nova instância
+              <Plus className="h-3.5 w-3.5" /> Conectar WhatsApp
             </Button>
           </DialogTrigger>
           <DialogContent>
             <DialogHeader>
-              <DialogTitle>Nova instância de WhatsApp</DialogTitle>
+              <DialogTitle>Conectar WhatsApp</DialogTitle>
             </DialogHeader>
             <div className="space-y-3 py-2">
               <div className="space-y-1.5">
@@ -678,37 +748,14 @@ function WhatsappInstancesSection() {
                   placeholder='Ex: "WhatsApp do João"'
                 />
               </div>
-              <div className="space-y-1.5">
-                <Label>Nome da instância (técnico)</Label>
-                <Input
-                  value={instanceName}
-                  onChange={(e) => setInstanceName(e.target.value)}
-                  placeholder="whatsapp-joao"
-                  className="font-mono text-xs"
-                />
-                <p className="text-[11px] text-muted-foreground">Só letras, números e hífen. Um sufixo curto da organização é adicionado automaticamente.</p>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Atribuir a um gestor (opcional)</Label>
-                <Select value={assignedUserId} onValueChange={setAssignedUserId}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Ninguém em específico</SelectItem>
-                    {members.map((m) => <SelectItem key={m.id} value={m.id}>{m.fullName}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Cliente (opcional)</Label>
-                <Select value={clientId} onValueChange={setClientId}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhum — instância interna/gestor</SelectItem>
-                    {clientsList.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                <p className="text-[11px] text-muted-foreground">Se escolher um cliente, essa instância já fica vinculada a ele — é o WhatsApp que vai ser rastreado pros leads dele.</p>
-              </div>
+              <WhatsappOwnerPicker
+                members={members}
+                clients={clientsList}
+                userId={assignedUserId}
+                clientId={clientId}
+                onUserChange={setAssignedUserId}
+                onClientChange={setClientId}
+              />
             </div>
             <DialogFooter>
               <Button onClick={() => createMutation.mutate()} disabled={!instanceName.trim() || createMutation.isPending}>
@@ -724,7 +771,7 @@ function WhatsappInstancesSection() {
         <Card className="px-5 py-4 text-sm text-muted-foreground">Carregando...</Card>
       ) : instances.length === 0 ? (
         <Card className="px-5 py-4 text-sm text-muted-foreground">
-          Nenhuma instância. Clique em "Nova instância" pra gerar uma e conectar pelo QR code.
+          Nenhum WhatsApp conectado. Clique em "Conectar WhatsApp" pra gerar o QR code.
         </Card>
       ) : (
         <div className="space-y-4">
@@ -735,7 +782,7 @@ function WhatsappInstancesSection() {
             onConnect={openConnect}
             onCopyLink={(id) => linkMutation.mutate(id)}
             onEdit={openEdit}
-            onDelete={(i) => { if (confirm(`Excluir a instância "${i.label}"? Isso desconecta e apaga ela na Evolution.`)) deleteMutation.mutate(i.id); }}
+            onDelete={(i) => { if (confirm(`Excluir o WhatsApp "${i.label}"? Isso desconecta o número e apaga a conexão.`)) deleteMutation.mutate(i.id); }}
             onSetDefault={(id) => setDefaultMutation.mutate(id)}
           />
           <WhatsappInstanceGroup
@@ -745,7 +792,7 @@ function WhatsappInstancesSection() {
             onConnect={openConnect}
             onCopyLink={(id) => linkMutation.mutate(id)}
             onEdit={openEdit}
-            onDelete={(i) => { if (confirm(`Excluir a instância "${i.label}"? Isso desconecta e apaga ela na Evolution.`)) deleteMutation.mutate(i.id); }}
+            onDelete={(i) => { if (confirm(`Excluir o WhatsApp "${i.label}"? Isso desconecta o número e apaga a conexão.`)) deleteMutation.mutate(i.id); }}
           />
         </div>
       )}
@@ -766,42 +813,29 @@ function WhatsappInstancesSection() {
       <Dialog open={!!editing} onOpenChange={(v) => { if (!v) setEditing(null); }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Editar instância</DialogTitle>
+            <DialogTitle>Editar WhatsApp</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 py-2">
             <div className="space-y-1.5">
               <Label>Nome</Label>
               <Input value={editLabel} onChange={(e) => setEditLabel(e.target.value)} />
             </div>
-            <div className="space-y-1.5">
-              <Label>Atribuir a um gestor</Label>
-              <Select value={editAssignedUserId} onValueChange={setEditAssignedUserId}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Ninguém em específico</SelectItem>
-                  {members.map((m) => <SelectItem key={m.id} value={m.id}>{m.fullName}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-muted-foreground">Define o WhatsApp "padrão" desse gestor quando ele manda uma mensagem sem escolher instância manualmente.</p>
-            </div>
+            <WhatsappOwnerPicker
+              key={editing?.id ?? "novo"}
+              members={members}
+              clients={clientsList}
+              userId={editAssignedUserId}
+              clientId={editClientId}
+              onUserChange={setEditAssignedUserId}
+              onClientChange={setEditClientId}
+            />
             {editClientId === "none" && (
               <div className="space-y-1.5">
                 <Label>Grupo operacional</Label>
                 <WhatsappGroupPicker value={editOperationalGroup} onChange={setEditOperationalGroup} instanceId={editing?.id} />
-                <p className="text-[11px] text-muted-foreground">Pra onde vão os envios manuais com destino "Operacional" (lista de campanhas, relatório semanal) quando essa instância é quem está enviando. Cada gestor configura o próprio.</p>
+                <p className="text-[11px] text-muted-foreground">Pra onde vão os envios manuais com destino "Operacional" (lista de campanhas, relatório semanal) quando esse WhatsApp é quem está enviando. Cada gestor configura o próprio.</p>
               </div>
             )}
-            <div className="space-y-1.5">
-              <Label>Cliente</Label>
-              <Select value={editClientId} onValueChange={setEditClientId}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Nenhum — instância interna/gestor</SelectItem>
-                  {clientsList.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <p className="text-[11px] text-muted-foreground">Escolher um cliente aqui desvincula ele de qualquer outra instância — cada cliente só pode ter uma.</p>
-            </div>
           </div>
           <DialogFooter>
             <Button onClick={() => editMutation.mutate()} disabled={!editLabel.trim() || editMutation.isPending}>
@@ -841,7 +875,7 @@ function WhatsappInstanceGroup({
       </h3>
       <Card className="divide-y divide-border">
         {instances.length === 0 ? (
-          <div className="px-5 py-4 text-sm text-muted-foreground">Nenhuma instância nessa categoria.</div>
+          <div className="px-5 py-4 text-sm text-muted-foreground">Nenhum WhatsApp nessa categoria.</div>
         ) : (
           instances.map((i) => {
             const assigned = members.find((m) => m.id === i.assignedUserId);
@@ -1464,8 +1498,8 @@ function SendDestinationsSection() {
             Escolha pra onde vão as mensagens dos botões "Enviar lista de campanhas ativas", "Enviar relatório
             semanal" e "Marcar como vendido" na página do cliente. Se o destino for "Grupo do cliente" e o cliente
             ainda não tiver um grupo vinculado, a mensagem cai automaticamente no Operacional. "Operacional" manda
-            pro grupo configurado na própria instância de WhatsApp de quem está enviando — cada gestor tem o seu,
-            configure em "Instâncias WhatsApp" abaixo, editando a instância dele.
+            pro grupo configurado no próprio WhatsApp de quem está enviando — cada gestor tem o seu,
+            configure em "WhatsApps conectados" abaixo, editando o WhatsApp dele.
           </p>
         </div>
 

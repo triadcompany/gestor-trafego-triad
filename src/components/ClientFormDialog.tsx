@@ -433,10 +433,10 @@ export function ClientFormDialog({
                 )}
                 {whatsappInstances.length > 1 && (
                   <div className="space-y-1">
-                    <Label>Instância WhatsApp</Label>
+                    <Label>WhatsApp</Label>
                     <Select value={whatsappInstanceId ?? ""} onValueChange={setWhatsappInstanceId}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Selecionar instância" />
+                        <SelectValue placeholder="Selecionar WhatsApp" />
                       </SelectTrigger>
                       <SelectContent>
                         {whatsappInstances.map((i) => (
@@ -702,7 +702,7 @@ function MetaWhatsappOfficialConnector({ clientId }: { clientId: string }) {
         )}
       </div>
       <p className="text-[11px] text-muted-foreground">
-        IDs do WhatsApp Business Platform no Business Manager da Meta (não é a instância Evolution). O Business Manager
+        IDs do WhatsApp Business Platform no Business Manager da Meta (não é o WhatsApp conectado pelo QR code). O Business Manager
         que gerencia a conta de anúncio desse cliente já precisa ter compartilhado o WABA com a organização.
       </p>
     </div>

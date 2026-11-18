@@ -77,7 +77,7 @@ const _resolveWhatsappInstance = createServerFn({ method: "GET" })
       .orderBy(desc(whatsappInstances.isDefaultGestor), whatsappInstances.createdAt);
     const candidates = rows.map((r) => r.instance);
     const chosen = candidates.find((i) => i.assignedUserId === userId) ?? candidates[0];
-    if (!chosen) throw new Error("Nenhuma instância de WhatsApp do gestor configurada. Acesse Configurações.");
+    if (!chosen) throw new Error("Nenhum WhatsApp do gestor conectado. Acesse Configurações.");
     return { instanceId: chosen.id, url: chosen.evolutionUrl, apiKey: chosen.evolutionKey, instance: chosen.instanceName, operationalGroupId: chosen.operationalGroupId };
   });
 
@@ -100,7 +100,7 @@ const _resolveWhatsappInstanceById = createServerFn({ method: "GET" })
   .handler(async ({ data }): Promise<ResolvedWhatsappInstance> => {
     const { organizationId } = await requireOrgContext();
     const row = await db.query.whatsappInstances.findFirst({ where: eq(whatsappInstances.id, data.instanceId) });
-    if (!row || row.organizationId !== organizationId) throw new Error("Instância não encontrada.");
+    if (!row || row.organizationId !== organizationId) throw new Error("WhatsApp não encontrado.");
     return { instanceId: row.id, url: row.evolutionUrl, apiKey: row.evolutionKey, instance: row.instanceName, operationalGroupId: row.operationalGroupId };
   });
 
@@ -302,7 +302,7 @@ const _createWhatsappInstance = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<{ id: string; qrBase64: string | null }> => {
     const { organizationId, role, userId } = await requireOrgContext();
     const base = sanitizeInstanceName(data.instanceName);
-    if (!base) throw new Error("Nome da instância inválido — use letras e números.");
+    if (!base) throw new Error("Nome inválido — use letras e números.");
 
     let client: { organizationId: string; ownerUserId: string | null } | undefined;
     if (data.clientId) {
@@ -367,7 +367,7 @@ export async function createWhatsappInstance(data: {
 
 async function loadInstanceInOrg(id: string, organizationId: string) {
   const row = await db.query.whatsappInstances.findFirst({ where: eq(whatsappInstances.id, id) });
-  if (!row || row.organizationId !== organizationId) throw new Error("Instância não encontrada.");
+  if (!row || row.organizationId !== organizationId) throw new Error("WhatsApp não encontrado.");
   return row;
 }
 
@@ -702,7 +702,7 @@ const _createScheduledMessage = createServerFn({ method: "POST" })
       ? await db.query.whatsappInstances.findFirst({ where: eq(whatsappInstances.id, data.whatsappInstanceId) })
       : null;
     if (data.whatsappInstanceId && (!resolved || resolved.organizationId !== organizationId)) {
-      throw new Error("Instância de WhatsApp não encontrada.");
+      throw new Error("WhatsApp não encontrado.");
     }
     const whatsappInstanceId = resolved?.id ?? (await resolveGestorWhatsappInstance()).instanceId;
 
@@ -1029,7 +1029,7 @@ const _sendActiveCampaignsList = createServerFn({ method: "POST" })
       ? client.whatsappGroupId
       : await resolveOperationalGroupId(resolved, organizationId);
     if (!groupId) {
-      throw new Error("Grupo operacional não configurado pra essa instância. Configure em Configurações → Instâncias WhatsApp.");
+      throw new Error("Grupo operacional não configurado pra esse WhatsApp. Configure em Configurações → Conectar WhatsApp.");
     }
 
     let text: string;

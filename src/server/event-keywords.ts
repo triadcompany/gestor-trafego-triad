@@ -301,7 +301,7 @@ const _reapplyWhatsappWebhook = createServerFn({ method: "POST" })
       where: eq(whatsappInstances.id, client.whatsappInstanceId),
       columns: { instanceName: true, evolutionKey: true },
     });
-    if (!instance) throw new Error("Instância de WhatsApp não encontrada.");
+    if (!instance) throw new Error("WhatsApp não encontrado.");
     await configureEvolutionWebhook(instance.instanceName, instance.evolutionKey);
   });
 

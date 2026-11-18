@@ -655,7 +655,7 @@ function recipientsSummary(r: MessageAutomationRow): string {
     return `Resume ${plural(n, "grupo", "grupos")}${customLabel ? ` → ${customLabel}` : ""}`;
   }
   if (r.content_type === "whatsapp_disconnected") {
-    return `Verifica todas as instâncias${customLabel ? ` → ${customLabel}` : ""}`;
+    return `Verifica todos os WhatsApps${customLabel ? ` → ${customLabel}` : ""}`;
   }
   if (r.content_type === "report_reminder") {
     const n = r.report_client_names.length;
@@ -674,7 +674,7 @@ function recipientsSummary(r: MessageAutomationRow): string {
 
 function contentLabel(r: MessageAutomationRow): string {
   if (r.content_type === "saldo_baixo") return "Saldo baixo";
-  if (r.content_type === "whatsapp_disconnected") return "Instância desconectada";
+  if (r.content_type === "whatsapp_disconnected") return "WhatsApp desconectado";
   if (r.content_type === "report_reminder") return "Lembrete de relatório";
   if (r.content_type === "report") {
     const who = reportClientsLabel(r);
@@ -815,7 +815,7 @@ function AutomacoesTab() {
               <SelectItem value="report_pdf">Relatório PDF</SelectItem>
               <SelectItem value="text">Mensagem</SelectItem>
               <SelectItem value="group_summary">Resumo de grupo</SelectItem>
-              <SelectItem value="whatsapp_disconnected">Instância desconectada</SelectItem>
+              <SelectItem value="whatsapp_disconnected">WhatsApp desconectado</SelectItem>
               <SelectItem value="report_reminder">Lembrete de relatório</SelectItem>
             </SelectContent>
           </Select>
@@ -923,7 +923,7 @@ const CONTENT_TYPE_OPTIONS: Array<{
   { value: "report_pdf", label: "Relatório PDF", hint: "O relatório completo em arquivo, anexado", icon: FileText },
   { value: "group_summary", label: "Resumo de grupo", hint: "Resumo das conversas do grupo por turno", icon: MessagesSquare },
   { value: "saldo_baixo", label: "Saldo baixo", hint: "Avisa o cliente quando o saldo da conta de anúncio está abaixo do limite", icon: Wallet },
-  { value: "whatsapp_disconnected", label: "Instância desconectada", hint: "Avisa quando alguma instância de WhatsApp cair", icon: WifiOff },
+  { value: "whatsapp_disconnected", label: "WhatsApp desconectado", hint: "Avisa quando algum WhatsApp cair", icon: WifiOff },
   { value: "report_reminder", label: "Lembrete de relatório", hint: "Avisa que é o dia de gerar o relatório dos clientes selecionados (não gera o relatório)", icon: CalendarDays },
 ];
 
@@ -1482,7 +1482,7 @@ function AutomationComposerDialog({
           ) : contentType === "whatsapp_disconnected" ? (
             <div className="rounded-lg border border-border/60 bg-muted/10 p-3">
               <p className="text-sm text-muted-foreground">
-                Automática — verifica sozinha todas as instâncias de WhatsApp ativas da organização (gestor e
+                Automática — verifica sozinha todos os WhatsApps ativos da organização (gestor e
                 clientes). Só avisa quando encontra alguma desconectada; se estiver tudo certo, não manda nada.
                 Configure só o horário e o destino abaixo.
               </p>
@@ -1610,7 +1610,7 @@ function AutomationComposerDialog({
 
           {gestorInstances.length > 1 && (
             <div className="space-y-1.5">
-              <Label>Instância WhatsApp (do gestor)</Label>
+              <Label>WhatsApp (do gestor)</Label>
               <Select value={instanceId} onValueChange={setInstanceId}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>

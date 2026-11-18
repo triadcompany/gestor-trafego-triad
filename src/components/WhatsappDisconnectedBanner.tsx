@@ -22,7 +22,7 @@ export function WhatsappDisconnectedBanner() {
       <div className="flex items-center gap-2">
         <WifiOff className="h-4 w-4 shrink-0" />
         <span>
-          Instância{data.length > 1 ? "s" : ""} de WhatsApp desconectada{data.length > 1 ? "s" : ""}:{" "}
+          WhatsApp{data.length > 1 ? "s" : ""} desconectado{data.length > 1 ? "s" : ""}:{" "}
           <strong>{data.join(", ")}</strong>.{" "}
           <Link to="/settings" className="underline font-medium">
             Reconectar

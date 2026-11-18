@@ -323,7 +323,7 @@ async function materializeSaldoBaixo(
   if (destinos.length === 0) return { created: false, warnings: [`Regra "${rule.name}": escolha pelo menos um destino (grupo ou contato) pra receber o aviso.`] };
 
   const instance = await pickGestorWhatsappInstance({ organizationId: rule.organizationId, explicitInstanceId: rule.whatsappInstanceId });
-  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp do gestor ativa.`] };
+  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhum WhatsApp do gestor ativa.`] };
 
   const threshold = rule.balanceThreshold ?? 50000;
   const warnings: string[] = [];
@@ -372,7 +372,7 @@ async function materializeWhatsappDisconnected(
   if (destinos.length === 0) return { created: false, warnings: [`Regra "${rule.name}": escolha pelo menos um destino (grupo ou contato) pra receber o aviso.`] };
 
   const instance = await pickGestorWhatsappInstance({ organizationId: rule.organizationId, explicitInstanceId: rule.whatsappInstanceId });
-  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp do gestor ativa.`] };
+  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhum WhatsApp do gestor ativa.`] };
 
   const allInstances = await db
     .select({ label: whatsappInstances.label, evolutionUrl: whatsappInstances.evolutionUrl, evolutionKey: whatsappInstances.evolutionKey, instanceName: whatsappInstances.instanceName })
@@ -394,10 +394,10 @@ async function materializeWhatsappDisconnected(
   }
 
   if (disconnected.length === 0) {
-    return { created: false, warnings: [...warnings, `Regra "${rule.name}": todas as instâncias conectadas — nada enviado.`], evaluated: true };
+    return { created: false, warnings: [...warnings, `Regra "${rule.name}": todos os WhatsApps conectados — nada enviado.`], evaluated: true };
   }
 
-  const text = `⚠️ *Instância(s) de WhatsApp desconectada(s)*\n\n${disconnected.map((l) => `• ${l}`).join("\n")}\n\nReconecte em Configurações → Instâncias WhatsApp.`;
+  const text = `⚠️ *WhatsApp(s) desconectado(s)*\n\n${disconnected.map((l) => `• ${l}`).join("\n")}\n\nReconecte em Configurações → Conectar WhatsApp.`;
 
   await db.transaction(async (tx) => {
     const [msg] = await tx
@@ -425,7 +425,7 @@ async function materializeReportReminder(
   if (destinos.length === 0) return { created: false, warnings: [`Regra "${rule.name}": escolha pelo menos um destino (grupo ou contato) pra receber o lembrete.`] };
 
   const instance = await pickGestorWhatsappInstance({ organizationId: rule.organizationId, explicitInstanceId: rule.whatsappInstanceId });
-  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp do gestor ativa.`] };
+  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhum WhatsApp do gestor ativa.`] };
 
   const today = dayOfMonthInBrasilia();
   const rows = await db.query.clients.findMany({
@@ -485,7 +485,7 @@ export async function materializeAutomation(ruleId: string, slot: "primary" | "s
       if (!client) return { created: false, warnings: [`Regra "${rule.name}": cliente ${clientId} não encontrado.`] };
 
       const instance = await pickGestorWhatsappInstance({ organizationId: rule.organizationId, explicitInstanceId: rule.whatsappInstanceId });
-      if (!instance) return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): nenhuma instância de WhatsApp do gestor ativa.`] };
+      if (!instance) return { created: false, warnings: [`Regra "${rule.name}" (${client.name}): nenhum WhatsApp do gestor ativa.`] };
 
       let text: string;
       const extraMedia: Array<{ base64: string; mimetype: string; filename: string }> = [];
@@ -612,7 +612,7 @@ export async function materializeAutomation(ruleId: string, slot: "primary" | "s
     organizationId: rule.organizationId,
     explicitInstanceId: rule.whatsappInstanceId,
   });
-  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhuma instância de WhatsApp do gestor ativa na organização.`] };
+  if (!instance) return { created: false, warnings: [`Regra "${rule.name}": nenhum WhatsApp do gestor ativa na organização.`] };
 
   let text: string;
   if (rule.contentType === "group_summary") {
@@ -880,7 +880,7 @@ export async function runAutoClientReports(): Promise<{ created: number; warning
         if (tokenRow.expiresAt && new Date(tokenRow.expiresAt) < new Date()) { out.warnings.push(`Relatório automático (${client.name}): token Meta expirado.`); continue; }
 
         const instanceRow = await pickGestorWhatsappInstance({ organizationId: row.organizationId });
-        if (!instanceRow) { out.warnings.push(`Relatório automático (${client.name}): nenhuma instância de WhatsApp do gestor ativa.`); continue; }
+        if (!instanceRow) { out.warnings.push(`Relatório automático (${client.name}): nenhum WhatsApp do gestor ativa.`); continue; }
 
         let groupId: string | null = null;
         if (cfg.destination === "client_group") {

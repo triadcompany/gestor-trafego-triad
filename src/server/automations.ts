@@ -220,7 +220,7 @@ const _upsertMessageAutomation = createServerFn({ method: "POST" })
         where: eq(whatsappInstances.id, data.whatsappInstanceId),
         columns: { organizationId: true },
       });
-      if (!inst || inst.organizationId !== organizationId) throw new Error("Instância de WhatsApp não encontrada.");
+      if (!inst || inst.organizationId !== organizationId) throw new Error("WhatsApp não encontrado.");
     }
     if (data.reportTemplateId) {
       const tpl = await db.query.reportTemplates.findFirst({

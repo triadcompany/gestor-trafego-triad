@@ -240,7 +240,7 @@ function AdminOrganizationsPage() {
           <div className="space-y-3 py-2">
             <p className="text-sm text-muted-foreground">
               Isso apaga <strong>{deletingOrg?.name}</strong> e tudo que pertence a ela — clientes, campanhas
-              salvas, vendas, automações, instâncias de WhatsApp. Não pode ser desfeito.
+              salvas, vendas, automações, WhatsApps conectados. Não pode ser desfeito.
             </p>
             <div className="space-y-1.5">
               <Label>

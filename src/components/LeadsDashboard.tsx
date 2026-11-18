@@ -217,7 +217,7 @@ export function LeadsDashboard({ clientId, token, controlledRange }: { clientId?
             ? `WhatsApp conectado em ${new Date(whatsappInfo.connectedAt).toLocaleDateString("pt-BR")}${whatsappInfo.instanceLabel ? ` (${whatsappInfo.instanceLabel})` : ""}`
             : token
               ? ""
-              : "Nenhuma instância de WhatsApp vinculada a este cliente."}
+              : "Nenhum WhatsApp vinculado a este cliente."}
         </p>
         {!controlledRange && (
         <div className="flex flex-col items-end gap-1.5">

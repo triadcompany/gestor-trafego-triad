@@ -75,7 +75,7 @@ const _markCampaignSold = createServerFn({ method: "POST" })
         ? client.whatsappGroupId
         : await resolveOperationalGroupId(resolved, organizationId);
     if (!groupId) {
-      throw new Error("Grupo operacional não configurado pra essa instância. Configure em Configurações → Instâncias WhatsApp.");
+      throw new Error("Grupo operacional não configurado pra esse WhatsApp. Configure em Configurações → Conectar WhatsApp.");
     }
 
     const brl = (v: number) => v.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });

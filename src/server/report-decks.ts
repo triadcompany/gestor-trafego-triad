@@ -334,7 +334,7 @@ const _sendReportPdfToOperationalGroup = createServerFn({ method: "POST" })
     const { url, apiKey, instance } = resolved;
     const groupId = await resolveOperationalGroupId(resolved, organizationId);
     if (!groupId) {
-      throw new Error("Grupo operacional não configurado pra essa instância. Configure em Configurações → Instâncias WhatsApp.");
+      throw new Error("Grupo operacional não configurado pra esse WhatsApp. Configure em Configurações → Conectar WhatsApp.");
     }
     const res = await fetch(`${url}/message/sendMedia/${instance}`, {
       method: "POST",
