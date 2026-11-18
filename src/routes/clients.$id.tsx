@@ -15,14 +15,13 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Dialog, DialogTrigger } from "@/components/ui/dialog";
-import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3, TrendingUp, FileText, ChevronDown } from "lucide-react";
+import { ArrowLeft, ExternalLink, Pencil, Plus, Check, X, RefreshCw, Users as UsersIcon, ChevronsUpDown, Search, ClipboardList, GitCompareArrows, MessageCircle, BarChart3, FileText, ChevronDown } from "lucide-react";
 import { toast } from "sonner";
 import { sendActiveCampaignsList, type CampaignsListLevel, type CampaignsListTree } from "@/lib/whatsapp-messages";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuSub, DropdownMenuSubContent, DropdownMenuSubTrigger, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ConversionsContent } from "@/components/ConversionsContent";
 import { ClientFormDialog } from "@/components/ClientFormDialog";
 import { ClientReportDialog } from "@/components/ClientReportDialog";
-import { TrafficInsightsDialog } from "@/components/TrafficInsightsDialog";
 import { getCurrentUser } from "@/server/session";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 import {
@@ -299,7 +298,6 @@ function ClientDetail() {
   }, [aba]);
   // Relatórios abrem pelo menu "Relatórios e envios" (diálogos controlados por aqui).
   const [reportOpen, setReportOpen] = useState(false);
-  const [insightsOpen, setInsightsOpen] = useState(false);
 
   const { data: client, isLoading } = useQuery({
     queryKey: ["client", id],
@@ -1002,9 +1000,6 @@ function ClientDetail() {
                 <DropdownMenuItem className="gap-2" onSelect={() => setReportOpen(true)}>
                   <FileText className="h-4 w-4" /> Relatório em PDF
                 </DropdownMenuItem>
-                <DropdownMenuItem className="gap-2" onSelect={() => setInsightsOpen(true)}>
-                  <TrendingUp className="h-4 w-4" /> Detalhamento
-                </DropdownMenuItem>
                 {isTriad && (
                   <DropdownMenuItem asChild>
                     <Link to="/report-deck/$id" params={{ id: client.id }} className="gap-2">
@@ -1035,13 +1030,6 @@ function ClientDetail() {
               onOpenChange={setReportOpen}
               hideTrigger
               client={{ id: client.id, name: client.name, meta_ad_account_id: client.meta_ad_account_id, cpl_max: client.cpl_max }}
-            />
-            <TrafficInsightsDialog
-              open={insightsOpen}
-              onOpenChange={setInsightsOpen}
-              objectId={client.meta_ad_account_id}
-              clientId={client.id}
-              label={client.name}
             />
 
             <Button asChild size="sm" className="gap-2">
