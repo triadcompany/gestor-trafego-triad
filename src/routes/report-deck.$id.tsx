@@ -339,13 +339,13 @@ function Field({
   );
 }
 
-function BulletList({ items, onChange, textClass = "text-[14px] leading-relaxed" }: { items: string[]; onChange: (items: string[]) => void; textClass?: string }) {
+function BulletList({ items, onChange, textClass = "text-[14px] leading-relaxed", gapClass = "space-y-2.5" }: { items: string[]; onChange: (items: string[]) => void; textClass?: string; gapClass?: string }) {
   const set = (i: number, v: string) => onChange(items.map((it, idx) => (idx === i ? v : it)));
   const remove = (i: number) => onChange(items.filter((_, idx) => idx !== i));
   const add = () => onChange([...items, ""]);
   return (
     <Movable name="list">
-    <div className="space-y-2.5 flex-1 max-w-[680px]">
+    <div className={`${gapClass} flex-1 max-w-[680px]`}>
       {items.map((item, i) => (
         <div key={i} className="flex items-start gap-2 group">
           <span className="text-orange-400 mt-[9px] text-[10px] shrink-0">●</span>
@@ -1104,21 +1104,24 @@ function ReportDeckPage() {
                     </label>
                   )}
                 </div>
-                {/* Direita: legenda + orientações do vídeo */}
-                <div className="min-w-0 flex-1 space-y-4 pb-11">
+                {/* Direita: legenda + orientações do vídeo, em seções (cabe sem encostar na borda) */}
+                <div className="min-w-0 flex-1 space-y-3">
                   <Movable name="caption">
                     <Field
                       as="textarea"
                       value={deck.creatives[0]?.caption ?? ""}
                       onChange={(v) => patch({ creatives: deck.creatives[0] ? [{ ...deck.creatives[0], caption: v }] : [] })}
                       placeholder="Legenda (ex: Menor custo por conversa do período)"
-                      className="text-sm text-white/60"
+                      className="text-[13px] leading-snug text-white/60"
                     />
                   </Movable>
-                  <BulletList items={deck.criativos_items} onChange={(items) => patch({ criativos_items: items })} textClass="text-[16px] leading-snug" />
-                  <div className="pt-1">
+                  <div>
+                    <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-orange-400">O que falar</p>
+                    <BulletList items={deck.criativos_items} onChange={(items) => patch({ criativos_items: items })} textClass="text-[15px] leading-snug" gapClass="space-y-1.5" />
+                  </div>
+                  <div className="border-t border-white/10 pt-3">
                     <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-orange-400">Estrutura do vídeo</p>
-                    <BulletList items={deck.estrutura_items} onChange={(items) => patch({ estrutura_items: items })} textClass="text-[12px] leading-snug" />
+                    <BulletList items={deck.estrutura_items} onChange={(items) => patch({ estrutura_items: items })} textClass="text-[12px] leading-snug" gapClass="space-y-1" />
                   </div>
                 </div>
               </div>
