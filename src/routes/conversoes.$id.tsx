@@ -11,7 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { AlertTriangle, ArrowLeft, CheckCircle2, ChevronDown, Loader2, Plus, RefreshCw, Sparkles, Target, Trash2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Loader2, Plus, RefreshCw, Sparkles, Target, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { fetchClientDetail } from "@/lib/queries";
 import {
@@ -94,6 +94,7 @@ function ConversionsPage() {
         </div>
 
         <StatusBanner loading={readiness.isLoading} data={readiness.data} />
+        <PixelCard clientId={id} onSaved={refreshReadiness} n8nConfigured={readiness.data?.n8nConfigured ?? false} />
 
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mt-8 mb-3">Como detectar</h2>
         <div className="space-y-4">
@@ -113,8 +114,6 @@ function ConversionsPage() {
 
         <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mt-8 mb-3">Últimos envios pra Meta</h2>
         <HistorySection rows={history.data} loading={history.isLoading} onRefresh={() => history.refetch()} refreshing={history.isFetching} />
-
-        <AdvancedSection clientId={id} onSaved={refreshReadiness} n8nConfigured={readiness.data?.n8nConfigured ?? false} />
       </div>
     </AppShell>
   );
@@ -128,7 +127,7 @@ function StatusBanner({ loading, data }: { loading: boolean; data: ConversionsRe
   const problems: string[] = [];
   if (!data.metaTokenOk) problems.push("A conta da Meta deste cliente está sem acesso válido. Reconecte o Facebook.");
   if (!data.whatsappConnected) problems.push("Falta conectar o WhatsApp do cliente. Sem ele, o sistema não lê as conversas.");
-  if (!data.n8nConfigured && !data.fallbackDatasetSet) problems.push("Falta o pixel: informe o ID do pixel em “Avançado” (embaixo).");
+  if (!data.n8nConfigured && !data.fallbackDatasetSet) problems.push("Falta o pixel: informe o ID do pixel de mensagem no campo logo abaixo.");
   if (data.noPixelFailuresLast7d > 0) {
     problems.push(
       `${data.noPixelFailuresLast7d} ${data.noPixelFailuresLast7d === 1 ? "envio falhou" : "envios falharam"} nos últimos 7 dias porque o anúncio não tem pixel de mensagem.`
@@ -142,7 +141,7 @@ function StatusBanner({ loading, data }: { loading: boolean; data: ConversionsRe
         <div>
           <div className="text-sm font-medium">Tudo pronto</div>
           <p className="text-xs text-muted-foreground mt-0.5">
-            {data.n8nConfigured ? "O pixel é descoberto automaticamente pelo anúncio de cada lead." : "Os eventos usam o pixel informado em “Avançado”."}
+            {data.n8nConfigured ? "O pixel é descoberto automaticamente pelo anúncio de cada lead." : "Os eventos usam o pixel informado abaixo."}
           </p>
         </div>
       </Card>
@@ -517,9 +516,9 @@ function HistorySection({
   );
 }
 
-// ── Avançado: pixel manual ───────────────────────────────────────────────────
+// ── Pixel de mensagem ────────────────────────────────────────────────────────
 
-function AdvancedSection({ clientId, onSaved, n8nConfigured }: { clientId: string; onSaved: () => void; n8nConfigured: boolean }) {
+function PixelCard({ clientId, onSaved, n8nConfigured }: { clientId: string; onSaved: () => void; n8nConfigured: boolean }) {
   const queryClient = useQueryClient();
   const saved = useQuery({ queryKey: ["capi-dataset", clientId], queryFn: () => getCapiDataset(clientId) });
   const [value, setValue] = useState("");
@@ -538,25 +537,19 @@ function AdvancedSection({ clientId, onSaved, n8nConfigured }: { clientId: strin
   });
 
   return (
-    <details className="group mt-10 rounded-lg border">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-sm font-medium">
-        Avançado
-        <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
-      </summary>
-      <div className="border-t px-4 py-4">
-        <Label htmlFor="capi-dataset" className="text-sm">ID do pixel de mensagem (só se precisar)</Label>
-        <p className="text-xs text-muted-foreground mt-0.5 mb-2 max-w-xl">
-          {n8nConfigured
-            ? "O pixel normalmente é descoberto pelo próprio anúncio. Este ID só é usado quando um anúncio não tem pixel."
-            : "Sem o n8n, este é o pixel usado em todos os envios. Fica no Gerenciador de Eventos da Meta, em “Business Messaging”."}
-        </p>
-        <div className="flex flex-wrap items-center gap-2">
-          <Input id="capi-dataset" className="max-w-xs" value={value} onChange={(e) => setValue(e.target.value)} placeholder="ex.: 1234567890123456" inputMode="numeric" />
-          <Button variant="secondary" onClick={() => save.mutate()} disabled={save.isPending || value.trim() === (saved.data ?? "")}>
-            {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar"}
-          </Button>
-        </div>
+    <Card className="p-4 mt-4">
+      <Label htmlFor="capi-dataset" className="text-sm font-semibold">ID do pixel de mensagem</Label>
+      <p className="text-xs text-muted-foreground mt-0.5 mb-3 max-w-xl">
+        {n8nConfigured
+          ? "É o pixel que recebe os eventos de lead qualificado e compra. Normalmente o sistema o descobre pelo próprio anúncio; este ID é usado quando um anúncio não tem pixel."
+          : "É o pixel que recebe os eventos de lead qualificado e compra. Fica no Gerenciador de Eventos da Meta, em “Business Messaging”."}
+      </p>
+      <div className="flex flex-wrap items-center gap-2">
+        <Input id="capi-dataset" className="max-w-xs" value={value} onChange={(e) => setValue(e.target.value)} placeholder="ex.: 1234567890123456" inputMode="numeric" />
+        <Button variant="secondary" onClick={() => save.mutate()} disabled={save.isPending || value.trim() === (saved.data ?? "")}>
+          {save.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Salvar"}
+        </Button>
       </div>
-    </details>
+    </Card>
   );
 }
