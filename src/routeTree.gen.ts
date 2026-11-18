@@ -19,6 +19,7 @@ import { Route as PrivacidadeRouteImport } from './routes/privacidade'
 import { Route as PixRouteImport } from './routes/pix'
 import { Route as MensagensRouteImport } from './routes/mensagens'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as FinanceiroRouteImport } from './routes/financeiro'
 import { Route as DiagnosticoMetaRouteImport } from './routes/diagnostico-meta'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ConversasRouteImport } from './routes/conversas'
@@ -86,6 +87,11 @@ const MensagensRoute = MensagensRouteImport.update({
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FinanceiroRoute = FinanceiroRouteImport.update({
+  id: '/financeiro',
+  path: '/financeiro',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DiagnosticoMetaRoute = DiagnosticoMetaRouteImport.update({
@@ -187,6 +193,7 @@ export interface FileRoutesByFullPath {
   '/conversas': typeof ConversasRoute
   '/dashboard': typeof DashboardRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
+  '/financeiro': typeof FinanceiroRoute
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
   '/pix': typeof PixRoute
@@ -217,6 +224,7 @@ export interface FileRoutesByTo {
   '/conversas': typeof ConversasRoute
   '/dashboard': typeof DashboardRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
+  '/financeiro': typeof FinanceiroRoute
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
   '/pix': typeof PixRoute
@@ -248,6 +256,7 @@ export interface FileRoutesById {
   '/conversas': typeof ConversasRoute
   '/dashboard': typeof DashboardRoute
   '/diagnostico-meta': typeof DiagnosticoMetaRoute
+  '/financeiro': typeof FinanceiroRoute
   '/login': typeof LoginRoute
   '/mensagens': typeof MensagensRoute
   '/pix': typeof PixRoute
@@ -280,6 +289,7 @@ export interface FileRouteTypes {
     | '/conversas'
     | '/dashboard'
     | '/diagnostico-meta'
+    | '/financeiro'
     | '/login'
     | '/mensagens'
     | '/pix'
@@ -310,6 +320,7 @@ export interface FileRouteTypes {
     | '/conversas'
     | '/dashboard'
     | '/diagnostico-meta'
+    | '/financeiro'
     | '/login'
     | '/mensagens'
     | '/pix'
@@ -340,6 +351,7 @@ export interface FileRouteTypes {
     | '/conversas'
     | '/dashboard'
     | '/diagnostico-meta'
+    | '/financeiro'
     | '/login'
     | '/mensagens'
     | '/pix'
@@ -371,6 +383,7 @@ export interface RootRouteChildren {
   ConversasRoute: typeof ConversasRoute
   DashboardRoute: typeof DashboardRoute
   DiagnosticoMetaRoute: typeof DiagnosticoMetaRoute
+  FinanceiroRoute: typeof FinanceiroRoute
   LoginRoute: typeof LoginRoute
   MensagensRoute: typeof MensagensRoute
   PixRoute: typeof PixRoute
@@ -464,6 +477,13 @@ declare module '@tanstack/react-router' {
       path: '/login'
       fullPath: '/login'
       preLoaderRoute: typeof LoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/financeiro': {
+      id: '/financeiro'
+      path: '/financeiro'
+      fullPath: '/financeiro'
+      preLoaderRoute: typeof FinanceiroRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/diagnostico-meta': {
@@ -603,6 +623,7 @@ const rootRouteChildren: RootRouteChildren = {
   ConversasRoute: ConversasRoute,
   DashboardRoute: DashboardRoute,
   DiagnosticoMetaRoute: DiagnosticoMetaRoute,
+  FinanceiroRoute: FinanceiroRoute,
   LoginRoute: LoginRoute,
   MensagensRoute: MensagensRoute,
   PixRoute: PixRoute,

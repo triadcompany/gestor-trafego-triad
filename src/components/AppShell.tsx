@@ -1,5 +1,5 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { GraduationCap, LayoutDashboard, Users, PlusSquare, Settings, Stethoscope, Wallet, ClipboardList, QrCode, LogOut, Bot, TrendingUp, Menu, X, Sun, Moon, MessageCircle, MessagesSquare, ChevronsLeft, Building2 } from "lucide-react";
+import { GraduationCap, LayoutDashboard, Users, Settings, Wallet, ClipboardList, LogOut, Bot, TrendingUp, Menu, X, Sun, Moon, MessageCircle, MessagesSquare, ChevronsLeft, Building2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { logout, getCurrentUser } from "@/server/session";
 import { useQuery } from "@tanstack/react-query";
@@ -10,51 +10,60 @@ import { AgentChatWidget } from "@/components/AgentChatWidget";
 import { WhatsappDisconnectedBanner } from "@/components/WhatsappDisconnectedBanner";
 import { isTriadCompanyOrg } from "@/lib/feature-flags";
 
-const navGroups = [
-  {
-    label: "Visão",
-    items: [
-      { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
-    ],
-  },
-  {
-    label: "Clientes",
-    items: [
-      { to: "/clients", label: "Clientes", icon: Users, exact: false },
-      { to: "/saldos", label: "Saldos", icon: Wallet, exact: false },
-      { to: "/pix", label: "PIX", icon: QrCode, exact: false },
-    ],
-  },
-  {
-    label: "Operação",
-    items: [
-      { to: "/tarefas", label: "Tarefas", icon: ClipboardList, exact: false },
-      { to: "/vendas", label: "Vendas", icon: TrendingUp, exact: false },
-      { to: "/conversas", label: "Conversas", icon: MessagesSquare, exact: false },
-    ],
-  },
-  {
-    label: "Ferramentas",
-    items: [
-      { to: "/mensagens", label: "Automações", icon: MessageCircle, exact: false },
-      { to: "/agente", label: "Agente IA", icon: Bot, exact: true },
-      { to: "/agente-triad", label: "Agente Triad", icon: Bot, exact: false },
-      { to: "/campaigns/new", label: "Nova Campanha", icon: PlusSquare, exact: false },
-      { to: "/aulas", label: "Aulas", icon: GraduationCap, exact: false },
-      { to: "/diagnostico-meta", label: "Diagnóstico", icon: Stethoscope, exact: false },
-      { to: "/settings", label: "Configurações", icon: Settings, exact: false },
-    ],
-  },
-] as const;
+type NavTo =
+  | "/dashboard" | "/clients" | "/vendas" | "/tarefas" | "/financeiro" | "/mensagens" | "/settings"
+  | "/conversas" | "/agente" | "/agente-triad" | "/aulas" | "/admin/organizations";
+
+interface NavItem {
+  to: NavTo;
+  label: string;
+  icon: typeof Users;
+  exact: boolean;
+  // outras rotas que também deixam este item destacado (páginas "filhas" que não têm item próprio)
+  also?: readonly string[];
+}
+interface NavGroup {
+  label: string; // vazio = sem título
+  items: readonly NavItem[];
+}
+
+// Menu enxuto, igual pra todo gestor. Campanhas, Conversões, Relatório e Leads moram
+// dentro de cada cliente; Saldos+PIX viram Financeiro (abas); Diagnóstico está em
+// Configurações; Aulas fica no rodapé.
+const mainNav: NavGroup = {
+  label: "",
+  items: [
+    { to: "/dashboard", label: "Início", icon: LayoutDashboard, exact: true },
+    { to: "/clients", label: "Clientes", icon: Users, exact: false, also: ["/conversoes", "/report-deck", "/campaigns", "/rastreamento"] },
+    { to: "/vendas", label: "Vendas", icon: TrendingUp, exact: false },
+    { to: "/tarefas", label: "Tarefas", icon: ClipboardList, exact: false },
+    { to: "/financeiro", label: "Financeiro", icon: Wallet, exact: false, also: ["/saldos", "/pix"] },
+    { to: "/mensagens", label: "Automações", icon: MessageCircle, exact: false },
+    { to: "/settings", label: "Configurações", icon: Settings, exact: false, also: ["/diagnostico-meta"] },
+  ],
+};
+
+// Só aparece pra organização da Triad Company (recursos em teste).
+const experimentalNavGroup: NavGroup = {
+  label: "Experimental",
+  items: [
+    { to: "/conversas", label: "Conversas", icon: MessagesSquare, exact: false },
+    { to: "/agente", label: "Agente IA", icon: Bot, exact: true },
+    { to: "/agente-triad", label: "Agente Triad", icon: Bot, exact: false },
+  ],
+};
+
+// Links secundários, no rodapé do menu.
+const footerNav: readonly NavItem[] = [{ to: "/aulas", label: "Aulas", icon: GraduationCap, exact: false }];
 
 // Só aparece pro platform admin (dono do sistema) — gerencia as organizações
 // que usam o produto (ver /admin/organizations e requirePlatformAdmin).
-const adminNavGroup = {
+const adminNavGroup: NavGroup = {
   label: "Admin",
   items: [
     { to: "/admin/organizations", label: "Organizações", icon: Building2, exact: false },
   ],
-} as const;
+};
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const location = useLocation();
@@ -110,16 +119,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // por enquanto (mesmo gate no beforeLoad da rota e no servidor).
   const effectiveOrgId = currentUser?.actingOrganizationId ?? currentUser?.organizationId;
   const showExperimental = isTriadCompanyOrg(effectiveOrgId);
-  const baseNavGroups = navGroups.map((group) => ({
-    ...group,
-    items: group.items.filter((item) => (item.to !== "/conversas" && item.to !== "/agente-triad" && item.to !== "/agente") || showExperimental),
-  }));
-  const visibleNavGroups = currentUser?.isPlatformAdmin ? [...baseNavGroups, adminNavGroup] : baseNavGroups;
+  const visibleNavGroups: NavGroup[] = [
+    mainNav,
+    ...(showExperimental ? [experimentalNavGroup] : []),
+    ...(currentUser?.isPlatformAdmin ? [adminNavGroup] : []),
+  ];
 
   const { theme, toggleTheme } = useTheme();
 
-  const isActive = (to: string, exact: boolean) =>
-    exact ? path === to : path === to || path.startsWith(to + "/") || path.startsWith(to);
+  const isActive = (to: string, exact: boolean, also?: readonly string[]) =>
+    (exact ? path === to : path === to || path.startsWith(to + "/") || path.startsWith(to)) ||
+    (also ?? []).some((p) => path === p || path.startsWith(p + "/"));
 
   const handleLogout = async () => {
     await logout();
@@ -172,15 +182,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
         <nav className="flex-1 p-3 space-y-4 overflow-y-auto overflow-x-hidden">
           {visibleNavGroups.map((group) => (
-            <div key={group.label}>
-              {!effectiveCollapsed && (
+            <div key={group.label || "principal"}>
+              {!effectiveCollapsed && group.label && (
                 <div className="px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70 whitespace-nowrap">
                   {group.label}
                 </div>
               )}
               <div className="space-y-1">
                 {group.items.map((item) => {
-                  const active = isActive(item.to, item.exact);
+                  const active = isActive(item.to, item.exact, item.also);
                   const Icon = item.icon;
                   return (
                     <Link
@@ -204,6 +214,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           ))}
         </nav>
+        <div className="px-3 pb-2 space-y-1">
+          {footerNav.map((item) => {
+            const Icon = item.icon;
+            return (
+              <Link
+                key={item.to}
+                to={item.to}
+                title={effectiveCollapsed ? item.label : undefined}
+                className={cn(
+                  "flex items-center gap-3 px-3 py-1.5 rounded-md text-xs transition-colors",
+                  effectiveCollapsed && "justify-center px-0",
+                  isActive(item.to, item.exact, item.also) ? "bg-sidebar-accent text-sidebar-accent-foreground font-medium" : "text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground"
+                )}
+              >
+                <Icon className="h-3.5 w-3.5 shrink-0" />
+                {!effectiveCollapsed && <span className="truncate">{item.label}</span>}
+              </Link>
+            );
+          })}
+        </div>
         <div className={cn("p-3 border-t border-sidebar-border", effectiveCollapsed && "px-2")}>
           <div className={cn("flex items-center gap-2", effectiveCollapsed ? "flex-col" : "justify-between")}>
             {!effectiveCollapsed && <span className="text-xs text-muted-foreground truncate">{profile?.full_name ?? "—"}</span>}
@@ -269,13 +299,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {/* Itens de navegação */}
             <nav className="flex-1 overflow-y-auto p-3 space-y-4">
               {visibleNavGroups.map((group) => (
-                <div key={group.label}>
-                  <div className="px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-                    {group.label}
-                  </div>
+                <div key={group.label || "principal"}>
+                  {group.label && (
+                    <div className="px-4 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/70">
+                      {group.label}
+                    </div>
+                  )}
                   <div className="space-y-1">
                     {group.items.map((item) => {
-                      const active = isActive(item.to, item.exact);
+                      const active = isActive(item.to, item.exact, item.also);
                       const Icon = item.icon;
                       return (
                         <Link
@@ -297,6 +329,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 </div>
               ))}
             </nav>
+
+            <div className="px-3 pb-2">
+              {footerNav.map((item) => {
+                const Icon = item.icon;
+                return (
+                  <Link
+                    key={item.to}
+                    to={item.to}
+                    className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm text-muted-foreground hover:bg-sidebar-accent/50 hover:text-foreground transition-colors"
+                  >
+                    <Icon className="h-4 w-4 shrink-0" />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
 
             {/* Rodapé com usuário e logout */}
             <div className="p-4 border-t border-sidebar-border">

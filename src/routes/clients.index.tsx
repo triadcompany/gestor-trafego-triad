@@ -33,7 +33,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Pencil, Power, Search, Trash2, Download } from "lucide-react";
+import { Plus, PlusSquare, Pencil, Power, Search, Trash2, Download } from "lucide-react";
 import {
   Tooltip,
   TooltipContent,
@@ -151,6 +151,12 @@ function ClientsList() {
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl md:text-2xl font-semibold tracking-tight">Clientes</h1>
           <div className="flex items-center gap-2">
+            <Button size="sm" variant="outline" className="gap-2" asChild>
+              <Link to="/campaigns/new" search={{}}>
+                <PlusSquare className="h-4 w-4" />
+                Nova campanha
+              </Link>
+            </Button>
             <Button size="sm" variant="outline" className="gap-2" asChild>
               <Link to="/clients/importar">
                 <Download className="h-4 w-4" />
