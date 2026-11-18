@@ -17,7 +17,6 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, X, Check, Search, Loader2, Users, Building2, Target, UserCog, Wallet, Tag as TagIcon, Tags, CalendarDays } from "lucide-react";
-import { Link } from "@tanstack/react-router";
 import { Switch } from "@/components/ui/switch";
 import { fetchTags, createTag, upsertClient, type ClientRow, type TagRow } from "@/lib/queries";
 import { getCurrentUser } from "@/server/session";
@@ -570,25 +569,6 @@ export function ClientFormDialog({
           </FormSection>
 
           <FormSection title="Rastreamento de leads do Meta Ads" icon={Tags}>
-            <div className="space-y-1">
-              <Label>Conversões (lead qualificado e compra)</Label>
-              {client?.id ? (
-                <Link
-                  to="/conversoes/$id"
-                  params={{ id: client.id }}
-                  className="inline-flex items-center gap-1.5 text-sm text-primary underline underline-offset-2"
-                >
-                  <Target className="h-3.5 w-3.5" /> Configurar palavras-chave e IA
-                </Link>
-              ) : (
-                <p className="rounded-md border border-input bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-                  Salve o cliente primeiro pra configurar as conversões.
-                </p>
-              )}
-              <p className="text-[11px] text-muted-foreground">
-                Como o sistema descobre que um lead é bom ou que comprou agora é configurado numa página só.
-              </p>
-            </div>
             {client?.id ? (
               <MetaWhatsappOfficialConnector clientId={client.id} />
             ) : (
