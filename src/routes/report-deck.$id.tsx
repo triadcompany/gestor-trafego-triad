@@ -1058,18 +1058,24 @@ function ReportDeckPage() {
           {/* Página 3 — Diagnóstico */}
           <SlideFrame id="diagnostico" label="Diagnóstico" hidden={isHidden("diagnostico")} onToggle={() => toggleHidden("diagnostico")} {...frameProps("diagnostico")} refs={slideRefs}>
             <Slide>
-              <SlideEyebrow>Análise</SlideEyebrow>
-              <SlideTitle>Diagnóstico do Tráfego</SlideTitle>
-              <BulletList items={deck.diagnostico_items} onChange={(items) => patch({ diagnostico_items: items })} />
+              {/* Texto centralizado na vertical (o bloco ocupa a altura toda do slide) */}
+              <div className="flex flex-1 flex-col justify-center pb-6">
+                <SlideEyebrow>Análise</SlideEyebrow>
+                <SlideTitle>Diagnóstico do Tráfego</SlideTitle>
+                <BulletList items={deck.diagnostico_items} onChange={(items) => patch({ diagnostico_items: items })} />
+              </div>
             </Slide>
           </SlideFrame>
 
           {/* Página 4 — Plano de Ação do Tráfego */}
           <SlideFrame id="plano_trafego" label="Plano de ação do tráfego" hidden={isHidden("plano_trafego")} onToggle={() => toggleHidden("plano_trafego")} {...frameProps("plano_trafego")} refs={slideRefs}>
             <Slide>
-              <SlideEyebrow>Próximos passos</SlideEyebrow>
-              <SlideTitle>Plano de Ação do Tráfego</SlideTitle>
-              <BulletList items={deck.plano_trafego_items} onChange={(items) => patch({ plano_trafego_items: items })} />
+              {/* Texto centralizado na vertical (o bloco ocupa a altura toda do slide) */}
+              <div className="flex flex-1 flex-col justify-center pb-6">
+                <SlideEyebrow>Próximos passos</SlideEyebrow>
+                <SlideTitle>Plano de Ação do Tráfego</SlideTitle>
+                <BulletList items={deck.plano_trafego_items} onChange={(items) => patch({ plano_trafego_items: items })} />
+              </div>
             </Slide>
           </SlideFrame>
 
