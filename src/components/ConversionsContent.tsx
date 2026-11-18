@@ -66,37 +66,41 @@ export function ConversionsContent({ clientId, onGoToLeads }: { clientId: string
   const refreshReadiness = () => queryClient.invalidateQueries({ queryKey: ["conversions-readiness", id] });
 
   return (
-    <div className="max-w-3xl">
-        <p className="text-sm text-muted-foreground mb-4 max-w-xl">
-          Como o sistema descobre que um lead é bom ou que comprou, pra avisar a Meta e ela otimizar seus anúncios.
-        </p>
+    <div className="w-full">
+      <p className="text-sm text-muted-foreground mb-4 max-w-2xl">
+        Como o sistema descobre que um lead é bom ou que comprou, pra avisar a Meta e ela otimizar seus anúncios.
+      </p>
 
+      {/* Status e pixel: lado a lado em tela larga, empilhados nas demais */}
+      <div className="grid gap-4 lg:grid-cols-2">
         <StatusBanner loading={readiness.isLoading} data={readiness.data} />
         <PixelCard clientId={id} onSaved={refreshReadiness} n8nConfigured={readiness.data?.n8nConfigured ?? false} />
+      </div>
 
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mt-8 mb-3">Como detectar</h2>
-        <div className="space-y-4">
-          <KeywordsCard
-            clientId={id}
-            rules={rules.data ?? []}
-            loading={rules.isLoading}
-            onChanged={refreshRules}
-            whatsappConnected={readiness.data?.whatsappConnected ?? true}
-          />
-          <AiCard />
-        </div>
-        <p className="text-xs text-muted-foreground mt-3">
-          Você também pode marcar na mão: os botões <strong className="font-medium">Qualificar</strong> e <strong className="font-medium">Converter</strong> ficam na aba{" "}
-          {onGoToLeads ? (
-            <button type="button" onClick={onGoToLeads} className="underline underline-offset-2 hover:text-foreground">Leads</button>
-          ) : (
-            "Leads"
-          )}
-          .
-        </p>
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mt-8 mb-3">Como detectar</h2>
+      {/* Palavras-chave e IA: duas colunas em tela larga (xl), uma coluna nas demais */}
+      <div className="grid gap-4 xl:grid-cols-2 xl:items-start">
+        <KeywordsCard
+          clientId={id}
+          rules={rules.data ?? []}
+          loading={rules.isLoading}
+          onChanged={refreshRules}
+          whatsappConnected={readiness.data?.whatsappConnected ?? true}
+        />
+        <AiCard />
+      </div>
+      <p className="text-xs text-muted-foreground mt-3">
+        Você também pode marcar na mão: os botões <strong className="font-medium">Qualificar</strong> e <strong className="font-medium">Converter</strong> ficam na aba{" "}
+        {onGoToLeads ? (
+          <button type="button" onClick={onGoToLeads} className="underline underline-offset-2 hover:text-foreground">Leads</button>
+        ) : (
+          "Leads"
+        )}
+        .
+      </p>
 
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mt-8 mb-3">Últimos envios pra Meta</h2>
-        <HistorySection rows={history.data} loading={history.isLoading} onRefresh={() => history.refetch()} refreshing={history.isFetching} />
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mt-8 mb-3">Últimos envios pra Meta</h2>
+      <HistorySection rows={history.data} loading={history.isLoading} onRefresh={() => history.refetch()} refreshing={history.isFetching} />
     </div>
   );
 }
@@ -118,7 +122,7 @@ function StatusBanner({ loading, data }: { loading: boolean; data: ConversionsRe
 
   if (problems.length === 0) {
     return (
-      <Card className="p-4 flex items-start gap-3 border-emerald-600/30">
+      <Card className="p-4 flex items-start gap-3 border-emerald-600/30 lg:h-full">
         <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
         <div>
           <div className="text-sm font-medium">Tudo pronto</div>
@@ -130,7 +134,7 @@ function StatusBanner({ loading, data }: { loading: boolean; data: ConversionsRe
     );
   }
   return (
-    <Card className="p-4 flex items-start gap-3 border-amber-600/40">
+    <Card className="p-4 flex items-start gap-3 border-amber-600/40 lg:h-full">
       <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
       <div>
         <div className="text-sm font-medium">{problems.length === 1 ? "Falta 1 coisa" : `Faltam ${problems.length} coisas`}</div>
@@ -168,8 +172,8 @@ function KeywordsCard({
 
   return (
     <Card className="p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
           <h3 className="text-base font-semibold">Palavras-chave</h3>
           <p className="text-sm text-muted-foreground mt-0.5 max-w-lg">
             Quando uma frase aparecer na conversa de um lead de anúncio, o sistema qualifica o lead ou registra a compra sozinho.
@@ -277,14 +281,14 @@ function KeywordSection({
         <div className="rounded-md border divide-y mb-3">
           {rules.map((r) => (
             <div key={r.id} className="flex flex-wrap items-center gap-3 px-3 py-2">
-              <div className="flex-1 min-w-[150px]">
-                <div className={r.active ? "text-sm font-medium" : "text-sm font-medium text-muted-foreground line-through"}>{r.keyword}</div>
+              <div className="flex-1 min-w-[min(100%,150px)]">
+                <div className={r.active ? "text-sm font-medium break-words" : "text-sm font-medium text-muted-foreground line-through break-words"}>{r.keyword}</div>
                 {isPurchase && (
                   <div className="text-xs text-muted-foreground">{r.defaultValue != null ? `Valor padrão ${brl(r.defaultValue)}` : "Sem valor padrão"}</div>
                 )}
               </div>
               <Select value={r.source} onValueChange={(v) => v && update.mutate({ id: r.id, source: v as Source })}>
-                <SelectTrigger className="w-[150px] h-8" aria-label={`Quem escreve: ${r.keyword}`}>
+                <SelectTrigger className="w-full sm:w-[150px] h-8" aria-label={`Quem escreve: ${r.keyword}`}>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -320,11 +324,11 @@ function KeywordSection({
           if (keyword.trim().length >= 2) submit();
         }}
       >
-        <div className="flex-1 min-w-[170px]">
+        <div className="flex-1 min-w-[min(100%,170px)]">
           <Label htmlFor={inputId} className="text-xs">Outra frase</Label>
           <Input id={inputId} value={keyword} onChange={(e) => setKeyword(e.target.value)} placeholder={isPurchase ? "ex.: fechou o pedido" : "ex.: passei o orçamento"} maxLength={80} />
         </div>
-        <div className="w-[150px]">
+        <div className="w-full sm:w-[150px]">
           <Label htmlFor={`${inputId}-source`} className="text-xs">Quem escreve</Label>
           <Select value={source} onValueChange={(v) => v && setSource(v as Source)}>
             <SelectTrigger id={`${inputId}-source`}>
@@ -338,12 +342,12 @@ function KeywordSection({
           </Select>
         </div>
         {isPurchase && (
-          <div className="w-[120px]">
+          <div className="w-full sm:w-[120px]">
             <Label htmlFor={`${inputId}-value`} className="text-xs">Valor (R$)</Label>
             <Input id={`${inputId}-value`} value={value} onChange={(e) => setValue(e.target.value)} placeholder="opcional" inputMode="decimal" />
           </div>
         )}
-        <Button type="submit" variant="secondary" className="gap-2" disabled={add.isPending || keyword.trim().length < 2}>
+        <Button type="submit" variant="secondary" className="gap-2 w-full sm:w-auto" disabled={add.isPending || keyword.trim().length < 2}>
           {add.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
           Adicionar
         </Button>
@@ -471,7 +475,7 @@ function HistorySection({
                 <span className="text-muted-foreground">· {r.contactName ?? r.remoteJid.split("@")[0]}</span>
                 <span className="ml-auto text-xs text-muted-foreground">{new Date(r.createdAt).toLocaleString("pt-BR")}</span>
               </div>
-              <div className="mt-1 text-xs text-muted-foreground space-y-0.5">
+              <div className="mt-1 text-xs text-muted-foreground space-y-0.5 break-words">
                 <div>
                   {r.trigger === "keyword" ? `Palavra-chave “${r.keyword ?? ""}”` : "Botão ou etiqueta"}
                   {r.messageExcerpt ? ` — “${r.messageExcerpt}”` : ""}
@@ -519,7 +523,7 @@ function PixelCard({ clientId, onSaved, n8nConfigured }: { clientId: string; onS
   });
 
   return (
-    <Card className="p-4 mt-4">
+    <Card className="p-4">
       <Label htmlFor="capi-dataset" className="text-sm font-semibold">ID do pixel de mensagem</Label>
       <p className="text-xs text-muted-foreground mt-0.5 mb-3 max-w-xl">
         {n8nConfigured
