@@ -1,6 +1,7 @@
+import { useEffect, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, ChevronDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
@@ -20,8 +21,30 @@ interface Step {
 
 // Lista de primeiros passos do Dashboard: guia o gestor na ordem certa e some quando
 // tudo está feito. É uma sequência de verdade (cada passo prepara o próximo).
+const COLLAPSED_KEY = "setup-checklist-collapsed";
+
 export function SetupChecklist() {
   const navigate = useNavigate();
+  // Minimizado = só o título, o "X de 4" e a barra. A escolha fica salva neste navegador.
+  const [collapsed, setCollapsed] = useState(false);
+  useEffect(() => {
+    try {
+      if (localStorage.getItem(COLLAPSED_KEY) === "1") setCollapsed(true);
+    } catch {
+      /* sem armazenamento: segue expandido */
+    }
+  }, []);
+  const toggleCollapsed = () => {
+    setCollapsed((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem(COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        /* ignora */
+      }
+      return next;
+    });
+  };
   const { data } = useQuery({ queryKey: ["setup-progress"], queryFn: fetchSetupProgress, staleTime: 30_000 });
   if (!data) return null;
 
@@ -76,18 +99,33 @@ export function SetupChecklist() {
   };
 
   return (
-    <Card className="p-5 mb-6">
+    <Card className={cn("mb-6", collapsed ? "px-5 py-4" : "p-5")}>
       <div className="flex items-start justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold">Primeiros passos</h2>
-          <p className="text-sm text-muted-foreground mt-0.5">Siga na ordem pra deixar tudo funcionando.</p>
+          {!collapsed && <p className="text-sm text-muted-foreground mt-0.5">Siga na ordem pra deixar tudo funcionando.</p>}
         </div>
-        <span className="text-sm text-muted-foreground tabular-nums shrink-0">
-          {doneCount} de {steps.length}
-        </span>
+        <div className="flex items-center gap-1 shrink-0">
+          <span className="text-sm text-muted-foreground tabular-nums">
+            {doneCount} de {steps.length}
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={toggleCollapsed}
+            aria-expanded={!collapsed}
+            aria-label={collapsed ? "Expandir primeiros passos" : "Minimizar primeiros passos"}
+            title={collapsed ? "Expandir" : "Minimizar"}
+          >
+            <ChevronDown className={cn("h-4 w-4 transition-transform motion-reduce:transition-none", !collapsed && "rotate-180")} />
+          </Button>
+        </div>
       </div>
       <Progress value={(doneCount / steps.length) * 100} className="h-1.5 mt-3" aria-label={`${doneCount} de ${steps.length} passos feitos`} />
 
+      {!collapsed && (
       <ol className="mt-4 space-y-2">
         {steps.map((step, i) => {
           const isNext = step.key === nextKey;
@@ -124,6 +162,7 @@ export function SetupChecklist() {
           );
         })}
       </ol>
+      )}
     </Card>
   );
 }
