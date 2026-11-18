@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
@@ -85,14 +85,24 @@ import { fetchOrgMembers, createOrgMember, updateOrgMemberRole, setOrgMemberActi
 import { getCurrentUser } from "@/server/session";
 import { startMetaOAuth } from "@/server/meta-oauth";
 
+type SettingsTab = "meta" | "whatsapp" | "users" | "agent" | "analise-comercial" | "diagnostico" | "sistema";
+const SETTINGS_TABS: readonly SettingsTab[] = ["meta", "whatsapp", "users", "agent", "analise-comercial", "diagnostico", "sistema"];
+
+// A aba aberta vem do endereço (?aba=whatsapp), pra os "primeiros passos" do Dashboard
+// levarem direto à aba certa.
 export const Route = createFileRoute("/settings")({
   head: () => ({
     meta: [{ title: "Configurações — Gestor de Tráfego" }],
+  }),
+  validateSearch: (s: Record<string, unknown>): { aba?: SettingsTab } => ({
+    aba: SETTINGS_TABS.find((t) => t === s.aba),
   }),
   component: SettingsPage,
 });
 
 function SettingsPage() {
+  const { aba } = Route.useSearch();
+  const navigate = useNavigate();
   const { data: currentUser } = useQuery({ queryKey: ["current-user"], queryFn: getCurrentUser, staleTime: 1000 * 60 });
   const isAdmin = currentUser?.role === "admin";
   // Análise Comercial é experimental — só pra organização Triad Company por enquanto.
@@ -108,7 +118,7 @@ function SettingsPage() {
           </p>
         </div>
 
-        <Tabs defaultValue="meta" orientation="vertical" className="flex flex-col md:flex-row gap-6 md:gap-8">
+        <Tabs value={aba ?? "meta"} onValueChange={(v) => navigate({ to: "/settings", search: { aba: SETTINGS_TABS.find((t) => t === v) }, replace: true })} orientation="vertical" className="flex flex-col md:flex-row gap-6 md:gap-8">
           <TabsList className="flex md:flex-col h-auto w-full md:w-52 shrink-0 bg-transparent p-0 gap-1 overflow-x-auto md:overflow-visible justify-start">
             <TabsTrigger value="meta" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Token Meta Ads</TabsTrigger>
             <TabsTrigger value="whatsapp" className="justify-start w-full data-[state=active]:bg-muted data-[state=active]:shadow-none">Conectar WhatsApp</TabsTrigger>

@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { AppShell } from "@/components/AppShell";
+import { SetupChecklist } from "@/components/SetupChecklist";
 import { StatusDot } from "@/components/StatusDot";
 import { TokenExpiryBanner } from "@/components/TokenExpiryBanner";
 import { Button } from "@/components/ui/button";
@@ -136,6 +137,8 @@ function Dashboard() {
     <AppShell>
       <TokenExpiryBanner />
       <div className="px-4 md:px-8 py-6 max-w-7xl mx-auto">
+
+        <SetupChecklist />
 
         {/* Header */}
         <div className="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">

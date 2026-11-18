@@ -33,7 +33,7 @@ interface NavGroup {
 const mainNav: NavGroup = {
   label: "",
   items: [
-    { to: "/dashboard", label: "Início", icon: LayoutDashboard, exact: true },
+    { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, exact: true },
     { to: "/clients", label: "Clientes", icon: Users, exact: false, also: ["/conversoes", "/report-deck", "/campaigns", "/rastreamento"] },
     { to: "/vendas", label: "Vendas", icon: TrendingUp, exact: false },
     { to: "/tarefas", label: "Tarefas", icon: ClipboardList, exact: false },
