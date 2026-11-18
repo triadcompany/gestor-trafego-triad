@@ -1457,15 +1457,30 @@ export interface OptimizableAdSet {
 
 // Conjuntos de uma campanha ou de uma conta inteira (o edge /adsets funciona
 // nos dois) — usados pra escolher onde aplicar uma sugestão da Otimização.
+// Só devolve conjuntos ATIVOS cuja CAMPANHA também está ativa: aplicar uma mudança
+// em conjunto pausado, ou em campanha pausada, não faz sentido (e reiniciaria o
+// aprendizado à toa quando alguém reativar).
 export async function fetchAdSetsForOptimization(objectId: string, token: string): Promise<OptimizableAdSet[]> {
   const url = `${BASE_URL}/${objectId}/adsets?${new URLSearchParams({
-    fields: "id,name,status,effective_status,campaign{name}",
+    fields: "id,name,status,effective_status,campaign{name,status,effective_status}",
     limit: "200",
     access_token: token,
   })}`;
-  const rows = await fetchAllInsightPages<{ id: string; name: string; status: string; effective_status?: string; campaign?: { name?: string } }>(url);
+  const rows = await fetchAllInsightPages<{
+    id: string;
+    name: string;
+    status: string;
+    effective_status?: string;
+    campaign?: { name?: string; status?: string; effective_status?: string };
+  }>(url);
   return rows
-    .filter((r) => r.effective_status !== "ARCHIVED" && r.effective_status !== "DELETED")
+    .filter((r) => {
+      if (r.effective_status === "ARCHIVED" || r.effective_status === "DELETED") return false;
+      // Se a Meta não devolver o status da campanha, o effective_status do conjunto
+      // ("CAMPAIGN_PAUSED") ainda entrega a informação.
+      const campaignActive = r.campaign?.status ? r.campaign.status === "ACTIVE" : r.effective_status !== "CAMPAIGN_PAUSED";
+      return r.status === "ACTIVE" && campaignActive;
+    })
     .map((r) => ({ id: r.id, name: r.name, status: r.status, campaignName: r.campaign?.name ?? "" }));
 }
 

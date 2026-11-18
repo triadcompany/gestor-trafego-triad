@@ -46,9 +46,9 @@ export function ApplySuggestionDialog({
   // abaixo em laço e derrubava a página.
   const adSets = data ?? NO_AD_SETS;
 
-  // Por padrão, só os conjuntos ativos — marcado uma vez, quando a lista chega.
+  // A lista já vem só com conjuntos ativos de campanhas ativas: marca todos, uma vez, quando ela chega.
   useEffect(() => {
-    if (data) setSelected(new Set(data.filter((a) => a.status === "ACTIVE").map((a) => a.id)));
+    if (data) setSelected(new Set(data.map((a) => a.id)));
   }, [data]);
 
   const toggle = (id: string, on: boolean) =>
@@ -107,7 +107,7 @@ export function ApplySuggestionDialog({
 
   return (
     <Dialog open onOpenChange={(v) => !v && !applying && onClose()}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto overflow-x-hidden [&>*]:min-w-0">
         <DialogHeader>
           <DialogTitle>Aplicar sugestão</DialogTitle>
           <DialogDescription>{suggestion.finding}</DialogDescription>
@@ -137,7 +137,7 @@ export function ApplySuggestionDialog({
             {isLoading ? (
               <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Carregando conjuntos...</p>
             ) : adSets.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Nenhum conjunto encontrado.</p>
+              <p className="text-sm text-muted-foreground">Nenhum conjunto ativo em campanha ativa. Só aparecem conjuntos ativos cuja campanha também está ativa.</p>
             ) : (
               <div className="max-h-56 overflow-y-auto rounded-lg border border-border divide-y divide-border">
                 {adSets.map((a) => (
@@ -146,9 +146,6 @@ export function ApplySuggestionDialog({
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-sm">{a.name}</span>
                       {a.campaignName && <span className="block truncate text-xs text-muted-foreground">{a.campaignName}</span>}
-                    </span>
-                    <span className={cn("text-xs", a.status === "ACTIVE" ? "text-primary" : "text-muted-foreground")}>
-                      {a.status === "ACTIVE" ? "Ativo" : "Pausado"}
                     </span>
                   </label>
                 ))}
