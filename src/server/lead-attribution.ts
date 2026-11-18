@@ -1,5 +1,5 @@
 import { createServerFn, createServerOnlyFn } from "@tanstack/react-start";
-import { and, desc, eq, gte, lt, sql } from "drizzle-orm";
+import { and, desc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
 import { randomBytes } from "node:crypto";
 import { z } from "zod";
 import { db } from "@/db/client";
@@ -484,21 +484,34 @@ async function getLeadAttributionSummaryCore(
     if (minDate > start) start = minDate;
   }
   const { startTs, endTsExclusive } = periodTimestampRange(period, customSince, customUntil, minStartTs);
+  // Cada número é contado pela data do SEU evento, igual ao Gerenciador da Meta:
+  // leads pela 1ª mensagem, qualificados pela data da qualificação, vendas pela
+  // data da venda. Assim o lead que chegou num dia e foi qualificado no outro
+  // aparece no dia em que a Meta recebeu o evento.
   const rows = await db
     .select({
       campaignId: metaLeadAttributions.campaignId,
       campaignName: metaLeadAttributions.campaignName,
       status: metaLeadAttributions.status,
       firstMessageAt: metaLeadAttributions.firstMessageAt,
+      inFirst: sql<boolean>`(${metaLeadAttributions.firstMessageAt} >= ${startTs} AND ${metaLeadAttributions.firstMessageAt} < ${endTsExclusive})`,
+      inQualified: sql<boolean>`(coalesce(${metaLeadAttributions.qualifiedAt}, ${metaLeadAttributions.firstMessageAt}) >= ${startTs} AND coalesce(${metaLeadAttributions.qualifiedAt}, ${metaLeadAttributions.firstMessageAt}) < ${endTsExclusive})`,
       saleId: metaLeadAttributions.saleId,
       saleValue: sales.value,
+      saleDate: sales.date,
     })
     .from(metaLeadAttributions)
     .leftJoin(sales, eq(sales.id, metaLeadAttributions.saleId))
     .where(and(
       eq(metaLeadAttributions.clientId, clientId),
-      gte(metaLeadAttributions.firstMessageAt, startTs),
-      lt(metaLeadAttributions.firstMessageAt, endTsExclusive),
+      or(
+        and(gte(metaLeadAttributions.firstMessageAt, startTs), lt(metaLeadAttributions.firstMessageAt, endTsExclusive)),
+        and(
+          gte(sql`coalesce(${metaLeadAttributions.qualifiedAt}, ${metaLeadAttributions.firstMessageAt})`, startTs),
+          lt(sql`coalesce(${metaLeadAttributions.qualifiedAt}, ${metaLeadAttributions.firstMessageAt})`, endTsExclusive),
+        ),
+        and(gte(sales.date, start), lte(sales.date, end)),
+      ),
     ));
 
   // "Conversas iniciadas" que o Gerenciador de Anúncios da Meta contabiliza —
@@ -533,36 +546,41 @@ async function getLeadAttributionSummaryCore(
   let salesCount = 0;
   let salesValueTotal = 0;
   let lastAt: string | null = null;
+  let leadsTotal = 0;
   for (const r of rows) {
     const key = r.campaignId ?? "__sem_campanha__";
-    const isQualified = QUALIFIED_STATUSES.has(r.status);
+    const isQualified = QUALIFIED_STATUSES.has(r.status) && r.inQualified;
     if (isQualified) qualifiedTotal++;
-    if (r.saleId) {
+    if (r.saleId && r.saleDate && r.saleDate >= start && r.saleDate <= end) {
       salesCount++;
       salesValueTotal += r.saleValue ?? 0;
     }
-    if (!lastAt || r.firstMessageAt > lastAt) lastAt = r.firstMessageAt;
+    if (r.inFirst) {
+      leadsTotal++;
+      if (!lastAt || r.firstMessageAt > lastAt) lastAt = r.firstMessageAt;
+    }
+    if (!r.inFirst && !isQualified) continue;
     const entry = byCampaign.get(key) ?? {
       campaign_id: r.campaignId,
       campaign_name: r.campaignName ?? "Sem campanha identificada",
       total_leads: 0,
       qualified_leads: 0,
     };
-    entry.total_leads++;
+    if (r.inFirst) entry.total_leads++;
     if (isQualified) entry.qualified_leads++;
     byCampaign.set(key, entry);
   }
 
   return {
-    total_leads: rows.length,
+    total_leads: leadsTotal,
     meta_conversations_started: metaLeadsTotal,
-    cost_per_lead: rows.length > 0 ? Math.round((totalSpend / rows.length) * 100) / 100 : null,
+    cost_per_lead: leadsTotal > 0 ? Math.round((totalSpend / leadsTotal) * 100) / 100 : null,
     cost_per_conversation: metaLeadsTotal > 0 ? Math.round((totalSpend / metaLeadsTotal) * 100) / 100 : null,
     qualified_leads: qualifiedTotal,
     cost_per_qualified_lead: qualifiedTotal > 0 ? Math.round((totalSpend / qualifiedTotal) * 100) / 100 : null,
     sales_count: salesCount,
     sales_value_total: salesValueTotal,
-    sales_rate: rows.length > 0 ? Math.round((salesCount / rows.length) * 1000) / 10 : null,
+    sales_rate: leadsTotal > 0 ? Math.round((salesCount / leadsTotal) * 1000) / 10 : null,
     by_campaign: Array.from(byCampaign.values()).sort((a, b) => b.total_leads - a.total_leads),
     last_attribution_at: lastAt,
   };
