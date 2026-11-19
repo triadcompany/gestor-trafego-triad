@@ -85,6 +85,14 @@ function AgenteTriadPage() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [online, setOnline] = useState<boolean | null>(null);
+  const [abrindo, setAbrindo] = useState(false);
+  // Pede ao Mac pra iniciar o painel (app PainelTriad registrado no esquema triadpainel://).
+  // O polling de "online" já faz a tela voltar sozinha quando o painel sobe.
+  const abrirPainel = () => {
+    setAbrindo(true);
+    window.location.href = "triadpainel://abrir";
+    setTimeout(() => setAbrindo(false), 8000);
+  };
   const [speak, setSpeak] = useState(true);
   const [listening, setListening] = useState(false);
   const [attached, setAttached] = useState<
@@ -470,8 +478,15 @@ function AgenteTriadPage() {
 
           {online === false && (
             <div className="mb-3 rounded-lg border border-destructive/40 bg-destructive/10 p-3 text-sm">
-              O painel não está rodando no seu Mac. Abra o <b>iniciar.command</b> da pasta{" "}
-              <code>agente-campanhas2/painel</code> e esta tela volta sozinha.
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <span>
+                  O painel não está rodando no seu Mac. Clique em <b>Abrir painel</b> e esta tela volta sozinha. Se nada
+                  acontecer, abra o <b>iniciar.command</b> da pasta <code>agente-campanhas2/painel</code>.
+                </span>
+                <Button size="sm" onClick={abrirPainel} disabled={abrindo}>
+                  {abrindo ? "Abrindo..." : "Abrir painel"}
+                </Button>
+              </div>
             </div>
           )}
 
