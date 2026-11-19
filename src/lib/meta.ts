@@ -1861,6 +1861,15 @@ async function resolveAdWhatsapp(adId: string, token: string, creative: MetaAdCr
   return "";
 }
 
+// Botão de WhatsApp do anúncio. Com número, aponta pra ele; sem número (campanha criada com o
+// WhatsApp da página, sem número gravado no conjunto), mantém o do WhatsApp vinculado à página —
+// é o mesmo formato com que essas campanhas são criadas, então a edição não muda o destino.
+function whatsappCta(resolvedWa: string) {
+  return resolvedWa
+    ? { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: resolvedWa } }
+    : { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", link: "https://api.whatsapp.com/send" } };
+}
+
 export async function swapAdCreativeMedia(
   adId: string,
   creative: MetaAdCreative,
@@ -1893,7 +1902,6 @@ export async function swapAdCreativeMedia(
     onProgress?.("Enviando vídeo...");
     const videoId = await uploadAdVideo(accountId, mediaFile, token, onProgress);
     const thumbUrl = (await waitForVideoReady(videoId, token, onProgress)) ?? creative.thumbnail_url;
-    if (!resolvedWa) throw new Error("Número WhatsApp não encontrado. Cadastre o número em Configurações do cliente.");
     onProgress?.("Criando criativo...");
     await commitNewCreative(accountId, adId, {
       name: `media_swap_${Date.now()}`,
@@ -1905,7 +1913,7 @@ export async function swapAdCreativeMedia(
           title,
           // video_data não aceita "description" na API da Meta (só link_data aceita)
           ...(thumbUrl ? { image_url: thumbUrl } : {}),
-          call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: resolvedWa } },
+          call_to_action: whatsappCta(resolvedWa),
           ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
         },
       }),
@@ -1916,7 +1924,8 @@ export async function swapAdCreativeMedia(
   onProgress?.("Enviando imagem...");
   const imageHash = await uploadAdImage(accountId, mediaFile, token);
   onProgress?.("Criando criativo...");
-  const waLink = resolvedWa ? `https://wa.me/${resolvedWa}` : undefined;
+  // Sem número explícito, mantém o WhatsApp vinculado à página (mesmo botão das campanhas criadas assim).
+  const waLink = resolvedWa ? `https://wa.me/${resolvedWa}` : "https://api.whatsapp.com/send";
   await commitNewCreative(accountId, adId, {
     name: `media_swap_${Date.now()}`,
     object_story_spec: JSON.stringify({
@@ -1926,9 +1935,8 @@ export async function swapAdCreativeMedia(
         message: primaryText,
         name: title,
         ...(description ? { description } : {}),
-        ...(waLink
-          ? { link: waLink, call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: resolvedWa } } }
-          : {}),
+        link: waLink,
+        call_to_action: whatsappCta(resolvedWa),
         ...(pageWelcomeMessage ? { page_welcome_message: pageWelcomeMessage } : {}),
       },
     }),
@@ -2027,7 +2035,6 @@ export async function updateAdCreative(
   const pageId2 = creative.actor_id ?? creative.object_story_spec?.page_id;
   if (videoId && pageId2) {
     const resolvedWa = overrideWa || (await resolveAdWhatsapp(adId, token, creative, clientWhatsappNumber));
-    if (!resolvedWa) throw new Error("Número WhatsApp não encontrado. Cadastre o número em Configurações do cliente.");
 
     await commitNewCreative(accountId, adId, {
       name: `edited_${Date.now()}`,
@@ -2039,7 +2046,7 @@ export async function updateAdCreative(
           title: updates.title ?? creative.title ?? "",
           // video_data não aceita "description" na API da Meta (só link_data aceita)
           ...(creative.thumbnail_url ? { image_url: creative.thumbnail_url } : {}),
-          call_to_action: { type: "WHATSAPP_MESSAGE", value: { app_destination: "WHATSAPP", whatsapp_number: resolvedWa } },
+          call_to_action: whatsappCta(resolvedWa),
           ...((pageWelcomeMessage ?? creative.object_story_spec?.video_data?.page_welcome_message)
             ? { page_welcome_message: pageWelcomeMessage ?? creative.object_story_spec?.video_data?.page_welcome_message }
             : {}),
