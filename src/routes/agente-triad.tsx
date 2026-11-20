@@ -175,7 +175,9 @@ function AgenteTriadPage() {
   async function loadList(): Promise<ConvSummary[]> {
     try {
       const r = await fetch(`${PAINEL}/api/conversations`);
-      const l: ConvSummary[] = await r.json();
+      const j = await r.json();
+      // painel antigo (sem histórico) responde outra coisa que não uma lista
+      const l: ConvSummary[] = Array.isArray(j) ? j : [];
       setConvs(l);
       return l;
     } catch {
@@ -191,7 +193,7 @@ function AgenteTriadPage() {
     setConvId(id);
     // aprovação pendente de uma sessão antiga não pode mais ser respondida
     setItems(
-      (c.items as Item[]).map((it) =>
+      (Array.isArray(c.items) ? (c.items as Item[]) : [GREETING]).map((it) =>
         it.kind === "approval" && it.state === "wait" ? { ...it, state: "no" as const } : it,
       ),
     );
