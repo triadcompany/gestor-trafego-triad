@@ -54,18 +54,23 @@ export function AgenteTriadPanel() {
   const [showHistory, setShowHistory] = useState(false);
   const dirty = useRef(false);
 
-  // Trocou de cliente na tela: começa uma conversa nova, senão o agente continuaria no cliente anterior.
-  const lastFocus = useRef<string | null>(null);
+  // Cada cliente tem a sua conversa: o id fica guardado neste navegador, então atualizar a
+  // página (ou fechar e abrir a janela) reabre a conversa do cliente em foco.
+  const key = routeId ? (focus?.id ?? null) : "_global";
+  const storeKey = (k: string) => `triad-conv:${k}`;
+  const lastKey = useRef<string | null>(null);
+  const loadedKey = useRef<string | null>(null);
   useEffect(() => {
-    const cur = focus?.id ?? null;
-    if (lastFocus.current !== null && lastFocus.current !== cur) {
+    if (key === null) return; // cliente ainda carregando
+    if (lastKey.current !== null && lastKey.current !== key) {
       dirty.current = false;
       setItems([]);
       setAttached([]);
       setConvId(newId());
+      loadedKey.current = null;
     }
-    lastFocus.current = cur;
-  }, [focus?.id]);
+    lastKey.current = key;
+  }, [key]);
 
   useEffect(() => {
     const ping = () =>
@@ -170,6 +175,29 @@ export function AgenteTriadPanel() {
     );
     setShowHistory(false);
   }
+
+  useEffect(() => {
+    if (key === null || !online || loadedKey.current === key) return;
+    loadedKey.current = key;
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem(storeKey(key));
+    } catch {
+      /* sem armazenamento */
+    }
+    if (saved) openConv(saved);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key, online]);
+
+  // lembra qual conversa é a deste cliente assim que ela tem a primeira mensagem
+  useEffect(() => {
+    if (key === null || !items.some((i) => i.kind === "me")) return;
+    try {
+      localStorage.setItem(storeKey(key), convId);
+    } catch {
+      /* ignora */
+    }
+  }, [items, convId, key]);
 
   async function removeConv(id: string) {
     await fetch(`${PAINEL}/api/conversations/${id}`, { method: "DELETE" }).catch(() => {});
@@ -343,6 +371,11 @@ export function AgenteTriadPanel() {
             setAttached([]);
             setConvId(newId());
             setShowHistory(false);
+            try {
+              if (key) localStorage.removeItem(storeKey(key));
+            } catch {
+              /* ignora */
+            }
           }}
         >
           Nova
