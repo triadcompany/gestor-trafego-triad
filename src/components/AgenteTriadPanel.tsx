@@ -49,6 +49,7 @@ export function AgenteTriadPanel() {
   const [attached, setAttached] = useState<Attached[]>([]);
   const [uploading, setUploading] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const [convs, setConvs] = useState<ConvSummary[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const dirty = useRef(false);
@@ -75,6 +76,14 @@ export function AgenteTriadPanel() {
     const t = setInterval(ping, 8000);
     return () => clearInterval(t);
   }, []);
+
+  // a caixa cresce com o texto até 5 linhas; passando disso, rola
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 116)}px`;
+  }, [input, showHistory]);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ block: "end" });
@@ -461,6 +470,7 @@ export function AgenteTriadPanel() {
             <Mic className="h-4 w-4" />
           </Button>
           <Textarea
+            ref={inputRef}
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => {
@@ -472,7 +482,7 @@ export function AgenteTriadPanel() {
             placeholder={focus ? `Fale sobre ${focus.name}… (arraste o vídeo aqui)` : "Fale o cliente e o que precisa… (arraste o vídeo aqui)"}
             disabled={busy}
             rows={1}
-            className="text-sm min-h-9 max-h-[120px] resize-none py-2"
+            className="text-sm min-h-9 max-h-[116px] resize-none py-2"
           />
           <Button size="icon" className="h-9 w-9 shrink-0" onClick={() => send()} disabled={!input.trim() || busy || !online}>
             <Send className="h-4 w-4" />
