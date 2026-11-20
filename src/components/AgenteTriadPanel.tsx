@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { Check, Loader2, Send, Wrench, X } from "lucide-react";
+import { Check, History, Loader2, Mic, Paperclip, Send, Trash2, Volume2, VolumeX, Wrench, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { fetchAllClients } from "@/lib/queries";
@@ -20,6 +20,16 @@ type Item =
   | { kind: "approval"; id: string; tool: string; detail: string; danger: boolean; state: "wait" | "ok" | "no" };
 
 const newId = () => crypto.randomUUID();
+interface ConvSummary {
+  id: string;
+  title: string;
+  updatedAt: number;
+}
+interface Attached {
+  path: string;
+  transcript: string | null;
+  error: string | null;
+}
 
 export function AgenteTriadPanel() {
   const { id: routeId } = useParams({ strict: false }) as { id?: string };
@@ -27,19 +37,30 @@ export function AgenteTriadPanel() {
   const focus = useMemo(() => clients.find((c) => c.id === routeId && c.active) ?? null, [clients, routeId]);
 
   const [items, setItems] = useState<Item[]>([]);
-  const [convId, setConvId] = useState(newId);
+  const [convId, setConvId] = useState<string>(newId);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [online, setOnline] = useState<boolean | null>(null);
   const [abrindo, setAbrindo] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const [speak, setSpeak] = useState(true);
+  const [listening, setListening] = useState(false);
+  const recRef = useRef<any>(null);
+  const [attached, setAttached] = useState<Attached[]>([]);
+  const [uploading, setUploading] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [convs, setConvs] = useState<ConvSummary[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const dirty = useRef(false);
 
   // Trocou de cliente na tela: começa uma conversa nova, senão o agente continuaria no cliente anterior.
   const lastFocus = useRef<string | null>(null);
   useEffect(() => {
     const cur = focus?.id ?? null;
     if (lastFocus.current !== null && lastFocus.current !== cur) {
+      dirty.current = false;
       setItems([]);
+      setAttached([]);
       setConvId(newId());
     }
     lastFocus.current = cur;
@@ -65,13 +86,131 @@ export function AgenteTriadPanel() {
     setTimeout(() => setAbrindo(false), 8000);
   };
 
-  async function send() {
-    const shown = input.trim();
+  const say = (t: string) => {
+    if (!speak || !t) return;
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(t.replace(/[\u{1F300}-\u{1FAFF}✅⚠️]/gu, ""));
+    u.lang = "pt-BR";
+    u.rate = 1.25;
+    const vs = speechSynthesis.getVoices();
+    const v = vs.find((x) => x.lang === "pt-BR" && /Google|Luciana|Felipe/.test(x.name)) ?? vs.find((x) => x.lang === "pt-BR");
+    if (v) u.voice = v;
+    speechSynthesis.speak(u);
+  };
+
+  function toggleMic() {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return alert("Use o Chrome para voz.");
+    if (recRef.current) return recRef.current.stop();
+    const rec = new SR();
+    rec.lang = "pt-BR";
+    rec.interimResults = true;
+    let last = "";
+    rec.onresult = (e: any) => {
+      last = [...e.results].map((r: any) => r[0].transcript).join("");
+      setInput(last);
+    };
+    rec.onend = () => {
+      recRef.current = null;
+      setListening(false);
+      if (last.trim()) send(last);
+    };
+    recRef.current = rec;
+    setListening(true);
+    rec.start();
+  }
+
+  async function uploadFiles(files: File[]) {
+    for (const f of files) {
+      setUploading(f.name);
+      try {
+        const r = await fetch(`${PAINEL}/api/upload?name=${encodeURIComponent(f.name)}`, { method: "POST", body: f });
+        const j = await r.json();
+        setAttached((a) => [...a, { path: j.path, transcript: j.transcript ?? null, error: j.transcriptError ?? null }]);
+      } catch {
+        setItems((p) => [...p, { kind: "err", text: `Não consegui enviar ${f.name} para o painel.` }]);
+      }
+      setUploading(null);
+    }
+  }
+
+  // ── histórico de conversas (guardado no painel do Mac) ──
+  async function loadList() {
+    try {
+      const r = await fetch(`${PAINEL}/api/conversations`);
+      const j = await r.json();
+      setConvs(Array.isArray(j) ? j : []);
+    } catch {
+      setConvs([]);
+    }
+  }
+  useEffect(() => {
+    if (online) loadList();
+  }, [online]);
+
+  async function openConv(id: string) {
+    const r = await fetch(`${PAINEL}/api/conversations/${id}`).catch(() => null);
+    if (!r || !r.ok) return;
+    const c = await r.json();
+    dirty.current = false;
+    setConvId(id);
+    setItems(
+      (Array.isArray(c.items) ? (c.items as Item[]) : []).map((it) =>
+        it.kind === "approval" && it.state === "wait" ? { ...it, state: "no" as const } : it,
+      ),
+    );
+    setShowHistory(false);
+  }
+
+  async function removeConv(id: string) {
+    await fetch(`${PAINEL}/api/conversations/${id}`, { method: "DELETE" }).catch(() => {});
+    if (id === convId) {
+      setItems([]);
+      setConvId(newId());
+    }
+    loadList();
+  }
+
+  // salva depois de cada resposta/aprovação (só quando algo mudou por ação do usuário)
+  useEffect(() => {
+    if (busy || !dirty.current) return;
+    const firstMe = items.find((i) => i.kind === "me");
+    if (!firstMe) return;
+    const t = setTimeout(() => {
+      dirty.current = false;
+      fetch(`${PAINEL}/api/conversations/${convId}`, {
+        method: "POST",
+        body: JSON.stringify({ title: (firstMe as { text: string }).text.slice(0, 60), items }),
+      })
+        .then(() => loadList())
+        .catch(() => {});
+    }, 400);
+    return () => clearTimeout(t);
+  }, [items, busy, convId]);
+
+  async function send(textArg?: string) {
+    const shown = (textArg ?? input).trim();
     if (!shown || busy) return;
     // O cliente em foco vai na própria mensagem, pro agente já saber de qual conta se trata.
-    const text = focus
+    const base = focus
       ? `[Cliente aberto na tela: ${focus.name} — conta de anúncio ${focus.meta_ad_account_id}. Considere este cliente, a menos que eu cite outro.]\n\n${shown}`
       : shown;
+    const text =
+      base +
+      attached
+        .map(
+          (a) =>
+            `\n\nArquivo enviado pelo painel: ${a.path}` +
+            (a.transcript
+              ? `\nTranscrição do vídeo (já feita, use direto):\n${a.transcript}`
+              : a.error
+                ? `\nTranscrição indisponível (${a.error}). Peça os dados do carro ao usuário.`
+                : ""),
+        )
+        .join("");
+    setAttached([]);
+    dirty.current = true;
+    speechSynthesis.cancel();
     const ctxClients = (focus ? [focus] : clients.filter((c) => c.active)).map((c) => ({
       id: c.id,
       name: c.name,
@@ -136,8 +275,9 @@ export function AgenteTriadPanel() {
             curId = null;
             full = "";
             setItems((p) => [...p, { kind: "approval", ...data, state: "wait" }]);
-          } else if (ev === "done" && data?.error) {
-            setItems((p) => [...p, { kind: "err", text: data.error }]);
+          } else if (ev === "done") {
+            if (data?.error) setItems((p) => [...p, { kind: "err", text: data.error }]);
+            say(full);
           }
         }
       }
@@ -148,6 +288,7 @@ export function AgenteTriadPanel() {
   }
 
   async function decide(idx: number, id: string, allow: boolean) {
+    dirty.current = true;
     setItems((p) => p.map((it, i) => (i === idx && it.kind === "approval" ? { ...it, state: allow ? "ok" : "no" } : it)));
     await fetch(`${PAINEL}/api/approve`, { method: "POST", body: JSON.stringify({ id, allow }) }).catch(() => {});
   }
@@ -165,17 +306,38 @@ export function AgenteTriadPanel() {
             "Abra um cliente pra focar nele (ou cite o nome na conversa)"
           )}
         </span>
-        {items.length > 0 && (
-          <button
-            className="text-muted-foreground hover:text-foreground"
-            onClick={() => {
-              setItems([]);
-              setConvId(newId());
-            }}
-          >
-            Nova
-          </button>
-        )}
+        <button
+          className="text-muted-foreground hover:text-foreground"
+          title={speak ? "Desligar voz" : "Ligar voz"}
+          onClick={() => {
+            setSpeak((v) => !v);
+            speechSynthesis.cancel();
+          }}
+        >
+          {speak ? <Volume2 className="h-3.5 w-3.5" /> : <VolumeX className="h-3.5 w-3.5" />}
+        </button>
+        <button
+          className={cn("text-muted-foreground hover:text-foreground", showHistory && "text-foreground")}
+          title="Conversas salvas"
+          onClick={() => {
+            setShowHistory((v) => !v);
+            loadList();
+          }}
+        >
+          <History className="h-3.5 w-3.5" />
+        </button>
+        <button
+          className="text-muted-foreground hover:text-foreground"
+          onClick={() => {
+            dirty.current = false;
+            setItems([]);
+            setAttached([]);
+            setConvId(newId());
+            setShowHistory(false);
+          }}
+        >
+          Nova
+        </button>
       </div>
 
       {online === false && (
@@ -187,7 +349,31 @@ export function AgenteTriadPanel() {
         </div>
       )}
 
-      <div className="flex-1 space-y-2 overflow-y-auto px-3 py-3">
+      {showHistory && (
+        <div className="flex-1 space-y-1 overflow-y-auto px-2 py-2">
+          {convs.length === 0 && <div className="px-2 py-3 text-xs text-muted-foreground">Nenhuma conversa salva ainda.</div>}
+          {convs.map((c) => (
+            <div key={c.id} className={cn("group flex items-center gap-1 rounded-md px-2 py-1.5 text-sm hover:bg-accent", c.id === convId && "bg-accent")}>
+              <button className="min-w-0 flex-1 truncate text-left" onClick={() => openConv(c.id)} title={c.title}>
+                {c.title}
+              </button>
+              <button className="opacity-0 group-hover:opacity-100" onClick={() => removeConv(c.id)} title="Apagar">
+                <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!showHistory && (
+      <div
+        className="flex-1 space-y-2 overflow-y-auto px-3 py-3"
+        onDragOver={(e) => e.preventDefault()}
+        onDrop={(e) => {
+          e.preventDefault();
+          uploadFiles(Array.from(e.dataTransfer.files));
+        }}
+      >
         {items.length === 0 && (
           <p className="pt-6 text-center text-xs text-muted-foreground">
             {focus
@@ -203,7 +389,7 @@ export function AgenteTriadPanel() {
               </div>
             );
           if (it.kind === "img")
-            return <img key={i} src={it.url} alt={it.name} className="max-h-48 rounded-md border" />;
+            return <img key={i} src={`${PAINEL}${it.url}`} alt={it.name} className="max-h-48 rounded-md border" />;
           if (it.kind === "approval")
             return (
               <div key={i} className={cn("rounded-lg border p-2.5 text-xs", it.danger ? "border-destructive/50" : "border-border")}>
@@ -244,9 +430,36 @@ export function AgenteTriadPanel() {
         )}
         <div ref={endRef} />
       </div>
+      )}
 
       <div className="px-3 py-2.5 border-t border-border shrink-0">
+        {uploading && (
+          <div className="mb-1.5 flex items-center gap-1 text-xs text-muted-foreground">
+            <Loader2 className="h-3 w-3 animate-spin" /> Enviando e transcrevendo {uploading}…
+          </div>
+        )}
+        {attached.length > 0 && (
+          <div className="mb-1.5 flex items-center gap-1 text-xs text-emerald-500">
+            <Paperclip className="h-3 w-3" /> {attached.length} arquivo(s) pronto(s){attached.some((a) => a.transcript) ? " (transcrito)" : ""} — vão junto na próxima mensagem
+          </div>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            uploadFiles(Array.from(e.target.files ?? []));
+            e.target.value = "";
+          }}
+        />
         <div className="flex gap-2 items-end">
+          <Button variant="outline" size="icon" className="h-9 w-9 shrink-0" title="Anexar vídeo" onClick={() => fileRef.current?.click()} disabled={!online}>
+            <Paperclip className="h-4 w-4" />
+          </Button>
+          <Button variant={listening ? "destructive" : "outline"} size="icon" className="h-9 w-9 shrink-0" title="Falar" onClick={toggleMic}>
+            <Mic className="h-4 w-4" />
+          </Button>
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -256,12 +469,12 @@ export function AgenteTriadPanel() {
                 send();
               }
             }}
-            placeholder={focus ? `Fale sobre ${focus.name}…` : "Fale o cliente e o que precisa…"}
+            placeholder={focus ? `Fale sobre ${focus.name}… (arraste o vídeo aqui)` : "Fale o cliente e o que precisa… (arraste o vídeo aqui)"}
             disabled={busy}
             rows={1}
             className="text-sm min-h-9 max-h-[120px] resize-none py-2"
           />
-          <Button size="icon" className="h-9 w-9 shrink-0" onClick={send} disabled={!input.trim() || busy || !online}>
+          <Button size="icon" className="h-9 w-9 shrink-0" onClick={() => send()} disabled={!input.trim() || busy || !online}>
             <Send className="h-4 w-4" />
           </Button>
         </div>
