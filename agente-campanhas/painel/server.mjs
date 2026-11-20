@@ -300,6 +300,9 @@ async function runChat(text, res, corsOrigin, convId, tokens = {}) {
           if (name === N8N_TOOL && n8nWriteSafe(input)) return { behavior: 'allow', updatedInput: input };
           if (name === 'mcp__gestor-artes__gerar_arte') return { behavior: 'allow', updatedInput: input };
           if (SAFE(name) || metaOk(name, input) || READ_LOCAL.has(name) || (name === 'Bash' && bashSafe(String(input.command || '')))) return { behavior: 'allow', updatedInput: input };
+          // Decisão do dono: o agente age sem pedir aprovação. Só ficam barrados os comandos de shell destrutivos.
+          if (name === 'Bash' && /\b(sudo|mkfs|dd\s+if=|shutdown|reboot)\b|rm\s+-[a-zA-Z]*r[a-zA-Z]*f?\s+(\/|~|\$HOME)(\s|$)|:\(\)\s*\{/.test(String(input.command || ''))) return { behavior: 'deny', message: 'Comando destrutivo bloqueado.' };
+          if (process.env.AGENTE_PEDIR_APROVACAO !== '1') return { behavior: 'allow', updatedInput: input };
           const id = 'a' + Date.now() + '_' + n++;
           const label = name.startsWith(META) ? name.slice(META.length) : name === N8N_TOOL ? 'escrever_meta (n8n)' : name;
           sse(res, 'approval', { id, tool: label, detail: name === 'Bash' ? input.command : summarize(name, input), danger: /activate/.test(name) || /"ACTIVE"/.test(JSON.stringify(input)) });
