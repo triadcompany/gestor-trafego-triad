@@ -16,6 +16,7 @@ import {
   type AgentMode,
 } from "@/lib/agent-chat";
 import { cn } from "@/lib/utils";
+import { AgenteTriadPanel } from "@/components/AgenteTriadPanel";
 
 interface DisplayMessage {
   id: string;
@@ -137,6 +138,8 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
   const [messages, setMessages] = useState<DisplayMessage[]>([]);
   const [isThinking, setIsThinking] = useState(false);
   const [showList, setShowList] = useState(false);
+  // Aba "Triad": Agente Triad (Claude + Meta Ads) focado no cliente aberto na tela.
+  const [triadOpen, setTriadOpen] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -517,11 +520,14 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
             s.kind === "conv" ? (
               <button
                 key={`c-${s.id}`}
-                onClick={() => openConversation({ id: s.id, mode: s.mode })}
+                onClick={() => {
+                  setTriadOpen(false);
+                  openConversation({ id: s.id, mode: s.mode });
+                }}
                 title={s.title ?? "Conversa"}
                 className={cn(
                   "min-w-0 flex-1 truncate px-2 py-2 text-xs font-medium transition-colors border-b-2 -mb-px",
-                  conversationId === s.id
+                  !triadOpen && conversationId === s.id
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
@@ -531,10 +537,13 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
             ) : (
               <button
                 key={`m-${s.mode}`}
-                onClick={() => selectMode(s.mode)}
+                onClick={() => {
+                  setTriadOpen(false);
+                  selectMode(s.mode);
+                }}
                 className={cn(
                   "flex-1 text-xs font-medium py-2 transition-colors border-b-2 -mb-px",
-                  !conversationId && mode === s.mode
+                  !triadOpen && !conversationId && mode === s.mode
                     ? "border-primary text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
@@ -544,10 +553,22 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
             )
           );
         })()}
+        <button
+          onClick={() => {
+            setTriadOpen(true);
+            setShowList(false);
+          }}
+          className={cn(
+            "flex-1 text-xs font-medium py-2 transition-colors border-b-2 -mb-px",
+            triadOpen ? "border-primary text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+          )}
+        >
+          Triad
+        </button>
       </div>
 
       {/* Painel de conversas — fixar 3, abrir qualquer outra, começar nova por assistente */}
-      {showList && (
+      {showList && !triadOpen && (
         <div className="flex flex-1 flex-col bg-card min-h-0">
           <div className="flex items-center gap-2 border-b border-border px-3 py-2 shrink-0">
             <Button size="icon" variant="ghost" className="h-6 w-6" onClick={() => setShowList(false)} title="Voltar">
@@ -626,7 +647,9 @@ export function AgentChatWidget({ onClose }: { onClose: () => void }) {
         </div>
       )}
 
-      {!showList && (
+      {triadOpen && <AgenteTriadPanel />}
+
+      {!showList && !triadOpen && (
         <>
       {/* Mensagens */}
       <ScrollArea className="flex-1">
