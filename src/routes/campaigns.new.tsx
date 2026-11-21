@@ -32,7 +32,11 @@ import {
   AlertCircle,
   MapPin,
   Plus,
+  MessageCircle,
+  ShoppingCart,
+  UserPlus,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 // Import dinâmico (nunca estático) — o Leaflet acessa `window` na hora de
 // carregar o módulo e derruba a renderização no servidor (SSR) se for
 // importado direto no topo do arquivo.
@@ -1258,24 +1262,43 @@ function NewCampaign() {
               {(mode === "scratch" || mode === "bulk") && (
                 <>
                   <div className="space-y-2">
-                    <Label>Tipo</Label>
+                    <Label>Tipo de campanha</Label>
                     <RadioGroup
                       value={campaignType}
                       onValueChange={(v) => setCampaignType(v as "engagement" | "sales" | "leads")}
-                      className="flex flex-wrap gap-x-4 gap-y-2"
+                      className="grid grid-cols-1 gap-2 sm:grid-cols-3"
                     >
-                      <div className="flex items-center gap-2">
-                        <RadioGroupItem value="engagement" id="ct-eng" />
-                        <Label htmlFor="ct-eng" className="font-normal cursor-pointer">Engajamento → WhatsApp</Label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <RadioGroupItem value="sales" id="ct-sales" />
-                        <Label htmlFor="ct-sales" className="font-normal cursor-pointer">Vendas → WhatsApp</Label>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <RadioGroupItem value="leads" id="ct-leads" />
-                        <Label htmlFor="ct-leads" className="font-normal cursor-pointer">Leads → WhatsApp</Label>
-                      </div>
+                      {(
+                        [
+                          { value: "engagement", label: "Engajamento", hint: "Mais conversas no WhatsApp", Icon: MessageCircle },
+                          { value: "sales", label: "Vendas", hint: "Otimiza para quem compra", Icon: ShoppingCart },
+                          { value: "leads", label: "Leads", hint: "Contatos qualificados no WhatsApp", Icon: UserPlus },
+                        ] as const
+                      ).map(({ value, label, hint, Icon }) => (
+                        <label
+                          key={value}
+                          htmlFor={`ct-${value}`}
+                          className={cn(
+                            "relative flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-accent/40 focus-within:ring-2 focus-within:ring-ring",
+                            campaignType === value ? "border-primary bg-primary/5" : "border-border"
+                          )}
+                        >
+                          <RadioGroupItem value={value} id={`ct-${value}`} className="sr-only" />
+                          <span
+                            className={cn(
+                              "flex h-8 w-8 shrink-0 items-center justify-center rounded-md",
+                              campaignType === value ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                            )}
+                          >
+                            <Icon className="h-4 w-4" />
+                          </span>
+                          <span className="min-w-0">
+                            <span className="block text-sm font-medium leading-5">{label}</span>
+                            <span className="block text-xs leading-4 text-muted-foreground">{hint}</span>
+                          </span>
+                          {campaignType === value && <Check className="absolute right-2 top-2 h-3.5 w-3.5 text-primary" />}
+                        </label>
+                      ))}
                     </RadioGroup>
                   </div>
 
