@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Dialog, DialogContent, DialogHeader, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { ArrowUp, ArrowDown, ArrowLeftRight, SlidersHorizontal, Check, X, Copy, Pencil, Scale, Search, Tag } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -39,8 +40,16 @@ import {
   type ExplorerLevel,
 } from "@/lib/campaign-columns";
 
+type SwitchObjective = "OUTCOME_ENGAGEMENT" | "OUTCOME_SALES" | "OUTCOME_LEADS";
+const OBJECTIVE_LABEL: Record<SwitchObjective, string> = {
+  OUTCOME_ENGAGEMENT: "Engajamento",
+  OUTCOME_SALES: "Vendas",
+  OUTCOME_LEADS: "Leads",
+};
+
 interface Row {
   id: string;
+  objective?: string;
   name: string;
   status: string;
   campaign_id?: string;
@@ -118,6 +127,7 @@ function campaignToRow(c: MetaCampaign): Row {
     name: c.name,
     status: c.status,
     campaign_id: c.id,
+    objective: c.objective,
     daily_budget: c.daily_budget,
     spend: c.spend,
     leads: c.leads,
@@ -399,22 +409,24 @@ export function CampaignsExplorer({
   });
 
   const duplicateFlipObjectiveMutation = useMutation({
-    mutationFn: async (row: Row) => {
+    mutationFn: async ({ row, target }: { row: Row; target: SwitchObjective }) => {
       const token = await getMetaToken();
       if (!token) throw new Error("Token não encontrado");
       const pid = `flip-${row.id}`;
-      toast.loading("Duplicando com objetivo invertido...", { id: pid });
+      toast.loading(`Duplicando com objetivo ${OBJECTIVE_LABEL[target]}...`, { id: pid });
       try {
         const newId = await duplicateCampaign(
           row.id,
           adAccountId,
-          `${row.name} — Cópia (objetivo trocado)`,
+          `${row.name} — Cópia (${OBJECTIVE_LABEL[target]})`,
           token,
           (msg) => toast.loading(msg, { id: pid }),
           whatsappNumber,
           undefined,
           undefined,
-          true
+          false,
+          undefined,
+          target
         );
         toast.dismiss(pid);
         return newId;
@@ -423,8 +435,8 @@ export function CampaignsExplorer({
         throw e;
       }
     },
-    onSuccess: () => {
-      toast.success("Campanha duplicada com objetivo invertido (Engajamento ↔ Vendas).");
+    onSuccess: (_id, vars) => {
+      toast.success(`Campanha duplicada com objetivo ${OBJECTIVE_LABEL[vars.target]}.`);
       queryClient.invalidateQueries({ queryKey: ["campaigns"] });
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao duplicar com objetivo invertido", { duration: 10000 }),
@@ -618,9 +630,9 @@ export function CampaignsExplorer({
                     clientId={clientId}
                     onDuplicateAdSet={level === "adset" ? () => duplicateAdSetMutation.mutate(row) : undefined}
                     onDuplicateAd={level === "ad" ? () => duplicateAdMutation.mutate(row) : undefined}
-                    onDuplicateFlipObjective={level === "campaign" ? () => duplicateFlipObjectiveMutation.mutate(row) : undefined}
+                    onDuplicateFlipObjective={level === "campaign" ? (target) => duplicateFlipObjectiveMutation.mutate({ row, target }) : undefined}
                     onMarkSold={level === "campaign" ? () => setMarkSoldRow(row) : undefined}
-                    duplicatingFlip={duplicateFlipObjectiveMutation.isPending && duplicateFlipObjectiveMutation.variables?.id === row.id}
+                    duplicatingFlip={duplicateFlipObjectiveMutation.isPending && duplicateFlipObjectiveMutation.variables?.row.id === row.id}
                     duplicating={
                       (level === "adset" && duplicateAdSetMutation.isPending && duplicateAdSetMutation.variables?.id === row.id) ||
                       (level === "ad" && duplicateAdMutation.isPending && duplicateAdMutation.variables?.id === row.id)
@@ -925,7 +937,7 @@ function ExplorerRow({
   clientId: string;
   onDuplicateAdSet?: () => void;
   onDuplicateAd?: () => void;
-  onDuplicateFlipObjective?: () => void;
+  onDuplicateFlipObjective?: (target: SwitchObjective) => void;
   onMarkSold?: () => void;
   duplicating?: boolean;
   duplicatingFlip?: boolean;
@@ -1092,16 +1104,29 @@ function ExplorerRow({
                 <Copy className="h-3.5 w-3.5" />
               </Link>
             </Button>
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-7 w-7"
-              title="Duplicar trocando o objetivo (Engajamento ↔ Vendas)"
-              disabled={duplicatingFlip}
-              onClick={onDuplicateFlipObjective}
-            >
-              <ArrowLeftRight className="h-3.5 w-3.5" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-7 w-7"
+                  title="Duplicar trocando o objetivo (Engajamento, Vendas ou Leads)"
+                  disabled={duplicatingFlip}
+                >
+                  <ArrowLeftRight className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Duplicar como…</DropdownMenuLabel>
+                {(Object.keys(OBJECTIVE_LABEL) as SwitchObjective[])
+                  .filter((o) => o !== row.objective)
+                  .map((o) => (
+                    <DropdownMenuItem key={o} onSelect={() => onDuplicateFlipObjective?.(o)}>
+                      {OBJECTIVE_LABEL[o]}
+                    </DropdownMenuItem>
+                  ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button
               size="icon"
               variant="ghost"

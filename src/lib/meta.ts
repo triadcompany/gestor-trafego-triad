@@ -3010,7 +3010,8 @@ export async function duplicateCampaign(
   adSetName?: string, // só aplicado quando a campanha original tem exatamente 1 conjunto
   adName?: string, // só aplicado quando esse único conjunto tem exatamente 1 anúncio
   flipObjective?: boolean, // troca Engajamento↔Vendas na campanha nova, mantendo o resto idêntico
-  whatsappNumberOverride?: string // número escolhido na hora de duplicar — a Meta não deixa trocar depois
+  whatsappNumberOverride?: string, // número escolhido na hora de duplicar — a Meta não deixa trocar depois
+  targetObjective?: "OUTCOME_ENGAGEMENT" | "OUTCOME_SALES" | "OUTCOME_LEADS" // objetivo da cópia (Engajamento, Vendas ou Leads), mantendo o resto idêntico
 ): Promise<string> {
   onProgress?.("Buscando estrutura da campanha...");
 
@@ -3070,7 +3071,14 @@ export async function duplicateCampaign(
   }
 
   let objective = srcJson.objective ?? "OUTCOME_ENGAGEMENT";
-  if (flipObjective) {
+  const SWITCHABLE = ["OUTCOME_ENGAGEMENT", "OUTCOME_SALES", "OUTCOME_LEADS"];
+  if (targetObjective) {
+    if (!SWITCHABLE.includes(objective)) {
+      throw new Error(`Não é possível trocar o objetivo "${objective}" — esse recurso só troca entre Engajamento, Vendas e Leads.`);
+    }
+    if (objective === targetObjective) throw new Error("A campanha já tem esse objetivo.");
+    objective = targetObjective;
+  } else if (flipObjective) {
     if (objective === "OUTCOME_ENGAGEMENT") objective = "OUTCOME_SALES";
     else if (objective === "OUTCOME_SALES") objective = "OUTCOME_ENGAGEMENT";
     else {
@@ -3460,6 +3468,8 @@ export interface CampaignPrefillData {
   videoId?: string;
   imageHash?: string;
   thumbnailUrl?: string;
+  adsetName?: string;
+  adName?: string;
 }
 
 export async function fetchBaseCampaignPrefill(
@@ -3492,13 +3502,14 @@ export async function fetchBaseCampaignPrefill(
   // chamar waitForWriteSlot mais de uma vez por leitura evita a soma de
   // esperas que travou a tela antes.
   const asRes = await spacedFetch(
-    `${BASE_URL}/${campaignId}/adsets?fields=targeting,promoted_object{page_id,whatsapp_phone_number},instagram_actor_id,daily_budget&limit=1&access_token=${encodeURIComponent(token)}`,
+    `${BASE_URL}/${campaignId}/adsets?fields=name,targeting,promoted_object{page_id,whatsapp_phone_number},instagram_actor_id,daily_budget&limit=1&access_token=${encodeURIComponent(token)}`,
     accountScope,
     LIGHT_WRITE_SPACING_MS
   );
   const asJson = (await asRes.json()) as {
     data?: Array<{
       id: string;
+      name?: string;
       targeting?: MetaTargeting;
       promoted_object?: { page_id?: string; whatsapp_phone_number?: string };
       instagram_actor_id?: string;
@@ -3519,15 +3530,17 @@ export async function fetchBaseCampaignPrefill(
   let thumbnailUrl: string | undefined;
   let mediaType: "image" | "video" = "image";
   let resolvedAdId: string | undefined;
+  let resolvedAdName: string | undefined;
 
   if (adSet) {
     const adsRes = await spacedFetch(
-      `${BASE_URL}/${adSet.id}/ads?fields=id&limit=1&access_token=${encodeURIComponent(token)}`,
+      `${BASE_URL}/${adSet.id}/ads?fields=id,name&limit=1&access_token=${encodeURIComponent(token)}`,
       accountScope,
       LIGHT_WRITE_SPACING_MS
     );
-    const adsJson = (await adsRes.json()) as { data?: Array<{ id: string }> };
+    const adsJson = (await adsRes.json()) as { data?: Array<{ id: string; name?: string }> };
     const adId = adsJson.data?.[0]?.id;
+    resolvedAdName = adsJson.data?.[0]?.name;
     if (adId) {
       resolvedAdId = adId;
       try {
@@ -3622,6 +3635,8 @@ export async function fetchBaseCampaignPrefill(
     videoId,
     imageHash,
     thumbnailUrl,
+    adsetName: adSet?.name,
+    adName: resolvedAdName,
   };
 }
 
