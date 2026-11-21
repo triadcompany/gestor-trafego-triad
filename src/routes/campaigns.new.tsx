@@ -174,8 +174,8 @@ async function createOneBulkCampaign(
     finalThumbnailUrl = (await waitForVideoReady(finalVideoId, token, onProgress)) ?? undefined;
   }
 
-  const tag = shared.campaignType === "sales" ? "VENDAS-WHATS" : shared.campaignType === "leads" ? "LEADS-WHATS" : "ENG-MSG";
-  const campaignName = `[${tag}] [${car.name.trim().toUpperCase()}]`;
+  const tag = shared.campaignType === "sales" ? "VENDAS-WHATS" : shared.campaignType === "leads" ? "LEADS-WHATS" : "ENGAJAMENTO-WHATS";
+  const campaignName = `[${car.name.trim().toUpperCase()}] [${tag}]`;
   const adSetName = "CA1 - ABERTO";
   const adName = `AD1 - ${car.mediaType === "video" ? "VIDEO" : "ARTE"}`;
   const normalizedPhone = (shared.whatsappNumber || "").replace(/\D/g, "");
@@ -1209,7 +1209,7 @@ function NewCampaign() {
                   <Input
                     value={campaignName}
                     onChange={(e) => setCampaignName(e.target.value)}
-                    placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: [ENG-MSG] [CIVIC 2024]"}
+                    placeholder={mode === "duplicate" ? "Preenchido ao selecionar a base" : "Ex: [CIVIC 2024] [ENGAJAMENTO-WHATS]"}
                   />
                 </div>
               )}

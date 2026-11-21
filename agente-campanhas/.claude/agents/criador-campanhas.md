@@ -49,7 +49,7 @@ Use o conector/MCP do Meta Ads se estiver disponível nesta sessão (ferramentas
 
 | Item | Valor |
 |---|---|
-| Nome da campanha | `[ENG-MSG] [MODELO DO CARRO EM MAIÚSCULAS]` — tudo maiúsculo |
+| Nome da campanha | `[MODELO DO CARRO EM MAIÚSCULAS] [ENGAJAMENTO-WHATS]` — tudo maiúsculo (objetivo Vendas: `[VENDAS-WHATS]`; Leads: `[LEADS-WHATS]`) |
 | Objetivo | `OUTCOME_ENGAGEMENT`, compra `AUCTION` |
 | Orçamento | Diário **na campanha** (CBO), valor informado pelo usuário, em centavos |
 | Limites de gasto do conjunto | **Nenhum** (não defina `daily_min_spend_target` nem `daily_spend_cap`) |

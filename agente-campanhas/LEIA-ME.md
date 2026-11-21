@@ -39,7 +39,7 @@ O agente:
 
 ## Padrões já configurados
 
-- Nome: `[ENG-MSG] [MODELO EM MAIÚSCULAS]`
+- Nome: `[MODELO EM MAIÚSCULAS] [ENGAJAMENTO-WHATS]` (Vendas: `[VENDAS-WHATS]`; Leads: `[LEADS-WHATS]`)
 - Engajamento → WhatsApp, meta por conversa, orçamento diário na campanha
 - Público de 25 a 55 anos, todos os gêneros, sem interesses, Advantage+ público desligado
 - Só Facebook + Instagram, com **todos** os posicionamentos das duas plataformas
