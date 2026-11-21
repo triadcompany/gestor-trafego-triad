@@ -3653,7 +3653,7 @@ export interface CreateFromScratchOptions {
   igPositions?: string[];
   bidAmount?: number; // BRL — limite de lance, só usado quando placementMode === "manual"
   token: string;
-  campaignType?: "engagement" | "sales";
+  campaignType?: "engagement" | "sales" | "leads";
   instagramActorId?: string;
   targeting?: {
     ageMin?: number;
@@ -3667,7 +3667,8 @@ export interface CreateFromScratchOptions {
 export async function createCampaignFromScratch(
   opts: CreateFromScratchOptions
 ): Promise<{ campaignId: string; adSetId: string }> {
-  const objective = opts.campaignType === "sales" ? "OUTCOME_SALES" : "OUTCOME_ENGAGEMENT";
+  const objective =
+    opts.campaignType === "sales" ? "OUTCOME_SALES" : opts.campaignType === "leads" ? "OUTCOME_LEADS" : "OUTCOME_ENGAGEMENT";
 
   const useManualBid = opts.placementMode === "manual" && !!opts.bidAmount;
 

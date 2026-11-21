@@ -115,7 +115,7 @@ interface BulkSharedConfig {
   adAccountId: string;
   pageId: string;
   whatsappNumber: string;
-  campaignType: "engagement" | "sales";
+  campaignType: "engagement" | "sales" | "leads";
   budget: number;
   placementMode: "advantage_plus" | "manual";
   platforms: { facebook: boolean; instagram: boolean };
@@ -174,7 +174,7 @@ async function createOneBulkCampaign(
     finalThumbnailUrl = (await waitForVideoReady(finalVideoId, token, onProgress)) ?? undefined;
   }
 
-  const tag = shared.campaignType === "sales" ? "VENDAS-WHATS" : "ENG-MSG";
+  const tag = shared.campaignType === "sales" ? "VENDAS-WHATS" : shared.campaignType === "leads" ? "LEADS-WHATS" : "ENG-MSG";
   const campaignName = `[${tag}] [${car.name.trim().toUpperCase()}]`;
   const adSetName = "CA1 - ABERTO";
   const adName = `AD1 - ${car.mediaType === "video" ? "VIDEO" : "ARTE"}`;
@@ -277,7 +277,7 @@ function NewCampaign() {
   // zero quanto pra duplicar. O usuário ainda pode editar se quiser.
   const [adSetName, setAdSetName] = useState("CA1 - ABERTO");
   const [adName, setAdName] = useState("AD1 - ARTE");
-  const [campaignType, setCampaignType] = useState<"engagement" | "sales">("engagement");
+  const [campaignType, setCampaignType] = useState<"engagement" | "sales" | "leads">("engagement");
   const [budget, setBudget] = useState(50);
   const [pageId, setPageId] = useState("");
   const [whatsappNumber, setWhatsappNumber] = useState("");
@@ -509,7 +509,7 @@ function NewCampaign() {
         if (!token || cancelled) return;
         const d = await fetchBaseCampaignPrefill(baseCampaignId, token);
         if (cancelled) return;
-        setCampaignType(d.objective === "OUTCOME_SALES" ? "sales" : "engagement");
+        setCampaignType(d.objective === "OUTCOME_SALES" ? "sales" : d.objective === "OUTCOME_LEADS" ? "leads" : "engagement");
         setBudget(d.dailyBudget);
         if (d.pageId) setPageId(d.pageId);
         if (d.whatsappNumber) setWhatsappNumber(d.whatsappNumber);
@@ -1261,8 +1261,8 @@ function NewCampaign() {
                     <Label>Tipo</Label>
                     <RadioGroup
                       value={campaignType}
-                      onValueChange={(v) => setCampaignType(v as "engagement" | "sales")}
-                      className="flex gap-4"
+                      onValueChange={(v) => setCampaignType(v as "engagement" | "sales" | "leads")}
+                      className="flex flex-wrap gap-x-4 gap-y-2"
                     >
                       <div className="flex items-center gap-2">
                         <RadioGroupItem value="engagement" id="ct-eng" />
@@ -1271,6 +1271,10 @@ function NewCampaign() {
                       <div className="flex items-center gap-2">
                         <RadioGroupItem value="sales" id="ct-sales" />
                         <Label htmlFor="ct-sales" className="font-normal cursor-pointer">Vendas → WhatsApp</Label>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <RadioGroupItem value="leads" id="ct-leads" />
+                        <Label htmlFor="ct-leads" className="font-normal cursor-pointer">Leads → WhatsApp</Label>
                       </div>
                     </RadioGroup>
                   </div>
